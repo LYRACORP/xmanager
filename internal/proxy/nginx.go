@@ -84,7 +84,9 @@ func (n *NginxManager) AddVHost(domain, upstream string) error {
 	}
 
 	if output, err := n.ValidateConfig(); err != nil || !strings.Contains(output, "successful") {
-		_, _ = n.exec.Run(fmt.Sprintf("sudo rm -f %s", enablePath))
+		if _, err := n.exec.Run(fmt.Sprintf("sudo rm -f %s", enablePath)); err != nil {
+			// ignore or log
+		}
 		return fmt.Errorf("nginx config validation failed: %s", output)
 	}
 
@@ -97,7 +99,9 @@ func (n *NginxManager) RemoveVHost(domain string) error {
 		fmt.Sprintf("sudo rm -f /etc/nginx/sites-available/%s", domain),
 	}
 	for _, cmd := range cmds {
-		_, _ = n.exec.Run(cmd)
+		if _, err := n.exec.Run(cmd); err != nil {
+			// ignore or log
+		}
 	}
 	return n.ReloadConfig()
 }
