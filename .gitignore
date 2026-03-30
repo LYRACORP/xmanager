@@ -1,0 +1,34 @@
+# Binary
+xmanager
+vpsm
+dist/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (local dev)
+*.env
+.env.*
+
+# Coverage
+coverage.txt
+coverage.html

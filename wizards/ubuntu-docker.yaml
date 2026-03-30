@@ -1,0 +1,46 @@
+name: "Ubuntu Docker Setup"
+description: "Install Docker and Docker Compose on Ubuntu server"
+target_os: "ubuntu"
+steps:
+  - name: "Update System Packages"
+    description: "Update apt package cache and upgrade existing packages"
+    commands:
+      - "sudo apt-get update -y"
+      - "sudo apt-get upgrade -y"
+    skip_allowed: true
+
+  - name: "Install Prerequisites"
+    description: "Install packages required for Docker installation"
+    commands:
+      - "sudo apt-get install -y ca-certificates curl gnupg lsb-release"
+    skip_allowed: false
+
+  - name: "Add Docker Repository"
+    description: "Add Docker's official GPG key and repository"
+    commands:
+      - "sudo install -m 0755 -d /etc/apt/keyrings"
+      - "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+      - "sudo chmod a+r /etc/apt/keyrings/docker.gpg"
+      - "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    skip_allowed: false
+
+  - name: "Install Docker Engine"
+    description: "Install Docker CE, CLI, containerd, and compose plugin"
+    commands:
+      - "sudo apt-get update -y"
+      - "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+    skip_allowed: false
+
+  - name: "Configure Docker"
+    description: "Add current user to docker group and enable service"
+    commands:
+      - "sudo usermod -aG docker $USER"
+      - "sudo systemctl enable docker"
+      - "sudo systemctl start docker"
+    skip_allowed: false
+
+  - name: "Verify Installation"
+    description: "Run hello-world container to verify Docker works"
+    commands:
+      - "docker run --rm hello-world"
+    skip_allowed: true

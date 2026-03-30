@@ -1,0 +1,70 @@
+version: 2
+
+project_name: xmanager
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: xmanager
+    main: ./cmd/xmanager
+    binary: xmanager
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/lyracorp/xmanager/internal/config.Version={{.Version}}
+      - -X github.com/lyracorp/xmanager/internal/config.Commit={{.Commit}}
+      - -X github.com/lyracorp/xmanager/internal/config.BuildTime={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+brews:
+  - repository:
+      owner: lyracorp
+      name: homebrew-tap
+    homepage: "https://github.com/lyracorp/xmanager"
+    description: "AI-powered terminal UI for VPS orchestration"
+    license: "MIT"
+    install: |
+      bin.install "xmanager"
+      bin.install_symlink "xmanager" => "vpsm"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/lyracorp/xmanager:{{ .Version }}"
+      - "ghcr.io/lyracorp/xmanager:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+
+release:
+  github:
+    owner: lyracorp
+    name: xmanager
