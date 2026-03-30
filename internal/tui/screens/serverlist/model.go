@@ -258,7 +258,7 @@ func (m *Model) populateForm(s storage.Server) {
 func (m *Model) saveServer() tea.Cmd {
 	return func() tea.Msg {
 		port := 22
-		fmt.Sscanf(m.form[fieldPort].Value(), "%d", &port)
+		_, _ = fmt.Sscanf(m.form[fieldPort].Value(), "%d", &port)
 		srv := storage.Server{
 			Name: m.form[fieldName].Value(), Host: m.form[fieldHost].Value(),
 			Port: port, User: m.form[fieldUser].Value(),

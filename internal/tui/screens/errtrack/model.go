@@ -311,7 +311,7 @@ func (m *Model) setMuted(v bool) tea.Cmd {
 		fp := g.fingerprint
 		if strings.HasPrefix(fp, "_id_") {
 			var id uint
-			fmt.Sscanf(fp, "_id_%d", &id)
+			_, _ = fmt.Sscanf(fp, "_id_%d", &id)
 			m.ctx.DB.Model(&storage.ErrorEvent{}).Where("id = ? AND server_id = ?", id, m.ctx.ServerID).Update("muted", v)
 		} else {
 			m.ctx.DB.Model(&storage.ErrorEvent{}).Where("fingerprint = ? AND server_id = ?", fp, m.ctx.ServerID).Update("muted", v)
@@ -329,7 +329,7 @@ func (m *Model) setResolved(v bool) tea.Cmd {
 		fp := g.fingerprint
 		if strings.HasPrefix(fp, "_id_") {
 			var id uint
-			fmt.Sscanf(fp, "_id_%d", &id)
+			_, _ = fmt.Sscanf(fp, "_id_%d", &id)
 			m.ctx.DB.Model(&storage.ErrorEvent{}).Where("id = ? AND server_id = ?", id, m.ctx.ServerID).Update("resolved", v)
 		} else {
 			m.ctx.DB.Model(&storage.ErrorEvent{}).Where("fingerprint = ? AND server_id = ?", fp, m.ctx.ServerID).Update("resolved", v)
