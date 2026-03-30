@@ -1,0 +1,56 @@
+name: "Server Hardening"
+description: "Basic security hardening for Ubuntu/Debian servers"
+target_os: "ubuntu,debian"
+steps:
+  - name: "Update System"
+    description: "Update all packages to latest versions"
+    commands:
+      - "sudo apt-get update -y"
+      - "sudo apt-get upgrade -y"
+    skip_allowed: true
+
+  - name: "Configure UFW Firewall"
+    description: "Enable UFW and allow SSH, HTTP, HTTPS"
+    commands:
+      - "sudo apt-get install -y ufw"
+      - "sudo ufw default deny incoming"
+      - "sudo ufw default allow outgoing"
+      - "sudo ufw allow ssh"
+      - "sudo ufw allow 80/tcp"
+      - "sudo ufw allow 443/tcp"
+      - "sudo ufw --force enable"
+    skip_allowed: false
+
+  - name: "Install and Configure fail2ban"
+    description: "Protect SSH against brute-force attacks"
+    commands:
+      - "sudo apt-get install -y fail2ban"
+      - "sudo systemctl enable fail2ban"
+      - "sudo systemctl start fail2ban"
+    skip_allowed: true
+
+  - name: "SSH Hardening"
+    description: "Disable root login and password authentication"
+    commands:
+      - "sudo sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"
+      - "sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config"
+      - "sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config"
+      - "sudo systemctl restart sshd"
+    skip_allowed: true
+
+  - name: "Setup Swap (if < 2GB RAM)"
+    description: "Create 2GB swap file for low-memory servers"
+    commands:
+      - "sudo fallocate -l 2G /swapfile"
+      - "sudo chmod 600 /swapfile"
+      - "sudo mkswap /swapfile"
+      - "sudo swapon /swapfile"
+      - "echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
+    skip_allowed: true
+
+  - name: "Enable Automatic Security Updates"
+    description: "Configure unattended-upgrades for security patches"
+    commands:
+      - "sudo apt-get install -y unattended-upgrades"
+      - "sudo dpkg-reconfigure -plow unattended-upgrades"
+    skip_allowed: true
