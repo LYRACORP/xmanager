@@ -375,7 +375,7 @@ func (m *Model) View() string {
 		Height(m.viewport.Height + 2).
 		Render(m.viewport.View())
 
-	inLabel := "Message"
+	var inLabel string
 	if m.focusInput {
 		inLabel = theme.KeyStyle().Render("Message") + theme.DescStyle().Render(" (focused)")
 	} else {

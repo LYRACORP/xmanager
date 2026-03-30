@@ -83,7 +83,7 @@ func (e *Executor) Stream(cmd string) (io.Reader, func(), error) {
 	}
 
 	cleanup := func() {
-		session.Signal(ssh.SIGINT)
+		_ = session.Signal(ssh.SIGINT)
 		session.Close()
 	}
 

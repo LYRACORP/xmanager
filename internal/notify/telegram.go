@@ -54,7 +54,9 @@ func (t *Telegram) sendMessage(text string) error {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decoding Telegram response: %w", err)
+	}
 
 	if !result.OK {
 		return fmt.Errorf("Telegram API error: %s", result.Description)
