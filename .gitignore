@@ -1,6 +1,7 @@
 # Binary
-xmanager
-vpsm
+/xmanager
+/vpsm
+bin/
 dist/
 
 # Go
