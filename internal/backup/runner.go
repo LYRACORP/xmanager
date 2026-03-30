@@ -26,7 +26,7 @@ func (r *Runner) BackupPostgres(dbName, destDir string) (string, int64, error) {
 	}
 
 	var size int64
-	fmt.Sscanf(result.Stdout, "%d", &size)
+	_, _ = fmt.Sscanf(result.Stdout, "%d", &size)
 	return path, size, nil
 }
 
@@ -41,7 +41,7 @@ func (r *Runner) BackupMySQL(dbName, destDir string) (string, int64, error) {
 	}
 
 	var size int64
-	fmt.Sscanf(result.Stdout, "%d", &size)
+	_, _ = fmt.Sscanf(result.Stdout, "%d", &size)
 	return path, size, nil
 }
 
@@ -56,7 +56,7 @@ func (r *Runner) BackupMongoDB(dbName, destDir string) (string, int64, error) {
 	}
 
 	var size int64
-	fmt.Sscanf(result.Stdout, "%d", &size)
+	_, _ = fmt.Sscanf(result.Stdout, "%d", &size)
 	return path, size, nil
 }
 
@@ -72,7 +72,7 @@ func (r *Runner) BackupDockerVolume(volumeName, destDir string) (string, int64, 
 	}
 
 	var size int64
-	fmt.Sscanf(result.Stdout, "%d", &size)
+	_, _ = fmt.Sscanf(result.Stdout, "%d", &size)
 	return path, size, nil
 }
 

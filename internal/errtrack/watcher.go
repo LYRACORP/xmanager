@@ -51,10 +51,10 @@ func (w *Watcher) Watch(exec *ssh.Executor, service, command string) error {
 		for scanner.Scan() {
 			line := scanner.Text()
 			if severity := detectSeverity(line); severity != "" {
-				w.tracker.Record(w.serverID, service, line, "", severity)
+				_ = w.tracker.Record(w.serverID, service, line, "", severity)
 
 				if w.notifier != nil && (severity == "error" || severity == "critical") {
-					w.notifier.Send(notify.Alert{
+					_ = w.notifier.Send(notify.Alert{
 						ServerName: w.serverName,
 						Service:    service,
 						Title:      strings.ToUpper(severity) + " detected",
