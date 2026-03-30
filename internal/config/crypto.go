@@ -26,10 +26,18 @@ func machineID() string {
 		if err == nil {
 			raw = string(data)
 		}
+	case "windows":
+		// This is a simple fallback for Windows without adding heavy registry dependencies
+		// In a real app, you'd use golang.org/x/sys/windows/registry
+		raw = os.Getenv("COMPUTERNAME") + os.Getenv("PROCESSOR_IDENTIFIER")
 	}
 	if raw == "" {
-		home, _ := os.UserHomeDir()
-		raw = "xmanager-fallback-" + home
+		home, err := os.UserHomeDir()
+		if err != nil {
+			raw = "xmanager-fallback-global"
+		} else {
+			raw = "xmanager-fallback-" + home
+		}
 	}
 	return raw
 }
