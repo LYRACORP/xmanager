@@ -8,7 +8,8 @@ import (
 )
 
 type PostgresManager struct {
-	exec *ssh.Executor
+	exec           *ssh.Executor
+	serverPassword string // optional; from server tags (postgres_password=...)
 }
 
 func (p *PostgresManager) Type() DBType { return PostgreSQL }
@@ -17,14 +18,102 @@ func (p *PostgresManager) IsAvailable() bool {
 	return p.exec.RunQuiet("which psql") != ""
 }
 
+func (p *PostgresManager) effectivePassword() string {
+	if p.serverPassword != "" {
+		return p.serverPassword
+	}
+	return p.discoverPostgresPassword()
+}
+
+func (p *PostgresManager) psqlQuery(sql string) (*ssh.ExecResult, error) {
+	password := p.effectivePassword()
+	psql := postgresPSQLArgs(password)
+	inner := fmt.Sprintf(`%s -c %s`, psql, shellQuote(sql))
+	env := postgresEnvPrefix(password)
+
+	attempts := []string{
+		"sudo -n -u postgres " + env + " " + inner,
+		"sudo -u postgres " + env + " " + inner,
+		"runuser -u postgres -- " + env + " " + inner,
+	}
+	if password != "" {
+		// password auth without sudo (SSH user may have PGPASSWORD + network access)
+		attempts = append(attempts,
+			"env PGPASSWORD="+shellQuote(password)+" "+inner,
+		)
+	}
+
+	var last *ssh.ExecResult
+	var lastErr error
+	for _, cmd := range attempts {
+		res, err := p.exec.Run(cmd)
+		last = res
+		lastErr = err
+		if err != nil {
+			continue
+		}
+		if res.ExitCode == 0 {
+			return res, nil
+		}
+		// skip password-prompt noise; try next strategy
+		if strings.Contains(res.Stderr, "Password for user") {
+			continue
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	if last != nil && last.ExitCode != 0 {
+		hint := "could not connect to PostgreSQL as OS user postgres (peer auth) or with .pgpass"
+		if password == "" {
+			hint = "PostgreSQL requires a password for user postgres — add credentials to ~postgres/.pgpass on the server (host:port:db:user:password) or configure local peer auth in pg_hba.conf"
+		}
+		if err := requireOK(last, nil, hint); err != nil {
+			return nil, err
+		}
+	}
+	return last, nil
+}
+
+func (p *PostgresManager) runAsPostgres(shellCmd string) error {
+	password := p.effectivePassword()
+	env := postgresEnvPrefix(password)
+	attempts := []string{
+		"sudo -n -u postgres " + env + " " + shellCmd,
+		"sudo -u postgres " + env + " " + shellCmd,
+	}
+	var last *ssh.ExecResult
+	var lastErr error
+	for _, cmd := range attempts {
+		res, err := p.exec.Run(cmd)
+		last = res
+		lastErr = err
+		if err != nil {
+			continue
+		}
+		if res.ExitCode == 0 {
+			return nil
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return requireOK(last, nil, "postgres command failed")
+}
+
 func (p *PostgresManager) ListDatabases() ([]Database, error) {
-	result, err := p.exec.Run("sudo -u postgres psql -t -A -c \"SELECT datname, pg_catalog.pg_get_userbyid(datdba), pg_size_pretty(pg_database_size(datname)) FROM pg_database WHERE datistemplate = false ORDER BY datname\" 2>/dev/null")
+	result, err := p.psqlQuery(`SELECT datname, pg_catalog.pg_get_userbyid(datdba), pg_size_pretty(pg_database_size(datname)) FROM pg_database WHERE datistemplate = false ORDER BY datname`)
 	if err != nil {
 		return nil, err
 	}
 
 	var dbs []Database
 	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		parts := strings.SplitN(line, "|", 3)
 		if len(parts) < 3 || parts[0] == "" {
 			continue
@@ -35,23 +124,25 @@ func (p *PostgresManager) ListDatabases() ([]Database, error) {
 }
 
 func (p *PostgresManager) CreateDatabase(name string) error {
-	_, err := p.exec.Run(fmt.Sprintf("sudo -u postgres createdb %s", name))
-	return err
+	return p.runAsPostgres(fmt.Sprintf("createdb %s", name))
 }
 
 func (p *PostgresManager) DropDatabase(name string) error {
-	_, err := p.exec.Run(fmt.Sprintf("sudo -u postgres dropdb %s", name))
-	return err
+	return p.runAsPostgres(fmt.Sprintf("dropdb %s", name))
 }
 
 func (p *PostgresManager) ListUsers() ([]DBUser, error) {
-	result, err := p.exec.Run("sudo -u postgres psql -t -A -c \"SELECT usename, CASE WHEN usesuper THEN 'superuser' ELSE 'user' END FROM pg_user ORDER BY usename\" 2>/dev/null")
+	result, err := p.psqlQuery(`SELECT rolname, CASE WHEN rolsuper THEN 'superuser' WHEN rolcanlogin THEN 'login' ELSE 'role' END FROM pg_roles WHERE rolcanlogin OR rolsuper ORDER BY rolname`)
 	if err != nil {
 		return nil, err
 	}
 
 	var users []DBUser
 	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		parts := strings.SplitN(line, "|", 2)
 		if len(parts) < 2 || parts[0] == "" {
 			continue
@@ -62,19 +153,14 @@ func (p *PostgresManager) ListUsers() ([]DBUser, error) {
 }
 
 func (p *PostgresManager) CreateUser(name, password string) error {
-	cmd := fmt.Sprintf("sudo -u postgres psql -c \"CREATE USER %s WITH PASSWORD '%s'\"", name, password)
-	_, err := p.exec.Run(cmd)
-	return err
+	cmd := fmt.Sprintf(`psql -w -c %s`, shellQuote(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", name, password)))
+	return p.runAsPostgres(cmd)
 }
 
 func (p *PostgresManager) Backup(dbName, destPath string) error {
-	cmd := fmt.Sprintf("sudo -u postgres pg_dump %s | gzip > %s", dbName, destPath)
-	_, err := p.exec.Run(cmd)
-	return err
+	return p.runAsPostgres(fmt.Sprintf("pg_dump %s | gzip > %s", dbName, destPath))
 }
 
 func (p *PostgresManager) Restore(dbName, srcPath string) error {
-	cmd := fmt.Sprintf("gunzip -c %s | sudo -u postgres psql %s", srcPath, dbName)
-	_, err := p.exec.Run(cmd)
-	return err
+	return p.runAsPostgres(fmt.Sprintf("gunzip -c %s | psql -w %s", shellQuote(srcPath), dbName))
 }

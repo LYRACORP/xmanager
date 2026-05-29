@@ -18,8 +18,8 @@ func (m *MongoManager) IsAvailable() bool {
 }
 
 func (m *MongoManager) ListDatabases() ([]Database, error) {
-	result, err := m.exec.Run("mongosh --quiet --eval 'JSON.stringify(db.adminCommand({listDatabases:1}))' 2>/dev/null")
-	if err != nil {
+	result, err := m.exec.Run("mongosh --quiet --eval 'JSON.stringify(db.adminCommand({listDatabases:1}))'")
+	if err := requireOK(result, err, "mongosh listDatabases failed"); err != nil {
 		return nil, err
 	}
 
@@ -57,8 +57,8 @@ func (m *MongoManager) DropDatabase(name string) error {
 }
 
 func (m *MongoManager) ListUsers() ([]DBUser, error) {
-	result, err := m.exec.Run("mongosh admin --quiet --eval 'JSON.stringify(db.getUsers())' 2>/dev/null")
-	if err != nil {
+	result, err := m.exec.Run("mongosh admin --quiet --eval 'JSON.stringify(db.getUsers())'")
+	if err := requireOK(result, err, "mongosh getUsers failed"); err != nil {
 		return nil, err
 	}
 

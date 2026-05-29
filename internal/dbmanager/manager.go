@@ -34,14 +34,32 @@ type Manager interface {
 }
 
 func NewManager(dbType DBType, exec *ssh.Executor) Manager {
+	return NewManagerWithOptions(dbType, exec, ManagerOptions{})
+}
+
+// ManagerOptions carries optional credentials for database engines.
+type ManagerOptions struct {
+	PostgresPassword string
+}
+
+func NewManagerWithOptions(dbType DBType, exec *ssh.Executor, opts ManagerOptions) Manager {
 	switch dbType {
 	case PostgreSQL:
-		return &PostgresManager{exec: exec}
+		return &PostgresManager{exec: exec, serverPassword: opts.PostgresPassword}
 	case MySQL:
 		return &MySQLManager{exec: exec}
 	case MongoDB:
 		return &MongoManager{exec: exec}
 	default:
 		return nil
+	}
+}
+
+// DetectAvailable reports which database clients are installed on the remote host.
+func DetectAvailable(exec *ssh.Executor) map[DBType]bool {
+	return map[DBType]bool{
+		PostgreSQL: NewManager(PostgreSQL, exec).IsAvailable(),
+		MySQL:      NewManager(MySQL, exec).IsAvailable(),
+		MongoDB:    NewManager(MongoDB, exec).IsAvailable(),
 	}
 }
