@@ -18,7 +18,7 @@ import (
 )
 
 type profileLoadedMsg struct {
-	profile *storage.ServerProfile
+	profile  *storage.ServerProfile
 	services []mapService
 	parseErr error
 }
@@ -34,7 +34,7 @@ type Model struct {
 	ctx           *shared.AppContext
 	width, height int
 	services      []mapService
-	svcTable      table.Model
+	svcTable      components.ListTable
 	profile       *storage.ServerProfile
 	parseErr      string
 }
@@ -45,6 +45,18 @@ func New(ctx *shared.AppContext) *Model {
 
 func (m *Model) Name() string     { return "Server Map" }
 func (m *Model) SetSize(w, h int) { m.width, m.height = w, h; m.rebuildTable() }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "enter", Desc: "open docker context"},
+		{Key: "p", Desc: "pm2"},
+		{Key: "l", Desc: "logs"},
+		{Key: "d", Desc: "dashboard"},
+		{Key: "r", Desc: "reload"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
 	return m.loadProfile
@@ -67,13 +79,15 @@ func (m *Model) loadProfile() tea.Msg {
 }
 
 func (m *Model) rebuildTable() {
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	localChrome := components.FrameChromeRows(true) + 1
+	h := layout.BodyHeight(m.height, localChrome, 5)
+	cols := []table.Column{
 		{Title: " ", Width: 3},
 		{Title: "Service", Width: 22},
 		{Title: "Tech", Width: 24},
 		{Title: "Port", Width: 0},
 		{Title: "Status", Width: 0},
-	})
+	}
 	rows := make([]table.Row, len(m.services))
 	for i, s := range m.services {
 		active := statusActive(s.Status)
@@ -93,8 +107,7 @@ func (m *Model) rebuildTable() {
 			s.Status,
 		}
 	}
-	h := layout.TableHeight(m.height, 10, 5)
-	m.svcTable = components.StyledTable(cols, rows, h)
+	m.svcTable = m.svcTable.SetData(m.width, cols, rows, h)
 }
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
@@ -162,13 +175,11 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) View() string {
-	title := theme.ScreenChrome("Server Map", "AI recon profile", m.width)
+	localChrome := components.FrameChromeRows(true) + 1
 
-	meta := ""
+	subtitle := "AI recon profile"
 	if m.profile != nil {
-		meta = theme.MutedText().Render(
-			fmt.Sprintf("  Scanned: %s", m.profile.ScannedAt.Format("2006-01-02 15:04")),
-		)
+		subtitle = fmt.Sprintf("AI recon profile · scanned %s", m.profile.ScannedAt.Format("2006-01-02 15:04"))
 	}
 
 	errLine := ""
@@ -177,40 +188,37 @@ func (m *Model) View() string {
 	}
 
 	if m.profile == nil && m.parseErr == "" && len(m.services) == 0 {
-		body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(
-			theme.MutedText().Render(
-				"  No server profile in database.\n  Run a scan or AI discovery for this host,\n  then open Server Map again.",
-			),
+		body := theme.MutedText().Render(
+			"  No server profile in database.\n  Run a scan or AI discovery for this host,\n  then open Server Map again.",
 		)
-		help := components.NewHelpBar(
-			components.KeyBinding{Key: "r", Desc: "reload"},
-			components.KeyBinding{Key: "b", Desc: "back"},
+		return lipgloss.JoinVertical(lipgloss.Left,
+			components.ScreenFrame{
+				Title:       "Server Map",
+				Subtitle:    subtitle,
+				Width:       m.width,
+				Body:        body,
+				LocalChrome: localChrome,
+			}.View(),
+			errLine,
 		)
-		help.Width = m.width
-		return lipgloss.JoinVertical(lipgloss.Left, title, body, errLine, help.View())
 	}
 
 	var body string
 	if len(m.services) == 0 {
-		body = components.EmptyState(m.width)
+		body = theme.EmptyStateText()
 	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.svcTable.View())
+		body = m.svcTable.View()
 	}
 
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "enter", Desc: "open docker context"},
-		components.KeyBinding{Key: "p/l", Desc: "pm2/logs"},
-		components.KeyBinding{Key: "d", Desc: "dashboard"},
-		components.KeyBinding{Key: "r", Desc: "reload"},
-		components.KeyBinding{Key: "b", Desc: "back"},
-	)
-	help.Width = m.width
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		title+meta,
-		body+errLine,
-		help.View(),
+	return lipgloss.JoinVertical(lipgloss.Left,
+		components.ScreenFrame{
+			Title:       "Server Map",
+			Subtitle:    subtitle,
+			Width:       m.width,
+			Body:        body,
+			LocalChrome: localChrome,
+		}.View(),
+		errLine,
 	)
 }
 
@@ -314,3 +322,5 @@ func dedupeStrings(in []string) []string {
 	}
 	return out
 }
+
+var _ shared.Screen = (*Model)(nil)

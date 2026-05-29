@@ -45,7 +45,7 @@ type Model struct {
 
 	width  int
 	height int
-	table  table.Model
+	table  components.ListTable
 
 	processes []pm2Proc
 
@@ -60,6 +60,18 @@ func New(ctx *shared.AppContext) *Model {
 
 func (m *Model) Name() string     { return "PM2" }
 func (m *Model) SetSize(w, h int) { m.width, m.height = w, h; m.rebuildTable() }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "r", Desc: "restart"},
+		{Key: "t", Desc: "stop"},
+		{Key: "d", Desc: "delete"},
+		{Key: "f", Desc: "flush logs"},
+		{Key: "ctrl+r", Desc: "refresh"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
 	return m.reloadCmd()
@@ -111,13 +123,21 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	title := theme.ScreenChrome("PM2", "process manager", m.width)
+	localChrome := components.FrameChromeRows(true) + 1
 	var body string
 	if len(m.processes) == 0 {
-		body = components.EmptyState(m.width)
+		body = theme.EmptyStateText()
 	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+		body = m.table.View()
 	}
+
+	out := components.ScreenFrame{
+		Title:       "PM2",
+		Subtitle:    "process manager",
+		Width:       m.width,
+		Body:        body,
+		LocalChrome: localChrome,
+	}.View()
 
 	msg := ""
 	if m.err != "" {
@@ -129,29 +149,20 @@ func (m *Model) View() string {
 		msg = "\n " + theme.MutedText().Render("Working…")
 	}
 
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "r", Desc: "restart"},
-		components.KeyBinding{Key: "t", Desc: "stop"},
-		components.KeyBinding{Key: "d", Desc: "delete"},
-		components.KeyBinding{Key: "f", Desc: "flush logs"},
-		components.KeyBinding{Key: "ctrl+r", Desc: "refresh"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, out, msg)
 }
 
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 8, 5)
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	localChrome := components.FrameChromeRows(true) + 1
+	h := layout.BodyHeight(m.height, localChrome, 5)
+	cols := []table.Column{
 		{Title: "ID", Width: 4},
 		{Title: "Name", Width: 22},
 		{Title: "Status", Width: 12},
 		{Title: "CPU%", Width: 8},
 		{Title: "Memory", Width: 12},
 		{Title: "Restarts", Width: 0},
-	})
+	}
 	rows := make([]table.Row, len(m.processes))
 	for i, p := range m.processes {
 		rows[i] = table.Row{
@@ -163,7 +174,7 @@ func (m *Model) rebuildTable() {
 			strconv.Itoa(p.PM2Env.RestartTime),
 		}
 	}
-	m.table = components.StyledTable(cols, rows, h)
+	m.table = m.table.SetData(m.width, cols, rows, h)
 }
 
 func fmtCPU(v float64) string {
@@ -316,3 +327,5 @@ func shellQuoteArg(s string) string {
 	}
 	return `'` + strings.ReplaceAll(s, `'`, `'"'"'`) + `'`
 }
+
+var _ shared.Screen = (*Model)(nil)

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/tui/components"
@@ -22,10 +21,10 @@ import (
 type SourceKind string
 
 const (
-	SourceDocker   SourceKind = "docker"
-	SourcePM2      SourceKind = "pm2"
-	SourceSystemd  SourceKind = "systemd"
-	SourceFile     SourceKind = "file"
+	SourceDocker  SourceKind = "docker"
+	SourcePM2     SourceKind = "pm2"
+	SourceSystemd SourceKind = "systemd"
+	SourceFile    SourceKind = "file"
 )
 
 type sourcePreset struct {
@@ -71,8 +70,8 @@ type Model struct {
 	width  int
 	height int
 
-	viewport viewport.Model
-	presets  []sourcePreset
+	scroll  components.ScrollView
+	presets []sourcePreset
 
 	// wanted[presetID] = user wants this source when not paused
 	wanted map[int]bool
@@ -109,6 +108,7 @@ func New(ctx *shared.AppContext) *Model {
 
 	m := &Model{
 		ctx:         ctx,
+		scroll:      components.NewScrollView(80, 20),
 		presets:     builtinPresets(),
 		wanted:      make(map[int]bool),
 		streams:     make(map[int]*streamSlot),
@@ -116,31 +116,42 @@ func New(ctx *shared.AppContext) *Model {
 		follow:      true,
 		searchInput: ti,
 	}
-	m.viewport.YPosition = 0
 	return m
 }
 
 func (m *Model) Name() string { return "Logs" }
 
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "1-4", Desc: "toggle source"},
+		{Key: "f", Desc: "follow"},
+		{Key: "p", Desc: "pause/resume"},
+		{Key: "/", Desc: "regex filter"},
+		{Key: "ctrl+u", Desc: "clear filter"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
+
 func (m *Model) SetSize(width, height int) {
 	m.width = width
 	m.height = height
-	m.layoutViewport()
+	m.layoutScroll()
 }
 
-func (m *Model) layoutViewport() {
+func (m *Model) layoutScroll() {
 	headerRows := 3
 	if m.searchMode {
 		headerRows++
 	}
 	vh := layout.TableHeight(m.height, headerRows+1, 3)
-	m.viewport.Width = layout.Clamp(10, m.width-4, m.width-2)
-	m.viewport.Height = vh
-	m.syncViewportContent()
+	scrollW := layout.Clamp(10, m.width-4, m.width-2)
+	m.scroll = m.scroll.SetSize(scrollW, vh)
+	m.syncScrollContent()
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.layoutViewport()
+	m.layoutScroll()
 	return nil
 }
 
@@ -154,16 +165,10 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateSearchKeys(msg)
 		}
 		return m.updateMainKeys(msg)
-
-	case tea.WindowSizeMsg:
-		m.SetSize(msg.Width, msg.Height)
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
 	}
 
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	m.scroll, cmd = m.scroll.Update(msg)
 	return m, cmd
 }
 
@@ -172,14 +177,14 @@ func (m *Model) updateSearchKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "esc":
 		m.searchMode = false
 		m.searchInput.Blur()
-		m.layoutViewport()
+		m.layoutScroll()
 		return m, nil
 	case "enter":
 		raw := strings.TrimSpace(m.searchInput.Value())
 		m.applySearchPattern(raw)
 		m.searchMode = false
 		m.searchInput.Blur()
-		m.layoutViewport()
+		m.layoutScroll()
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -211,6 +216,9 @@ func (m *Model) updateMainKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "f":
 		m.follow = !m.follow
 		m.status = fmt.Sprintf("follow: %v", m.follow)
+		if m.follow {
+			m.scroll = m.scroll.GotoBottom()
+		}
 		return m, nil
 
 	case "p":
@@ -227,29 +235,31 @@ func (m *Model) updateMainKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "/":
 		m.searchMode = true
 		m.searchInput.Focus()
-		m.layoutViewport()
+		m.layoutScroll()
 		return m, textinput.Blink
 
 	case "ctrl+u":
 		m.applySearchPattern("")
 		m.searchErr = ""
 		m.status = "search cleared"
-		m.syncViewportContent()
-		return m, nil
+		m.syncScrollContent()
+		return m, m.scroll.ScheduleFlush()
 
 	case "pgup", "b", "u":
 		m.follow = false
-		m.viewport.LineUp(3)
-		return m, nil
+		var cmd tea.Cmd
+		m.scroll, cmd = m.scroll.Update(msg)
+		return m, cmd
 	case "pgdown", "d", "ctrl+d":
-		m.viewport.LineDown(3)
-		return m, nil
+		var cmd tea.Cmd
+		m.scroll, cmd = m.scroll.Update(msg)
+		return m, cmd
 	case "home", "g":
 		m.follow = false
-		m.viewport.GotoTop()
+		m.scroll = m.scroll.SetYOffset(0)
 		return m, nil
 	case "end", "G":
-		m.viewport.GotoBottom()
+		m.scroll = m.scroll.GotoBottom()
 		return m, nil
 	}
 
@@ -261,10 +271,9 @@ func (m *Model) updateMainKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		}
 	}
 
-	// Delegate scroll keys to viewport when not searching
 	if keyScrollsViewport(msg) {
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.scroll, cmd = m.scroll.Update(msg)
 		if m.follow {
 			m.follow = false
 		}
@@ -388,7 +397,6 @@ func (m *Model) onStreamRead(msg streamReadMsg) (shared.Screen, tea.Cmd) {
 	}
 
 	if m.paused {
-		// Pause stops remote streams; drop any in-flight line.
 		return m, nil
 	}
 
@@ -406,11 +414,11 @@ func (m *Model) onStreamRead(msg streamReadMsg) (shared.Screen, tea.Cmd) {
 		Kind:     kind,
 		Raw:      msg.line,
 	})
-	m.syncViewportContent()
+	m.syncScrollContent()
 	if m.follow {
-		m.viewport.GotoBottom()
+		m.scroll = m.scroll.GotoBottom()
 	}
-	return m, m.scheduleRead(msg.presetID)
+	return m, tea.Batch(m.scroll.ScheduleFlush(), m.scheduleRead(msg.presetID))
 }
 
 func (m *Model) presetByID(id int) *sourcePreset {
@@ -465,8 +473,8 @@ func (m *Model) visibleLines() []logLine {
 	return out
 }
 
-func (m *Model) syncViewportContent() {
-	m.viewport.SetContent(m.renderLogBody())
+func (m *Model) syncScrollContent() {
+	m.scroll = m.scroll.SetContent(m.renderLogBody())
 }
 
 func (m *Model) renderLogBody() string {
@@ -554,20 +562,7 @@ func (m *Model) View() string {
 		searchRow = components.RenderInputPanel(input.View(), m.width, true)
 	}
 
-	vp := theme.ViewportStyle().
-		Width(layout.PanelWidth(m.width)).
-		Height(m.viewport.Height + 2).
-		Render(m.viewport.View())
-
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "1-4", Desc: "toggle source"},
-		components.KeyBinding{Key: "f", Desc: "follow"},
-		components.KeyBinding{Key: "p", Desc: "pause/resume"},
-		components.KeyBinding{Key: "/", Desc: "regex filter"},
-		components.KeyBinding{Key: "ctrl+u", Desc: "clear filter"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
+	vp := m.scroll.View()
 
 	extra := ""
 	if m.searchErr != "" {
@@ -577,9 +572,9 @@ func (m *Model) View() string {
 	}
 
 	if searchRow != "" {
-		return lipgloss.JoinVertical(lipgloss.Left, header, searchRow+extra, vp, help.View())
+		return lipgloss.JoinVertical(lipgloss.Left, header, searchRow+extra, vp)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header+extra, vp, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, header+extra, vp)
 }
 
 func (m *Model) metaLine() string {

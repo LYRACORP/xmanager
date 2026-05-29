@@ -196,7 +196,19 @@ func (m *Model) rebuildDirTable() {
 		}
 	}
 	h := m.dirTableHeight()
-	m.dirTable = components.StyledTable(cols, rows, h)
+	m.dirTable = m.dirTable.SetData(m.width, cols, rows, h)
+}
+
+func (m *Model) dirLocalChrome() int {
+	chrome := components.FrameChromeRows(true) + components.TabBarRows() + 2
+	if m.previewOpen && !m.previewOverlay {
+		chrome += 2
+	}
+	return chrome
+}
+
+func (m *Model) dirTableHeight() int {
+	return layout.BodyHeight(m.height, m.dirLocalChrome(), 5)
 }
 
 func dirIcon(kind string) string {
@@ -208,13 +220,6 @@ func dirIcon(kind string) string {
 	default:
 		return " "
 	}
-}
-
-func (m *Model) dirTableHeight() int {
-	if m.previewOpen && !m.previewOverlay {
-		return layout.TableHeight(m.height, 14, 5)
-	}
-	return layout.TableHeight(m.height, 12, 5)
 }
 
 func (m *Model) renderFiles() string {
@@ -241,7 +246,7 @@ func (m *Model) renderFiles() string {
 		leftW, rightW, stack := splitPanels(m.width, 1, 50, 28, 24)
 		listPanel := theme.PanelStyle().Width(leftW).Render(listContent)
 		previewTitle := theme.SubtitleStyle().Render(m.previewPath)
-		previewBody := theme.ViewportStyle().Width(rightW - 2).Render(m.previewVP.View())
+		previewBody := theme.ViewportStyle().Width(rightW - 2).Render(m.previewScroll.View())
 		previewPanel := theme.PanelStyle().Width(rightW).Render(previewTitle + "\n" + previewBody)
 		if stack {
 			return breadcrumb + "\n" + lipgloss.JoinVertical(lipgloss.Left, listPanel, previewPanel)
@@ -255,7 +260,7 @@ func (m *Model) renderFiles() string {
 	if m.previewOpen && m.previewOverlay {
 		overlay := theme.ActivePanelStyle().Width(m.width - 2).Render(
 			theme.SubtitleStyle().Render(m.previewPath) + "\n" +
-				theme.ViewportStyle().Width(m.width - 6).Render(m.previewVP.View()) + "\n" +
+				theme.ViewportStyle().Width(m.width - 6).Render(m.previewScroll.View()) + "\n" +
 				theme.MutedText().Render("  Esc close preview"),
 		)
 		out += "\n" + overlay

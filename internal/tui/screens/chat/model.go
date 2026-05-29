@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"gorm.io/gorm"
@@ -50,8 +49,8 @@ type Model struct {
 	width  int
 	height int
 
-	viewport viewport.Model
-	input    textinput.Model
+	scroll components.ScrollView
+	input  textinput.Model
 
 	session   storage.AISession
 	sessionID uint
@@ -69,14 +68,40 @@ func New(ctx *shared.AppContext) *Model {
 
 	m := &Model{
 		ctx:        ctx,
+		scroll:     components.NewScrollView(50, 10),
 		input:      ti,
 		focusInput: true,
 	}
-	m.viewport.MouseWheelEnabled = true
 	return m
 }
 
 func (m *Model) Name() string { return "AI Chat" }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "enter", Desc: "send"},
+		{Key: "tab", Desc: "focus"},
+		{Key: "ctrl+l", Desc: "clear"},
+		{Key: "pgup/pgdn", Desc: "scroll"},
+	}
+}
+
+func (m *Model) OnNavigate(params map[string]interface{}) {
+	if params == nil {
+		return
+	}
+	raw, ok := params["prefill"]
+	if !ok {
+		return
+	}
+	text, ok := raw.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		return
+	}
+	m.input.SetValue(text)
+	m.focusInput = true
+	m.input.Focus()
+}
 
 func (m *Model) SetSize(width, height int) {
 	m.width = width
@@ -85,11 +110,11 @@ func (m *Model) SetSize(width, height int) {
 }
 
 func (m *Model) layout() {
-	vh := layout.TableHeight(m.height, 6, 5)
-	m.viewport.Width = layout.Clamp(10, m.width-4, m.width-2)
-	m.viewport.Height = vh
+	scrollH := layout.TableHeight(m.height, 6, 5)
+	scrollW := layout.Clamp(10, m.width-4, m.width-2)
+	m.scroll = m.scroll.SetSize(scrollW, scrollH)
 	m.input = components.ApplyInputTheme(m.input, m.width, m.focusInput)
-	m.refreshViewportContent()
+	m.syncScrollContent()
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -169,9 +194,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			m.session.Title = "Chat"
 		}
 		m.status = ""
-		m.refreshViewportContent()
-		m.viewport.GotoBottom()
-		return m, nil
+		m.syncScrollContent()
+		m.scroll = m.scroll.GotoBottom()
+		return m, m.scroll.ScheduleFlush()
 
 	case sessionSavedMsg:
 		if msg.err != nil {
@@ -183,12 +208,6 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.updateKeys(msg)
-
-	case tea.WindowSizeMsg:
-		m.SetSize(msg.Width, msg.Height)
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
 	}
 
 	if m.focusInput {
@@ -197,7 +216,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		return m, cmd
 	}
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	m.scroll, cmd = m.scroll.Update(msg)
 	return m, cmd
 }
 
@@ -217,8 +236,8 @@ func (m *Model) updateKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 
 	case "ctrl+l":
 		m.messages = nil
-		m.refreshViewportContent()
-		return m, m.persistSession()
+		m.syncScrollContent()
+		return m, tea.Batch(m.scroll.ScheduleFlush(), m.persistSession())
 
 	case "enter":
 		if !m.focusInput {
@@ -231,36 +250,37 @@ func (m *Model) updateKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		m.input.SetValue("")
 		now := time.Now().UTC()
 		m.messages = append(m.messages, ChatMessage{Role: roleUser, Content: text, CreatedAt: now})
-		m.refreshViewportContent()
-		m.viewport.GotoBottom()
+		m.syncScrollContent()
+		m.scroll = m.scroll.GotoBottom()
 		reply := simulatedAssistantReply(m.ctx, text)
 		m.messages = append(m.messages, ChatMessage{
 			Role: roleAssistant, Content: reply, CreatedAt: time.Now().UTC(),
 		})
-		m.refreshViewportContent()
-		m.viewport.GotoBottom()
-		return m, m.persistSession()
+		m.syncScrollContent()
+		m.scroll = m.scroll.GotoBottom()
+		return m, tea.Batch(m.scroll.ScheduleFlush(), m.persistSession())
 	}
 
 	if !m.focusInput {
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.scroll, cmd = m.scroll.Update(msg)
 		return m, cmd
 	}
 
-	// Scroll chat while input focused
 	switch msg.String() {
 	case "pgup", "b":
-		m.viewport.LineUp(5)
-		return m, nil
+		var cmd tea.Cmd
+		m.scroll, cmd = m.scroll.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		return m, cmd
 	case "pgdown", "f":
-		m.viewport.LineDown(5)
-		return m, nil
+		var cmd tea.Cmd
+		m.scroll, cmd = m.scroll.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		return m, cmd
 	case "home", "g":
-		m.viewport.GotoTop()
+		m.scroll = m.scroll.SetYOffset(0)
 		return m, nil
 	case "end", "G":
-		m.viewport.GotoBottom()
+		m.scroll = m.scroll.GotoBottom()
 		return m, nil
 	}
 
@@ -322,8 +342,8 @@ func (m *Model) persistSession() tea.Cmd {
 	}
 }
 
-func (m *Model) refreshViewportContent() {
-	m.viewport.SetContent(m.renderMessages())
+func (m *Model) syncScrollContent() {
+	m.scroll = m.scroll.SetContent(m.renderMessages())
 }
 
 func (m *Model) renderMessages() string {
@@ -341,7 +361,7 @@ func (m *Model) renderMessages() string {
 func (m *Model) renderOneMessage(msg ChatMessage) string {
 	ts := msg.CreatedAt.Format("15:04:05")
 	content := strings.TrimSpace(msg.Content)
-	width := m.viewport.Width
+	width := m.scroll.Inner().Width
 	if width < 10 {
 		width = layout.Clamp(10, m.width-4, m.width-2)
 	}
@@ -366,10 +386,7 @@ func (m *Model) renderOneMessage(msg ChatMessage) string {
 func (m *Model) View() string {
 	title := theme.ScreenChrome("AI Chat", m.subtitleLine(), m.width)
 
-	vp := theme.ViewportStyle().
-		Width(layout.PanelWidth(m.width)).
-		Height(m.viewport.Height + 2).
-		Render(m.viewport.View())
+	vp := m.scroll.View()
 
 	inLabel := theme.MutedText().Render("Message (Tab to focus)")
 	if m.focusInput {
@@ -381,21 +398,12 @@ func (m *Model) View() string {
 		m.width, m.focusInput,
 	)
 
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "enter", Desc: "send"},
-		components.KeyBinding{Key: "tab", Desc: "focus"},
-		components.KeyBinding{Key: "ctrl+l", Desc: "clear"},
-		components.KeyBinding{Key: "pgup/pgdn", Desc: "scroll"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-
 	status := ""
 	if m.status != "" {
 		status = "\n" + theme.ErrorText().Render("  "+m.status)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, title+status, vp, inputBlock, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title+status, vp, inputBlock)
 }
 
 func (m *Model) subtitleLine() string {

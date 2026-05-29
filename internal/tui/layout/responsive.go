@@ -56,11 +56,7 @@ func SplitHorizontal(width, gap, leftPct, minLeft, minRight int) (leftW, rightW 
 }
 
 func TableHeight(totalHeight, reserved, floor int) int {
-	h := totalHeight - reserved
-	if h < floor {
-		return floor
-	}
-	return h
+	return BodyHeight(totalHeight, reserved, floor)
 }
 
 func GaugeWidth(totalWidth, count, gap, minEach int) int {

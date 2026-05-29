@@ -67,7 +67,7 @@ type Model struct {
 	width int
 	height int
 
-	table table.Model
+	table components.ListTable
 
 	containers []containerRow
 	compose    []composeProject
@@ -165,42 +165,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) View() string {
-	title := theme.ScreenChrome("Docker", "containers · compose · images", m.width)
-	tabs := m.renderTabs()
-	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
-
-	msg := ""
-	if m.err != "" {
-		msg = "\n " + theme.ErrorText().Render(m.err)
-	} else if m.status != "" {
-		msg = "\n " + theme.MutedText().Render(m.status)
-	}
-	if m.busy {
-		msg = "\n " + theme.MutedText().Render("Working…")
-	}
-
-	help := components.NewHelpBar(m.helpBindings()...)
-	help.Width = m.width
-
-	return lipgloss.JoinVertical(lipgloss.Left, title, tabs, body, msg, help.View())
-}
-
-func (m *Model) renderTabs() string {
-	names := []string{"Containers", "Compose", "Images"}
-	var parts []string
-	for i, n := range names {
-		st := theme.SubtitleStyle()
-		if viewTab(i) == m.tab {
-			st = theme.TitleStyle().Underline(true)
-		}
-		label := fmt.Sprintf("%d:%s", i+1, n)
-		parts = append(parts, st.Render(label))
-	}
-	return lipgloss.NewStyle().PaddingLeft(1).Render(strings.Join(parts, "  "))
-}
-
-func (m *Model) helpBindings() []components.KeyBinding {
+func (m *Model) KeyBindings() []components.KeyBinding {
 	base := []components.KeyBinding{
 		{Key: "tab", Desc: "next view"},
 		{Key: "1-3", Desc: "view"},
@@ -227,6 +192,54 @@ func (m *Model) helpBindings() []components.KeyBinding {
 	return base
 }
 
+func (m *Model) OnNavigate(params map[string]interface{}) {
+	if params == nil {
+		return
+	}
+	if t, ok := params["tab"].(int); ok && t >= 0 && t <= int(tabImages) {
+		m.tab = viewTab(t)
+		m.rebuildTable()
+	}
+}
+
+func (m *Model) localChrome() int {
+	n := components.FrameChromeRows(true) + components.TabBarRows()
+	if m.err != "" || m.status != "" || m.busy {
+		n++
+	}
+	return n
+}
+
+func (m *Model) tabBar() components.TabBar {
+	bar := components.NewTabBar([]components.TabItem{
+		{ID: int(tabContainers), Label: "[1] Containers"},
+		{ID: int(tabCompose), Label: "[2] Compose"},
+		{ID: int(tabImages), Label: "[3] Images"},
+	}, int(m.tab))
+	bar.Width = m.width
+	return bar
+}
+
+func (m *Model) View() string {
+	frame := components.ScreenFrame{
+		Title:       "Docker",
+		Subtitle:    "containers · compose · images",
+		Width:       m.width,
+		Body:        m.table.View(),
+		LocalChrome: m.localChrome(),
+	}
+	parts := []string{m.tabBar().View(), frame.View()}
+	if m.err != "" {
+		parts = append(parts, " "+theme.ErrorText().Render(m.err))
+	} else if m.status != "" {
+		parts = append(parts, " "+theme.MutedText().Render(m.status))
+	}
+	if m.busy {
+		parts = append(parts, " "+theme.MutedText().Render("Working…"))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
 func (m *Model) nextTab() {
 	m.tab = (m.tab + 1) % 3
 	m.rebuildTable()
@@ -243,17 +256,17 @@ func (m *Model) setTab(t viewTab) {
 }
 
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 10, 5)
+	h := layout.BodyHeight(m.height, m.localChrome(), 5)
 
 	switch m.tab {
 	case tabContainers:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "ID", Width: 14},
 			{Title: "Names", Width: 22},
 			{Title: "State", Width: 10},
 			{Title: "Status", Width: 28},
 			{Title: "Image", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.containers))
 		for i, c := range m.containers {
 			id := c.ID
@@ -262,32 +275,32 @@ func (m *Model) rebuildTable() {
 			}
 			rows[i] = table.Row{id, c.Names, c.State, c.Status, c.Image}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 
 	case tabCompose:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "Project", Width: 20},
 			{Title: "Status", Width: 22},
 			{Title: "Config", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.compose))
 		for i, p := range m.compose {
 			rows[i] = table.Row{p.Name, p.Status, truncate(p.ConfigFiles, 46)}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 
 	case tabImages:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "Repository", Width: 28},
 			{Title: "Tag", Width: 14},
 			{Title: "ID", Width: 14},
 			{Title: "Size", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.images))
 		for i, im := range m.images {
 			rows[i] = table.Row{im.Repository, im.Tag, shortID(im.ID, 12), im.Size}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 	}
 }
 

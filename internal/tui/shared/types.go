@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/tui/components"
 	"gorm.io/gorm"
 )
 
@@ -46,6 +47,8 @@ type Screen interface {
 	View() string
 	SetSize(width, height int)
 	Name() string
+	KeyBindings() []components.KeyBinding
+	OnNavigate(params map[string]interface{})
 }
 
 // NavigateMsg tells the app to switch to a different screen.

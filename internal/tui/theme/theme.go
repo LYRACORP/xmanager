@@ -6,6 +6,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	PadXS = 0
+	PadSM = 1
+	PadMD = 2
+	PadLG = 3
+)
+
 type Theme struct {
 	Name       string
 	Primary    lipgloss.Color
@@ -21,41 +28,44 @@ type Theme struct {
 	Background lipgloss.Color
 	Surface    lipgloss.Color
 	Border     lipgloss.Color
+	Selection  lipgloss.Color
 }
 
-// Dark is the cyberpunk palette (config key remains "dark").
+// Dark is the minimal dark palette (config key remains "dark").
 var Dark = Theme{
 	Name:       "dark",
-	Primary:    lipgloss.Color("#FF00FF"),
-	Secondary:  lipgloss.Color("#00FFFF"),
-	Accent:     lipgloss.Color("#FFE600"),
-	Success:    lipgloss.Color("#39FF14"),
-	Warning:    lipgloss.Color("#FF6B00"),
-	Error:      lipgloss.Color("#FF0040"),
-	Critical:   lipgloss.Color("#CC0022"),
-	Muted:      lipgloss.Color("#6B7280"),
-	Text:       lipgloss.Color("#E0E0FF"),
-	TextDim:    lipgloss.Color("#6B7280"),
-	Background: lipgloss.Color("#0A0A0F"),
-	Surface:    lipgloss.Color("#12121A"),
-	Border:     lipgloss.Color("#2D2D44"),
+	Primary:    lipgloss.Color("#D4A574"),
+	Secondary:  lipgloss.Color("#A0A0A0"),
+	Accent:     lipgloss.Color("#D4A574"),
+	Success:    lipgloss.Color("#6A9955"),
+	Warning:    lipgloss.Color("#CCA700"),
+	Error:      lipgloss.Color("#F14C4C"),
+	Critical:   lipgloss.Color("#C42B1C"),
+	Muted:      lipgloss.Color("#858585"),
+	Text:       lipgloss.Color("#E8E8E8"),
+	TextDim:    lipgloss.Color("#858585"),
+	Background: lipgloss.Color("#1E1E1E"),
+	Surface:    lipgloss.Color("#252526"),
+	Border:     lipgloss.Color("#3C3C3C"),
+	Selection:  lipgloss.Color("#2A2D2E"),
 }
 
 var Light = Theme{
 	Name:       "light",
 	Primary:    lipgloss.Color("#7C3AED"),
-	Secondary:  lipgloss.Color("#0891B2"),
-	Accent:     lipgloss.Color("#D97706"),
+	Secondary:  lipgloss.Color("#6B7280"),
+	Accent:     lipgloss.Color("#7C3AED"),
 	Success:    lipgloss.Color("#059669"),
 	Warning:    lipgloss.Color("#D97706"),
 	Error:      lipgloss.Color("#DC2626"),
 	Critical:   lipgloss.Color("#B91C1C"),
 	Muted:      lipgloss.Color("#9CA3AF"),
-	Text:       lipgloss.Color("#111827"),
+	Text:       lipgloss.Color("#1A1A1A"),
 	TextDim:    lipgloss.Color("#6B7280"),
-	Background: lipgloss.Color("#FFFFFF"),
-	Surface:    lipgloss.Color("#F3F4F6"),
-	Border:     lipgloss.Color("#D1D5DB"),
+	Background: lipgloss.Color("#FAFAFA"),
+	Surface:    lipgloss.Color("#F0F0F0"),
+	Border:     lipgloss.Color("#E5E7EB"),
+	Selection:  lipgloss.Color("#E8E4F0"),
 }
 
 var Current = Dark
@@ -69,20 +79,18 @@ func SetTheme(name string) {
 	}
 }
 
-func GaugeFillChar() string { return "▓" }
+func GaugeFillChar() string  { return "▓" }
 func GaugeEmptyChar() string { return "░" }
 
 func EmptyStateText() string {
 	return MutedText().Render("— no data —")
 }
 
-// --- Reusable Style Functions ---
-
 func HeaderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Bold(true).
-		Foreground(Current.Primary).
-		PaddingLeft(1)
+		Foreground(Current.Text).
+		PaddingLeft(PadSM)
 }
 
 func TitleStyle() lipgloss.Style {
@@ -104,31 +112,30 @@ func PanelStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Border(border).
 		BorderForeground(Current.Border).
-		Padding(0, 1)
+		Padding(PadXS, PadMD)
 }
 
 func ActivePanelStyle() lipgloss.Style {
 	return PanelStyle().
-		BorderForeground(Current.Primary)
+		BorderForeground(Current.Accent)
 }
 
 func AppHeaderStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Background(Current.Surface).
-		Foreground(Current.Primary).
-		Bold(true).
+		Foreground(Current.Text).
 		Width(width).
-		Padding(0, 1).
+		Padding(PadXS, PadMD).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderBottom(true).
-		BorderForeground(Current.Primary)
+		BorderForeground(Current.Border)
 }
 
 func AppFooterStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Background(Current.Background).
 		Width(width).
-		Padding(0, 1).
+		Padding(PadXS, PadMD).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderTop(true).
 		BorderForeground(Current.Border)
@@ -145,7 +152,7 @@ func Divider(width int) string {
 		width = 1
 	}
 	line := strings.Repeat("─", width)
-	return lipgloss.NewStyle().Foreground(Current.Secondary).Render(line)
+	return lipgloss.NewStyle().Foreground(Current.Border).Render(line)
 }
 
 func ScreenChrome(title, subtitle string, width int) string {
@@ -153,14 +160,15 @@ func ScreenChrome(title, subtitle string, width int) string {
 	var parts []string
 	parts = append(parts, header)
 	if subtitle != "" {
-		parts = append(parts, SubtitleStyle().PaddingLeft(1).Render(subtitle))
+		parts = append(parts, SubtitleStyle().PaddingLeft(PadSM).Render(subtitle))
 	}
-	divW := width - 2
-	if divW < 10 {
-		divW = 10
-	}
-	parts = append(parts, " "+Divider(divW))
 	return strings.Join(parts, "\n")
+}
+
+func SelectedRowStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(Current.Text).
+		Background(Current.Selection)
 }
 
 func InputStyle() lipgloss.Style {
@@ -172,19 +180,19 @@ func InputStyle() lipgloss.Style {
 func InputFocusedStyle() lipgloss.Style {
 	return InputStyle().
 		Bold(true).
-		Foreground(Current.Secondary)
+		Foreground(Current.Accent)
 }
 
 func ViewportStyle() lipgloss.Style {
 	return PanelStyle().
 		BorderForeground(Current.Border).
-		Padding(0, 1)
+		Padding(PadXS, PadMD)
 }
 
 func MessageStyle(role string) lipgloss.Style {
 	switch role {
 	case "user":
-		return lipgloss.NewStyle().Foreground(Current.Secondary).Bold(true)
+		return lipgloss.NewStyle().Foreground(Current.Accent).Bold(true)
 	case "assistant":
 		return lipgloss.NewStyle().Foreground(Current.Text)
 	case "system":
@@ -213,7 +221,7 @@ func BadgeStyle(color lipgloss.Color) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(Current.Text).
 		Background(color).
-		Padding(0, 1).
+		Padding(PadXS, PadSM).
 		Bold(true)
 }
 

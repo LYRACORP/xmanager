@@ -25,7 +25,7 @@ type Model struct {
 	height  int
 	message string
 	servers []storage.Server
-	table   table.Model
+	table   components.ListTable
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -34,6 +34,15 @@ func New(ctx *shared.AppContext) *Model {
 
 func (m *Model) Name() string     { return "Multi-Server" }
 func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "enter", Desc: "open dashboard"},
+		{Key: "r", Desc: "refresh"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
 	return m.loadServers
@@ -77,14 +86,15 @@ func humanSince(t time.Time) string {
 }
 
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 8, 5)
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	localChrome := components.FrameChromeRows(true) + 1
+	h := layout.BodyHeight(m.height, localChrome, 5)
+	cols := []table.Column{
 		{Title: "  ", Width: 3},
 		{Title: "Name", Width: 18},
 		{Title: "Host", Width: 22},
 		{Title: "User", Width: 12},
 		{Title: "Summary", Width: 0},
-	})
+	}
 	rows := make([]table.Row, len(m.servers))
 	for i, s := range m.servers {
 		rows[i] = table.Row{
@@ -95,7 +105,7 @@ func (m *Model) rebuildTable() {
 			m.summary(s),
 		}
 	}
-	m.table = components.StyledTable(cols, rows, h)
+	m.table = m.table.SetData(m.width, cols, rows, h)
 }
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
@@ -136,22 +146,26 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	title := theme.ScreenChrome("All servers", "multi-server overview", m.width)
+	localChrome := components.FrameChromeRows(true) + 1
 	var body string
 	if len(m.servers) == 0 {
-		body = components.EmptyState(m.width)
+		body = theme.EmptyStateText()
 	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+		body = m.table.View()
 	}
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "enter", Desc: "open dashboard"},
-		components.KeyBinding{Key: "r", Desc: "refresh"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-	msg := ""
+
+	out := components.ScreenFrame{
+		Title:       "All servers",
+		Subtitle:    "multi-server overview",
+		Width:       m.width,
+		Body:        body,
+		LocalChrome: localChrome,
+	}.View()
+
 	if m.message != "" {
-		msg = "\n " + m.message
+		return lipgloss.JoinVertical(lipgloss.Left, out, "\n "+m.message)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
+	return out
 }
+
+var _ shared.Screen = (*Model)(nil)

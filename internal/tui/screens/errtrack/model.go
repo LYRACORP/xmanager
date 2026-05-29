@@ -43,7 +43,7 @@ type loadedMsg struct {
 
 type Model struct {
 	ctx    *shared.AppContext
-	table  table.Model
+	table  components.ListTable
 	rows   []groupedErr
 	mode   mode
 	width  int
@@ -57,6 +57,18 @@ func New(ctx *shared.AppContext) *Model {
 
 func (m *Model) Name() string     { return "Error Tracker" }
 func (m *Model) SetSize(w, h int) { m.width, m.height = w, h; m.rebuildTable() }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "v", Desc: "details"},
+		{Key: "m", Desc: "mute"},
+		{Key: "x", Desc: "resolve"},
+		{Key: "a", Desc: "ask AI"},
+		{Key: "r", Desc: "refresh"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
 	return m.load
@@ -140,7 +152,9 @@ func severityRank(s string) int {
 }
 
 func (m *Model) rebuildTable() {
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	localChrome := components.FrameChromeRows(true)
+	h := layout.BodyHeight(m.height, localChrome, 5)
+	cols := []table.Column{
 		{Title: "Severity", Width: 10},
 		{Title: "Svc", Width: 10},
 		{Title: "Message", Width: 28},
@@ -148,7 +162,7 @@ func (m *Model) rebuildTable() {
 		{Title: "First", Width: 0},
 		{Title: "Last", Width: 0},
 		{Title: "Flags", Width: 0},
-	})
+	}
 	trows := make([]table.Row, len(m.rows))
 	for i, r := range m.rows {
 		msg := r.message
@@ -175,8 +189,7 @@ func (m *Model) rebuildTable() {
 			flags,
 		}
 	}
-	h := layout.TableHeight(m.height, 8, 5)
-	m.table = components.StyledTable(cols, trows, h)
+	m.table = m.table.SetData(m.width, cols, trows, h)
 }
 
 func trunc(s string, n int) string {
@@ -339,54 +352,71 @@ func (m *Model) setResolved(v bool) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	title := theme.ScreenChrome("Error Tracker", "grouped error events", m.width)
 	if m.ctx.ServerID == 0 {
-		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
-		help.Width = m.width
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.WarningText().Render("  Select a connected server."), "", help.View())
+		return components.ScreenFrame{
+			Title:    "Error Tracker",
+			Subtitle: "grouped error events",
+			Width:    m.width,
+			Body:     theme.WarningText().Render("  Select a connected server."),
+		}.View()
 	}
 	switch m.mode {
 	case modeDetail:
-		return m.viewDetail(title)
+		return m.viewDetail()
 	case modeConfirmMute:
-		return m.viewConfirm(title, "Mute all events with this fingerprint?")
+		return m.viewConfirm("Mute all events with this fingerprint?")
 	case modeConfirmResolve:
-		return m.viewConfirm(title, "Mark all events with this fingerprint as resolved?")
+		return m.viewConfirm("Mark all events with this fingerprint as resolved?")
 	default:
-		return m.viewTable(title)
+		return m.viewTable()
 	}
 }
 
-func (m *Model) viewTable(title string) string {
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "v", Desc: "details"},
-		components.KeyBinding{Key: "m", Desc: "mute"},
-		components.KeyBinding{Key: "x", Desc: "resolve"},
-		components.KeyBinding{Key: "a", Desc: "ask AI"},
-		components.KeyBinding{Key: "r", Desc: "refresh"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
+func (m *Model) viewTable() string {
+	localChrome := components.FrameChromeRows(true)
+	var body string
 	if len(m.rows) == 0 {
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", components.EmptyState(m.width), "", help.View())
+		body = theme.EmptyStateText()
+	} else {
+		body = m.table.View()
 	}
-	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, "", help.View())
+	return components.ScreenFrame{
+		Title:       "Error Tracker",
+		Subtitle:    "grouped error events",
+		Width:       m.width,
+		Body:        body,
+		LocalChrome: localChrome,
+	}.View()
 }
 
-func (m *Model) viewDetail(title string) string {
-	sub := theme.SubtitleStyle().Render(fmt.Sprintf("Service: %s  Severity: %s", m.detail.Service, m.detail.Severity))
-	body := theme.PanelStyle().Width(m.width - 2).Render(
-		theme.TitleStyle().Render("Message") + "\n" + m.detail.Message + "\n\n" +
-			theme.TitleStyle().Render("Stack") + "\n" + strings.TrimSpace(m.detail.StackTrace),
-	)
+func (m *Model) viewDetail() string {
+	sub := fmt.Sprintf("Service: %s  Severity: %s", m.detail.Service, m.detail.Severity)
+	body := theme.TitleStyle().Render("Message") + "\n" + m.detail.Message + "\n\n" +
+		theme.TitleStyle().Render("Stack") + "\n" + strings.TrimSpace(m.detail.StackTrace)
 	foot := theme.MutedText().Render("  Esc: close")
-	return lipgloss.JoinVertical(lipgloss.Left, title, sub, "", body, "", foot)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		components.ScreenFrame{
+			Title:    "Error Tracker",
+			Subtitle: sub,
+			Width:    m.width,
+			Body:     body,
+		}.View(),
+		"",
+		foot,
+	)
 }
 
-func (m *Model) viewConfirm(title, q string) string {
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.WarningText().Render("  "+q), "",
-		theme.MutedText().Render("  y: yes  n/esc: cancel"))
+func (m *Model) viewConfirm(q string) string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		components.ScreenFrame{
+			Title:    "Error Tracker",
+			Subtitle: "grouped error events",
+			Width:    m.width,
+			Body:     theme.WarningText().Render("  " + q),
+		}.View(),
+		"",
+		theme.MutedText().Render("  y: yes  n/esc: cancel"),
+	)
 }
 
 var _ shared.Screen = (*Model)(nil)

@@ -35,6 +35,14 @@ func (r *Router) Reset(screen shared.ScreenID) {
 	r.stack = []shared.ScreenID{screen}
 }
 
+func (r *Router) Replace(screen shared.ScreenID) {
+	if len(r.stack) == 0 {
+		r.stack = []shared.ScreenID{screen}
+		return
+	}
+	r.stack[len(r.stack)-1] = screen
+}
+
 func (r *Router) Depth() int {
 	return len(r.stack)
 }
