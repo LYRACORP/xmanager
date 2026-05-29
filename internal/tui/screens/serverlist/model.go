@@ -49,7 +49,7 @@ type testResultMsg struct {
 
 type Model struct {
 	ctx            *shared.AppContext
-	table          table.Model
+	table          components.ListTable
 	servers        []storage.Server
 	mode           mode
 	form           [fieldCount]textinput.Model
@@ -85,8 +85,38 @@ func (m *Model) initForm() {
 	m.form[fieldKeyPath].SetValue("~/.ssh/id_rsa")
 }
 
-func (m *Model) Name() string        { return "Server List" }
-func (m *Model) SetSize(w, h int)    { m.width = w; m.height = h; m.rebuildTable() }
+func (m *Model) Name() string     { return "Server List" }
+func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	switch m.mode {
+	case modeList:
+		return []components.KeyBinding{
+			{Key: "a", Desc: "add"},
+			{Key: "e", Desc: "edit"},
+			{Key: "d", Desc: "delete"},
+			{Key: "t", Desc: "test"},
+			{Key: "enter", Desc: "connect"},
+			{Key: "q", Desc: "quit"},
+		}
+	case modeAdd, modeEdit:
+		return []components.KeyBinding{
+			{Key: "tab", Desc: "next field"},
+			{Key: "shift+tab", Desc: "prev field"},
+			{Key: "enter", Desc: "save"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	case modeConfirmDelete:
+		return []components.KeyBinding{
+			{Key: "y", Desc: "confirm delete"},
+			{Key: "n", Desc: "cancel"},
+		}
+	default:
+		return nil
+	}
+}
 
 func (m *Model) Init() tea.Cmd {
 	return m.loadServers
@@ -98,8 +128,14 @@ func (m *Model) loadServers() tea.Msg {
 	return serversLoadedMsg{servers: servers}
 }
 
+func (m *Model) listLocalChrome() int {
+	return components.FrameChromeRows(true) + 1 // +1 status/message line
+}
+
 func (m *Model) rebuildTable() {
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	localChrome := m.listLocalChrome()
+	h := layout.BodyHeight(m.height, localChrome, 5)
+	cols := []table.Column{
 		{Title: "  ", Width: 3},
 		{Title: "Name", Width: 18},
 		{Title: "Host", Width: 20},
@@ -107,7 +143,7 @@ func (m *Model) rebuildTable() {
 		{Title: "User", Width: 12},
 		{Title: "Tags", Width: 15},
 		{Title: "Last Seen", Width: 0},
-	})
+	}
 	rows := make([]table.Row, len(m.servers))
 	for i, s := range m.servers {
 		status := theme.StatusDot(s.IsActive)
@@ -117,8 +153,13 @@ func (m *Model) rebuildTable() {
 		}
 		rows[i] = table.Row{status, s.Name, s.Host, fmt.Sprintf("%d", s.Port), s.User, s.Tags, lastSeen}
 	}
-	h := layout.TableHeight(m.height, 8, 5)
-	m.table = components.StyledTable(cols, rows, h)
+	m.table = m.table.SetData(m.width, cols, rows, h)
+	m.table = m.table.SetFocused(m.mode == modeList)
+}
+
+func (m *Model) setMode(next mode) {
+	m.mode = next
+	m.table = m.table.SetFocused(next == modeList)
 }
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
@@ -172,14 +213,14 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "a":
-		m.mode = modeAdd
+		m.setMode(modeAdd)
 		m.initForm()
 		m.formIdx = 0
 		m.form[0].Focus()
 		return m, nil
 	case "e":
 		if idx := m.table.Cursor(); idx < len(m.servers) {
-			m.mode = modeEdit
+			m.setMode(modeEdit)
 			m.editID = m.servers[idx].ID
 			m.populateForm(m.servers[idx])
 			m.formIdx = 0
@@ -188,7 +229,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		return m, nil
 	case "d", "delete":
 		if idx := m.table.Cursor(); idx < len(m.servers) {
-			m.mode = modeConfirmDelete
+			m.setMode(modeConfirmDelete)
 			m.editID = m.servers[idx].ID
 		}
 		return m, nil
@@ -215,7 +256,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 func (m *Model) updateForm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.mode = modeList
+		m.setMode(modeList)
 		return m, nil
 	case "tab", "down":
 		m.form[m.formIdx].Blur()
@@ -246,10 +287,10 @@ func (m *Model) updateDelete(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "y", "Y":
 		m.ctx.DB.Delete(&storage.Server{}, m.editID)
 		m.ctx.Pool.Disconnect(m.editID)
-		m.mode = modeList
+		m.setMode(modeList)
 		return m, m.loadServers
 	default:
-		m.mode = modeList
+		m.setMode(modeList)
 	}
 	return m, nil
 }
@@ -280,7 +321,7 @@ func (m *Model) saveServer() tea.Cmd {
 		} else {
 			m.ctx.DB.Create(&srv)
 		}
-		m.mode = modeList
+		m.setMode(modeList)
 		var servers []storage.Server
 		m.ctx.DB.Order("name asc").Find(&servers)
 		return serversLoadedMsg{servers: servers}
@@ -307,29 +348,21 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewList() string {
-	title := theme.ScreenChrome("Servers", "manage SSH connections", m.width)
-	var body string
-	if len(m.servers) == 0 {
-		body = components.EmptyState(m.width)
-	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	frame := components.ScreenFrame{
+		Title:       "Servers",
+		Subtitle:    "manage SSH connections",
+		Width:       m.width,
+		Body:        m.table.View(),
+		LocalChrome: m.listLocalChrome(),
 	}
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "a", Desc: "add"},
-		components.KeyBinding{Key: "e", Desc: "edit"},
-		components.KeyBinding{Key: "d", Desc: "delete"},
-		components.KeyBinding{Key: "t", Desc: "test"},
-		components.KeyBinding{Key: "enter", Desc: "connect"},
-	)
-	help.Width = m.width
-	msg := ""
+	parts := []string{frame.View()}
 	if m.message != "" {
-		msg = "\n " + m.message
+		parts = append(parts, " "+m.message)
 	}
 	if m.mode == modeConfirmDelete {
-		msg += "\n\n " + theme.WarningText().Render("Delete this server? (y/n)")
+		parts = append(parts, "", " "+theme.WarningText().Render("Delete this server? (y/n)"))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m *Model) viewForm() string {

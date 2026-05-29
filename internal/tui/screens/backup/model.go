@@ -45,7 +45,7 @@ type Model struct {
 	message string
 
 	backups []storage.Backup
-	table   table.Model
+	table   components.ListTable
 
 	typeIdx int
 	svcIn   textinput.Model
@@ -138,9 +138,17 @@ func ageShort(t time.Time) string {
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
+func (m *Model) localChrome() int {
+	n := components.FrameChromeRows(true)
+	if m.message != "" {
+		n++
+	}
+	return n
+}
+
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 8, 5)
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	h := layout.BodyHeight(m.height, m.localChrome(), 5)
+	cols := []table.Column{
 		{Title: "Type", Width: 10},
 		{Title: "Service", Width: 14},
 		{Title: "Path", Width: 22},
@@ -148,7 +156,7 @@ func (m *Model) rebuildTable() {
 		{Title: "Age", Width: 12},
 		{Title: "Schedule", Width: 0},
 		{Title: "Status", Width: 0},
-	})
+	}
 	rows := make([]table.Row, len(m.backups))
 	for i, b := range m.backups {
 		rows[i] = table.Row{
@@ -161,7 +169,8 @@ func (m *Model) rebuildTable() {
 			b.Status,
 		}
 	}
-	m.table = components.StyledTable(cols, rows, h)
+	m.table = m.table.SetData(m.width, cols, rows, h)
+	m.table = m.table.SetFocused(m.mode == modeList)
 }
 
 func trimW(s string, w int) string {
@@ -406,13 +415,18 @@ func (m *Model) View() string {
 	case modeFormCreate:
 		return m.viewFormCreate()
 	case modeFormSchedule:
-		header := theme.ScreenChrome("Schedule", "backup cron", m.width)
 		input := components.RenderInputPanel(
 			components.ApplyInputTheme(m.scheduleEdit, m.width, true).View(),
 			m.width, true,
 		)
+		frame := components.ScreenFrame{
+			Title:    "Schedule",
+			Subtitle: "backup cron",
+			Width:    m.width,
+			Body:     input,
+		}
 		foot := theme.MutedText().Render("  Enter: save  Esc: cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", input, "", foot)
+		return lipgloss.JoinVertical(lipgloss.Left, frame.View(), foot)
 	case modeConfirmDelete:
 		return m.viewList() + "\n\n " + theme.WarningText().Render("Delete this backup record? (y/n)")
 	case modeConfirmRestore:
@@ -423,7 +437,6 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewFormCreate() string {
-	header := theme.ScreenChrome("Create backup", "new backup job", m.width)
 	typeLine := fmt.Sprintf("  Type: %s  (%s)", backupTypes[m.typeIdx], theme.MutedText().Render("t: cycle"))
 	inputs := []textinput.Model{m.svcIn, m.pathIn, m.schedIn}
 	var lines []string
@@ -433,34 +446,57 @@ func (m *Model) viewFormCreate() string {
 		lines = append(lines, components.RenderFormField("", styled.View(), m.width, m.formIdx == i))
 	}
 	form := strings.Join(lines, "\n")
+	frame := components.ScreenFrame{
+		Title:    "Create backup",
+		Subtitle: "new backup job",
+		Width:    m.width,
+		Body:     form,
+	}
 	foot := theme.MutedText().Render("  Tab: field  t: type  Enter: save  Esc: cancel")
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", form, "", foot)
+	return lipgloss.JoinVertical(lipgloss.Left, frame.View(), foot)
 }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	switch m.mode {
+	case modeFormCreate, modeFormSchedule:
+		return []components.KeyBinding{
+			{Key: "enter", Desc: "save"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	case modeConfirmDelete, modeConfirmRestore:
+		return []components.KeyBinding{
+			{Key: "y/n", Desc: "confirm"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	default:
+		return []components.KeyBinding{
+			{Key: "c", Desc: "create"},
+			{Key: "R", Desc: "restore"},
+			{Key: "d", Desc: "delete"},
+			{Key: "s", Desc: "schedule"},
+			{Key: "r", Desc: "refresh"},
+			{Key: "esc", Desc: "back"},
+		}
+	}
+}
+
+func (m *Model) OnNavigate(params map[string]interface{}) {}
 
 func (m *Model) viewList() string {
 	subtitle := "backup records"
 	if m.ctx.ServerID > 0 {
 		subtitle = fmt.Sprintf("server %d", m.ctx.ServerID)
 	}
-	title := theme.ScreenChrome("Backups", subtitle, m.width)
-	var body string
-	if len(m.backups) == 0 {
-		body = components.EmptyState(m.width)
-	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	frame := components.ScreenFrame{
+		Title:       "Backups",
+		Subtitle:    subtitle,
+		Width:       m.width,
+		Body:        m.table.View(),
+		LocalChrome: m.localChrome(),
 	}
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "c", Desc: "create"},
-		components.KeyBinding{Key: "R", Desc: "restore"},
-		components.KeyBinding{Key: "d", Desc: "delete"},
-		components.KeyBinding{Key: "s", Desc: "schedule"},
-		components.KeyBinding{Key: "r", Desc: "refresh"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-	msg := ""
+	parts := []string{frame.View()}
 	if m.message != "" {
-		msg = "\n " + m.message
+		parts = append(parts, " "+m.message)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

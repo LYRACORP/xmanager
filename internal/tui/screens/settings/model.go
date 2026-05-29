@@ -37,14 +37,14 @@ type saveStatusMsg struct {
 }
 
 type Model struct {
-	ctx     *shared.AppContext
-	form    [fieldCount]textinput.Model
-	focus   int
-	width   int
-	height     int
-	status     string
+	ctx         *shared.AppContext
+	form        [fieldCount]textinput.Model
+	focus       int
+	width       int
+	height      int
+	status      string
 	statusIsErr bool
-	tgOn       bool
+	tgOn        bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -58,7 +58,7 @@ func (m *Model) initForm() {
 	labels := [fieldCount]string{
 		"AI provider", "AI model", "API key", "Ollama host", "Max log lines",
 		"Telegram bot token", "Telegram chat ID", "Telegram enabled (space)",
-		"UI theme (cyberpunk/light)", "UI refresh rate (s)",
+		"UI theme (dark/light)", "UI refresh rate (s)",
 	}
 	for i := range m.form {
 		ti := textinput.New()
@@ -97,7 +97,18 @@ func (m *Model) syncTGEnabledField() {
 	m.form[fieldTGEnabled].SetValue(v)
 }
 
-func (m *Model) Name() string     { return "Settings" }
+func (m *Model) Name() string { return "Settings" }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "tab", Desc: "field"},
+		{Key: "enter", Desc: "save"},
+		{Key: "ctrl+s", Desc: "save"},
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
+
 func (m *Model) SetSize(w, h int) {
 	m.width, m.height = w, h
 	for i := range m.form {
@@ -221,7 +232,6 @@ func (m *Model) save() tea.Cmd {
 }
 
 func (m *Model) View() string {
-	header := theme.ScreenChrome("Settings", "app configuration", m.width)
 	var b strings.Builder
 	for i := range m.form {
 		fi := fieldIdx(i)
@@ -254,15 +264,14 @@ func (m *Model) View() string {
 			status = "\n " + theme.SuccessText().Render(m.status)
 		}
 	}
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "tab", Desc: "field"},
-		components.KeyBinding{Key: "enter", Desc: "save"},
-		components.KeyBinding{Key: "ctrl+s", Desc: "save"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
 	footer := theme.MutedText().Render("  API key and bot token are hidden while typing.")
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", b.String(), status, "", footer, help.View())
+	body := lipgloss.JoinVertical(lipgloss.Left, b.String(), status, "", footer)
+	return components.ScreenFrame{
+		Title:    "Settings",
+		Subtitle: "app configuration",
+		Width:    m.width,
+		Body:     body,
+	}.View()
 }
 
 var _ shared.Screen = (*Model)(nil)

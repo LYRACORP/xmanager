@@ -7,7 +7,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 	"gorm.io/gorm"
@@ -20,13 +22,15 @@ type AppOptions struct {
 }
 
 type App struct {
-	ctx       *shared.AppContext
-	router    *Router
-	screens   map[shared.ScreenID]shared.Screen
-	helpBar   components.HelpBar
-	width     int
-	height    int
-	ready     bool
+	ctx         *shared.AppContext
+	router      *Router
+	screens     map[shared.ScreenID]shared.Screen
+	statusBar   components.StatusBar
+	helpOverlay components.HelpOverlay
+	width       int
+	height      int
+	ready       bool
+	showHelp    bool
 }
 
 func newApp(opts AppOptions) *App {
@@ -39,15 +43,10 @@ func newApp(opts AppOptions) *App {
 	}
 
 	app := &App{
-		ctx:    ctx,
-		router: NewRouter(),
-		screens: make(map[shared.ScreenID]shared.Screen),
-		helpBar: components.NewHelpBar(
-			components.KeyBinding{Key: "?", Desc: "help"},
-			components.KeyBinding{Key: "ctrl+s", Desc: "servers"},
-			components.KeyBinding{Key: "ctrl+a", Desc: "AI chat"},
-			components.KeyBinding{Key: "q/esc", Desc: "back"},
-		),
+		ctx:       ctx,
+		router:    NewRouter(),
+		screens:   make(map[shared.ScreenID]shared.Screen),
+		statusBar: components.NewStatusBar(),
 	}
 
 	app.initScreens()
@@ -81,44 +80,112 @@ func (a *App) Init() tea.Cmd {
 	return screen.Init()
 }
 
+func (a *App) contentHeight() int {
+	return layout.ContentHeight(a.height)
+}
+
+func (a *App) globalBindings() []components.KeyBinding {
+	return []components.KeyBinding{
+		{Key: "?", Desc: "help"},
+		{Key: "ctrl+s", Desc: "servers"},
+		{Key: "ctrl+m", Desc: "multi-server"},
+		{Key: "ctrl+a", Desc: "AI chat"},
+		{Key: "esc", Desc: "back"},
+	}
+}
+
+func (a *App) mergedFooterBindings() []components.KeyBinding {
+	screen := a.screens[a.router.Current()]
+	bindings := screen.KeyBindings()
+	bindings = append(bindings, a.globalBindings()...)
+	return bindings
+}
+
+func (a *App) refreshStatusBar() {
+	a.statusBar.Width = a.width
+	if a.ctx.ServerID == 0 {
+		a.statusBar.ServerName = ""
+		a.statusBar.ServerHost = ""
+		a.statusBar.Connected = false
+		return
+	}
+	var srv storage.Server
+	if err := a.ctx.DB.First(&srv, a.ctx.ServerID).Error; err != nil {
+		return
+	}
+	_, ok := a.ctx.Pool.GetExecutor(a.ctx.ServerID)
+	a.statusBar.ServerName = srv.Name
+	a.statusBar.ServerHost = fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+	a.statusBar.Connected = ok
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		a.helpBar.Width = msg.Width
 		a.ready = true
-		contentHeight := a.height - 3
+		a.refreshStatusBar()
+		ch := a.contentHeight()
 		for _, s := range a.screens {
-			s.SetSize(a.width, contentHeight)
+			s.SetSize(a.width, ch)
 		}
+		a.helpOverlay.Width = a.width
+		a.helpOverlay.Height = a.height
 		return a, nil
 
 	case tea.KeyMsg:
+		if a.showHelp {
+			switch msg.String() {
+			case "?", "esc":
+				a.showHelp = false
+				return a, nil
+			}
+			return a, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			a.ctx.Pool.DisconnectAll()
 			return a, tea.Quit
+		case "?":
+			a.showHelp = true
+			a.helpOverlay = components.NewHelpOverlay(
+				a.router.Current().String()+" — shortcuts",
+				a.mergedFooterBindings(),
+			)
+			a.helpOverlay.Visible = true
+			a.helpOverlay.Width = a.width
+			a.helpOverlay.Height = a.height
+			return a, nil
 		case "ctrl+s":
-			return a, a.navigate(shared.ScreenServerList)
+			return a, a.replaceNavigate(shared.ScreenServerList, nil)
+		case "ctrl+m":
+			return a, a.replaceNavigate(shared.ScreenMultiServer, nil)
 		case "ctrl+a":
-			return a, a.navigate(shared.ScreenChat)
+			return a, a.replaceNavigate(shared.ScreenChat, nil)
 		}
 
 	case shared.NavigateMsg:
 		if msg.ServerID > 0 {
 			a.ctx.ServerID = msg.ServerID
+			a.refreshStatusBar()
 		}
-		return a, a.navigate(msg.Screen)
+		return a, a.navigate(msg.Screen, msg.Params)
 
 	case shared.GoBackMsg:
 		prev := a.router.Pop()
 		screen := a.screens[prev]
+		a.refreshStatusBar()
 		return a, screen.Init()
 
 	case shared.ConnectServerMsg:
 		a.ctx.ServerID = msg.ServerID
-		return a, a.navigate(shared.ScreenDashboard)
+		a.refreshStatusBar()
+		return a, a.navigate(shared.ScreenDashboard, nil)
+
+	case shared.ServerConnectedMsg:
+		a.refreshStatusBar()
 	}
 
 	current := a.router.Current()
@@ -135,30 +202,56 @@ func (a *App) View() string {
 
 	screen := a.screens[a.router.Current()]
 	header := a.renderHeader()
+	status := a.statusBar.View()
 	content := screen.View()
-	footer := a.helpBar.View()
+	helpBar := components.NewHelpBar(a.mergedFooterBindings()...)
+	helpBar.Width = a.width
+	footerView := helpBar.View()
 
-	inner := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
-	return theme.BackgroundStyle(a.width).Render(inner)
+	inner := lipgloss.JoinVertical(lipgloss.Left, header, status, content, footerView)
+	base := theme.BackgroundStyle(a.width).Render(inner)
+
+	if a.showHelp {
+		overlay := a.helpOverlay.View()
+		if overlay != "" {
+			return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, overlay)
+		}
+	}
+	return base
 }
 
 func (a *App) renderHeader() string {
 	title := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(theme.Current.Primary).
+		Foreground(theme.Current.Text).
 		Render("XManager")
 
 	screenName := lipgloss.NewStyle().
-		Foreground(theme.Current.Secondary).
+		Foreground(theme.Current.TextDim).
 		Render(fmt.Sprintf(" / %s", a.router.Current().String()))
 
 	return theme.AppHeaderStyle(a.width).Render(title + screenName)
 }
 
-func (a *App) navigate(screen shared.ScreenID) tea.Cmd {
+func (a *App) navigate(screen shared.ScreenID, params map[string]interface{}) tea.Cmd {
 	a.router.Push(screen)
 	s := a.screens[screen]
-	s.SetSize(a.width, a.height-3)
+	s.SetSize(a.width, a.contentHeight())
+	if params != nil {
+		s.OnNavigate(params)
+		a.screens[screen] = s
+	}
+	return s.Init()
+}
+
+func (a *App) replaceNavigate(screen shared.ScreenID, params map[string]interface{}) tea.Cmd {
+	a.router.Replace(screen)
+	s := a.screens[screen]
+	s.SetSize(a.width, a.contentHeight())
+	if params != nil {
+		s.OnNavigate(params)
+		a.screens[screen] = s
+	}
 	return s.Init()
 }
 

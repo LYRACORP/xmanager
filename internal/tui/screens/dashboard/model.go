@@ -4,11 +4,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lyracorp/xmanager/internal/storage"
+	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 )
 
@@ -55,20 +55,20 @@ type Model struct {
 	servicesState loadState
 	servicesErr   string
 	svcFilter     svcFilterMode
-	svcTable      table.Model
+	svcTable      components.ListTable
 
 	// files
 	curPath       string
 	dirEntries    []dirEntry
 	dirState      loadState
 	dirErr        string
-	dirTable      table.Model
+	dirTable      components.ListTable
 	dirLoaded     bool
 	previewOpen   bool
 	previewOverlay bool
 	previewPath   string
 	previewBody   string
-	previewVP     viewport.Model
+	previewScroll components.ScrollView
 	pathInput     textinput.Model
 	pathInputMode bool
 }
@@ -85,7 +85,6 @@ func New(ctx *shared.AppContext) *Model {
 		curPath: "/",
 		pathInput: ti,
 	}
-	m.previewVP = viewport.Model{}
 	return m
 }
 
@@ -96,8 +95,10 @@ func (m *Model) SetSize(w, h int) {
 	m.rebuildSvcTable()
 	m.rebuildDirTable()
 	if m.previewOpen {
-		m.previewVP.Width = m.previewWidth()
-		m.previewVP.Height = m.previewHeight()
+		w := m.previewWidth()
+		h := m.previewHeight()
+		m.previewScroll = m.previewScroll.SetSize(w, h)
+		m.previewScroll = m.previewScroll.SetContent(m.previewBody)
 	}
 	m.pathInput.Width = layoutInputWidth(w)
 }
@@ -206,10 +207,10 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.previewPath = msg.path
 		m.previewOpen = true
 		m.previewOverlay = layoutBreakpointNarrow(m.width)
-		m.previewVP.SetContent(m.previewBody)
-		m.previewVP.Width = m.previewWidth()
-		m.previewVP.Height = m.previewHeight()
-		m.previewVP.GotoBottom()
+		w := m.previewWidth()
+		h := m.previewHeight()
+		m.previewScroll = components.NewScrollView(w, h)
+		m.previewScroll = m.previewScroll.SetContent(m.previewBody).GotoBottom()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -222,7 +223,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 				return m, nil
 			}
 			var cmd tea.Cmd
-			m.previewVP, cmd = m.previewVP.Update(msg)
+			m.previewScroll, cmd = m.previewScroll.Update(msg)
 			return m, cmd
 		}
 		if nav, ok := m.handleKeys(msg); ok {
@@ -236,7 +237,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.svcTable, cmd = m.svcTable.Update(msg)
 	case tabFiles:
 		if m.previewOpen && !m.previewOverlay {
-			m.previewVP, cmd = m.previewVP.Update(msg)
+			m.previewScroll, cmd = m.previewScroll.Update(msg)
 		}
 		m.dirTable, cmd = m.dirTable.Update(msg)
 	}
@@ -318,6 +319,8 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 			m.pathInput.Focus()
 			return textinput.Blink, true
 		}
+		return nil, false
+	case "n":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenDatabase, ServerID: m.ctx.ServerID}
 		}, true
@@ -416,8 +419,39 @@ func (m *Model) previewWidth() int {
 }
 
 func (m *Model) previewHeight() int {
-	return m.height - 14
+	return layout.BodyHeight(m.height, m.dirLocalChrome()+2, 5)
 }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	switch m.tab {
+	case tabServices:
+		return []components.KeyBinding{
+			{Key: "a", Desc: "filter"},
+			{Key: "enter", Desc: "open"},
+			{Key: "r", Desc: "refresh"},
+			{Key: "1/2/3", Desc: "tabs"},
+			{Key: "b", Desc: "back"},
+		}
+	case tabFiles:
+		return []components.KeyBinding{
+			{Key: "enter", Desc: "open"},
+			{Key: "-", Desc: "up dir"},
+			{Key: "g", Desc: "go path"},
+			{Key: ".", Desc: "refresh"},
+			{Key: "b", Desc: "back"},
+		}
+	default:
+		return []components.KeyBinding{
+			{Key: "r", Desc: "refresh"},
+			{Key: "d/p/l", Desc: "docker/pm2/logs"},
+			{Key: "n", Desc: "database"},
+			{Key: "1/2/3", Desc: "tabs"},
+			{Key: "b", Desc: "back"},
+		}
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) View() string {
 	return renderDashboard(m)

@@ -67,7 +67,7 @@ func (m Modal) View() string {
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(theme.Current.Primary).
+		Foreground(theme.Current.Text).
 		Width(width - 4).
 		Align(lipgloss.Center)
 
@@ -95,7 +95,7 @@ func (m Modal) View() string {
 	}
 	box := lipgloss.NewStyle().
 		Border(border).
-		BorderForeground(theme.Current.Primary).
+		BorderForeground(theme.Current.Border).
 		Padding(1, 2).
 		Width(width).
 		Align(lipgloss.Center)

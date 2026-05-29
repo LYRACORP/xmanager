@@ -20,25 +20,16 @@ func NewStatusBar() StatusBar {
 
 func (s StatusBar) View() string {
 	style := lipgloss.NewStyle().
-		Background(theme.Current.Surface).
-		Foreground(theme.Current.Text).
+		Background(theme.Current.Background).
+		Foreground(theme.Current.TextDim).
 		Width(s.Width).
-		Padding(0, 1)
+		Padding(0, theme.PadMD)
 
-	left := ""
+	left := theme.MutedText().Render("  no server connected")
 	if s.ServerName != "" {
 		status := theme.StatusDot(s.Connected)
-		left = fmt.Sprintf("%s %s (%s)", status, s.ServerName, s.ServerHost)
-	} else {
-		left = theme.MutedText().Render("No server connected")
+		left = fmt.Sprintf("  %s %s · %s", status, s.ServerName, s.ServerHost)
 	}
 
-	right := fmt.Sprintf("XManager %s", "")
-
-	gap := s.Width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 0 {
-		gap = 0
-	}
-
-	return style.Render(left + fmt.Sprintf("%*s", gap, "") + right)
+	return style.Render(left)
 }

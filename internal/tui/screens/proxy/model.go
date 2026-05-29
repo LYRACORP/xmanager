@@ -81,7 +81,7 @@ type Model struct {
 	nginxRows   []nginxVhost
 	traefikRows []traefikRouter
 
-	table table.Model
+	table components.ListTable
 
 	viewingTitle string
 	viewingBody  string
@@ -351,28 +351,45 @@ func extractRoutersFromYAML(content, sourceFile string) []traefikRouter {
 	return rows
 }
 
+func (m *Model) localChrome() int {
+	n := components.FrameChromeRows(true) + components.TabBarRows()
+	if m.message != "" {
+		n++
+	}
+	return n
+}
+
+func (m *Model) tabBar() components.TabBar {
+	bar := components.NewTabBar([]components.TabItem{
+		{ID: int(tabNginx), Label: "[1] Nginx"},
+		{ID: int(tabTraefik), Label: "[2] Traefik"},
+	}, int(m.tab))
+	bar.Width = m.width
+	return bar
+}
+
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 10, 5)
+	h := layout.BodyHeight(m.height, m.localChrome(), 5)
 	switch m.tab {
 	case tabNginx:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "File", Width: 18},
 			{Title: "Domain", Width: 22},
 			{Title: "SSL", Width: 5},
 			{Title: "proxy_pass", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.nginxRows))
 		for i, v := range m.nginxRows {
 			rows[i] = table.Row{v.File, v.Domain, v.SSL, v.ProxyPass}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 	case tabTraefik:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "Router", Width: 16},
 			{Title: "Rule", Width: 28},
 			{Title: "Service", Width: 14},
 			{Title: "Config", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.traefikRows))
 		for i, r := range m.traefikRows {
 			cfg := r.SourceFile
@@ -381,8 +398,9 @@ func (m *Model) rebuildTable() {
 			}
 			rows[i] = table.Row{r.Name, r.Rule, r.Service, cfg}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 	}
+	m.table = m.table.SetFocused(m.mode == modeList)
 }
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
@@ -665,16 +683,26 @@ func (m *Model) runRenewSSL() tea.Cmd {
 func (m *Model) View() string {
 	switch m.mode {
 	case modeViewConfig:
-		title := theme.ScreenChrome("Config", m.viewingTitle, m.width)
-		body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.viewingBody)
+		frame := components.ScreenFrame{
+			Title:    "Config",
+			Subtitle: m.viewingTitle,
+			Width:    m.width,
+			Body:     m.viewingBody,
+		}
 		foot := theme.MutedText().Render("  Esc / Enter: close")
-		return lipgloss.JoinVertical(lipgloss.Left, title, body, foot)
+		return lipgloss.JoinVertical(lipgloss.Left, frame.View(), foot)
 	case modeAddVhost:
-		header := theme.ScreenChrome("Add Nginx vhost", "new reverse proxy entry", m.width)
 		domain := components.RenderFormField("", components.ApplyInputTheme(m.addDomain, m.width, true).View(), m.width, true)
 		upstream := components.RenderFormField("", components.ApplyInputTheme(m.addUpstream, m.width, false).View(), m.width, false)
+		formBody := lipgloss.JoinVertical(lipgloss.Left, domain, upstream)
+		frame := components.ScreenFrame{
+			Title:    "Add Nginx vhost",
+			Subtitle: "new reverse proxy entry",
+			Width:    m.width,
+			Body:     formBody,
+		}
 		foot := theme.MutedText().Render("  Tab: field  Enter: next / save  Esc: cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", domain, upstream, "", foot)
+		return lipgloss.JoinVertical(lipgloss.Left, frame.View(), foot)
 	case modeConfirmRemove:
 		return m.viewList() + "\n\n " + theme.WarningText().Render("Remove vhost file? (y/n)")
 	case modeRenewSSLWait:
@@ -684,43 +712,67 @@ func (m *Model) View() string {
 	}
 }
 
-func (m *Model) viewList() string {
-	tabBar := m.renderTabs()
-	title := theme.ScreenChrome("Reverse proxy", "nginx · traefik", m.width)
-	var body string
-	rowCount := len(m.nginxRows)
-	if m.tab == tabTraefik {
-		rowCount = len(m.traefikRows)
+func (m *Model) KeyBindings() []components.KeyBinding {
+	switch m.mode {
+	case modeViewConfig:
+		return []components.KeyBinding{
+			{Key: "esc", Desc: "close"},
+			{Key: "enter", Desc: "close"},
+		}
+	case modeAddVhost:
+		return []components.KeyBinding{
+			{Key: "tab", Desc: "field"},
+			{Key: "enter", Desc: "save"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	case modeConfirmRemove:
+		return []components.KeyBinding{
+			{Key: "y/n", Desc: "confirm"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	case modeRenewSSLWait:
+		return []components.KeyBinding{{Key: "esc", Desc: "cancel"}}
+	case modeList:
+		bindings := []components.KeyBinding{
+			{Key: "1/2", Desc: "nginx/traefik"},
+			{Key: "r", Desc: "refresh"},
+			{Key: "v", Desc: "view config"},
+			{Key: "esc", Desc: "back"},
+		}
+		if m.tab == tabNginx {
+			bindings = append([]components.KeyBinding{
+				{Key: "a", Desc: "add vhost"},
+				{Key: "x", Desc: "remove vhost"},
+				{Key: "s", Desc: "renew SSL"},
+			}, bindings...)
+		}
+		return bindings
+	default:
+		return []components.KeyBinding{{Key: "esc", Desc: "back"}}
 	}
-	if rowCount == 0 {
-		body = components.EmptyState(m.width)
-	} else {
-		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
-	}
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "1/2", Desc: "nginx/traefik"},
-		components.KeyBinding{Key: "r", Desc: "refresh"},
-		components.KeyBinding{Key: "v", Desc: "view config"},
-		components.KeyBinding{Key: "a", Desc: "add vhost"},
-		components.KeyBinding{Key: "x", Desc: "remove vhost"},
-		components.KeyBinding{Key: "s", Desc: "renew SSL"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-	msg := ""
-	if m.message != "" {
-		msg = "\n " + m.message
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, tabBar, body, msg, help.View())
 }
 
-func (m *Model) renderTabs() string {
-	nginx := theme.MutedText().Render("[1] Nginx")
-	traf := theme.MutedText().Render("[2] Traefik")
-	if m.tab == tabNginx {
-		nginx = theme.TitleStyle().Render("[1] Nginx")
-	} else {
-		traf = theme.TitleStyle().Render("[2] Traefik")
+func (m *Model) OnNavigate(params map[string]interface{}) {
+	if params == nil {
+		return
 	}
-	return lipgloss.NewStyle().PaddingLeft(1).Render(nginx + "    " + traf)
+	if t, ok := params["tab"].(int); ok && (t == int(tabNginx) || t == int(tabTraefik)) {
+		m.tab = proxyTab(t)
+		m.rebuildTable()
+	}
+}
+
+func (m *Model) viewList() string {
+	frame := components.ScreenFrame{
+		Title:       "Reverse proxy",
+		Subtitle:    "nginx · traefik",
+		Width:       m.width,
+		Body:        m.table.View(),
+		LocalChrome: m.localChrome(),
+	}
+	parts := []string{m.tabBar().View(), frame.View()}
+	if m.message != "" {
+		parts = append(parts, " "+m.message)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

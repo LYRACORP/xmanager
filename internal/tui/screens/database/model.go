@@ -80,7 +80,7 @@ type Model struct {
 	available map[dbmanager.DBType]bool
 	databases []dbmanager.Database
 	users     []dbmanager.DBUser
-	table     table.Model
+	table     components.ListTable
 
 	busy        bool
 	status      string
@@ -549,56 +549,153 @@ func (m *Model) runBackup(name string) tea.Cmd {
 	}
 }
 
+func (m *Model) localChrome() int {
+	n := components.FrameChromeRows(true) + 2*components.TabBarRows() + 1 // engines bar
+	if m.err != "" || m.status != "" || m.busy {
+		n++
+	}
+	return n
+}
+
+func (m *Model) engineTabBar() components.TabBar {
+	var tabs []components.TabItem
+	names := []string{"PostgreSQL", "MySQL", "MongoDB"}
+	for i, n := range names {
+		label := fmt.Sprintf("%d:%s", i+1, n)
+		if m.available != nil {
+			if m.available[engineDBType(engine(i))] {
+				label += " ✓"
+			} else {
+				label += " ✗"
+			}
+		}
+		tabs = append(tabs, components.TabItem{ID: i, Label: label})
+	}
+	bar := components.NewTabBar(tabs, int(m.eng))
+	bar.Width = m.width
+	return bar
+}
+
+func (m *Model) viewTabBar() components.TabBar {
+	bar := components.NewTabBar([]components.TabItem{
+		{ID: int(tabDatabases), Label: "[4] Databases"},
+		{ID: int(tabUsers), Label: "[5] Users"},
+	}, int(m.view))
+	bar.Width = m.width
+	return bar
+}
+
 func (m *Model) rebuildTable() {
-	h := layout.TableHeight(m.height, 14, 4)
+	h := layout.BodyHeight(m.height, m.localChrome(), 4)
 
 	switch m.view {
 	case tabUsers:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "User", Width: 24},
 			{Title: "Roles / Host", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.users))
 		for i, u := range m.users {
 			rows[i] = table.Row{u.Name, u.Roles}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
 	default:
-		cols := layout.AdaptiveColumns(m.width, []table.Column{
+		cols := []table.Column{
 			{Title: "Name", Width: 22},
 			{Title: "Owner", Width: 16},
 			{Title: "Size", Width: 0},
-		})
+		}
 		rows := make([]table.Row, len(m.databases))
 		for i, d := range m.databases {
 			rows[i] = table.Row{d.Name, d.Owner, d.Size}
 		}
-		m.table = components.StyledTable(cols, rows, h)
+		m.table = m.table.SetData(m.width, cols, rows, h)
+	}
+	m.table = m.table.SetFocused(m.mode == dbBrowse && !m.busy)
+}
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	if m.ctx.ServerID == 0 {
+		return []components.KeyBinding{{Key: "esc", Desc: "back"}}
+	}
+	switch m.mode {
+	case dbOutput:
+		return []components.KeyBinding{
+			{Key: "esc", Desc: "return"},
+			{Key: "enter", Desc: "return"},
+		}
+	case dbConfirmDrop:
+		return []components.KeyBinding{
+			{Key: "y/n", Desc: "confirm"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	case dbInputName:
+		return []components.KeyBinding{
+			{Key: "enter", Desc: "submit"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	default:
+		return m.helpBindings()
+	}
+}
+
+func (m *Model) OnNavigate(params map[string]interface{}) {
+	if params == nil {
+		return
+	}
+	if e, ok := params["engine"].(int); ok && e >= 0 && e <= int(engMongo) {
+		m.eng = engine(e)
+	}
+	if v, ok := params["view"].(int); ok && (v == int(tabDatabases) || v == int(tabUsers)) {
+		m.view = viewTab(v)
+	}
+	m.rebuildTable()
+}
+
+func (m *Model) chromeHeader() []string {
+	return []string{
+		m.engineTabBar().View(),
+		m.viewTabBar().View(),
+		m.renderEnginesBar(),
 	}
 }
 
 func (m *Model) View() string {
-	title := theme.ScreenChrome("Database Manager", m.engLabel()+" · "+m.viewLabel(), m.width)
+	subtitle := m.engLabel() + " · " + m.viewLabel()
 	if m.ctx.ServerID == 0 {
-		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
-		help.Width = m.width
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.WarningText().Render("  Connect to a server first."), "", help.View())
+		frame := components.ScreenFrame{
+			Title:    "Database Manager",
+			Subtitle: subtitle,
+			Width:    m.width,
+			Body:     theme.WarningText().Render("  Connect to a server first."),
+		}
+		return frame.View()
 	}
 
-	engTabs := m.renderEngineTabs()
-	viewTabs := m.renderViewTabs()
-	enginesBar := m.renderEnginesBar()
+	header := m.chromeHeader()
 
 	switch m.mode {
 	case dbOutput:
 		panel := theme.ViewportStyle().Width(layout.PanelWidth(m.width)).MaxHeight(m.height - 8).Render(m.lastOut)
+		frame := components.ScreenFrame{
+			Title:    "Database Manager",
+			Subtitle: subtitle,
+			Width:    m.width,
+			Body:     panel,
+		}
 		foot := theme.MutedText().Render("  Esc: return")
-		return lipgloss.JoinVertical(lipgloss.Left, title, engTabs, viewTabs, enginesBar, "", panel, "", foot)
+		return lipgloss.JoinVertical(lipgloss.Left, append(header, frame.View(), foot)...)
 
 	case dbConfirmDrop:
 		q := theme.WarningText().Render(fmt.Sprintf("  Drop database %q on %s? (y/n)", m.nameInput.Value(), m.engLabel()))
-		help := theme.MutedText().Render("  This is destructive.")
-		return lipgloss.JoinVertical(lipgloss.Left, title, engTabs, viewTabs, enginesBar, "", q, "", help)
+		hint := theme.MutedText().Render("  This is destructive.")
+		frame := components.ScreenFrame{
+			Title:    "Database Manager",
+			Subtitle: subtitle,
+			Width:    m.width,
+			Body:     lipgloss.JoinVertical(lipgloss.Left, q, hint),
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, append(header, frame.View())...)
 
 	case dbInputName:
 		input := components.RenderInputPanel(
@@ -606,36 +703,41 @@ func (m *Model) View() string {
 			m.width, true,
 		)
 		hint := theme.MutedText().Render(fmt.Sprintf("  %s — enter name, Esc cancel", m.pending))
-		return lipgloss.JoinVertical(lipgloss.Left, title, engTabs, viewTabs, enginesBar, "", input, "", hint)
+		frame := components.ScreenFrame{
+			Title:    "Database Manager",
+			Subtitle: subtitle,
+			Width:    m.width,
+			Body:     lipgloss.JoinVertical(lipgloss.Left, input, hint),
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, append(header, frame.View())...)
 
 	default:
-		body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+		body := m.table.View()
 		if !m.engineInstalled() && m.available != nil {
 			body = theme.WarningText().Render(fmt.Sprintf("  %s is not installed on this server.", m.engLabel()))
 		} else if m.loadAttempt && !m.busy && m.err == "" && m.rowCount() == 0 {
-			body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(
-				"  " + components.TableEmptyMessage(),
-			)
+			body = "  " + components.TableEmptyMessage()
 		} else if !m.loadAttempt && !m.busy {
-			body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(
-				"  " + theme.MutedText().Render("Loading…"),
-			)
+			body = "  " + theme.MutedText().Render("Loading…")
 		}
 
-		msg := ""
+		frame := components.ScreenFrame{
+			Title:       "Database Manager",
+			Subtitle:    subtitle,
+			Width:       m.width,
+			Body:        body,
+			LocalChrome: m.localChrome(),
+		}
+		parts := append(header, frame.View())
 		if m.err != "" {
-			msg = "\n " + theme.ErrorText().Render(m.err)
+			parts = append(parts, " "+theme.ErrorText().Render(m.err))
 		} else if m.status != "" {
-			msg = "\n " + theme.MutedText().Render(m.status)
+			parts = append(parts, " "+theme.MutedText().Render(m.status))
 		}
 		if m.busy {
-			msg = "\n " + theme.MutedText().Render("Loading…")
+			parts = append(parts, " "+theme.MutedText().Render("Loading…"))
 		}
-
-		help := components.NewHelpBar(m.helpBindings()...)
-		help.Width = m.width
-
-		return lipgloss.JoinVertical(lipgloss.Left, title, engTabs, viewTabs, enginesBar, body, msg, help.View())
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 }
 
@@ -671,27 +773,6 @@ func (m *Model) helpBindings() []components.KeyBinding {
 	}, base...)
 }
 
-func (m *Model) renderEngineTabs() string {
-	names := []string{"PostgreSQL", "MySQL", "MongoDB"}
-	var parts []string
-	for i, n := range names {
-		st := theme.MutedText()
-		if engine(i) == m.eng {
-			st = theme.HeaderStyle()
-		}
-		label := fmt.Sprintf("%d:%s", i+1, n)
-		if m.available != nil {
-			if m.available[engineDBType(engine(i))] {
-				label += " ✓"
-			} else {
-				label += " ✗"
-			}
-		}
-		parts = append(parts, st.Render(" "+label+" "))
-	}
-	return lipgloss.NewStyle().PaddingLeft(1).Render(strings.Join(parts, ""))
-}
-
 func engineDBType(eng engine) dbmanager.DBType {
 	switch eng {
 	case engMySQL:
@@ -701,19 +782,6 @@ func engineDBType(eng engine) dbmanager.DBType {
 	default:
 		return dbmanager.PostgreSQL
 	}
-}
-
-func (m *Model) renderViewTabs() string {
-	names := []string{"Databases", "Users"}
-	var parts []string
-	for i, n := range names {
-		st := theme.SubtitleStyle()
-		if viewTab(i) == m.view {
-			st = theme.TitleStyle().Underline(true)
-		}
-		parts = append(parts, st.Render(fmt.Sprintf("%d:%s", i+4, n)))
-	}
-	return lipgloss.NewStyle().PaddingLeft(1).Render(strings.Join(parts, "  "))
 }
 
 func (m *Model) renderEnginesBar() string {

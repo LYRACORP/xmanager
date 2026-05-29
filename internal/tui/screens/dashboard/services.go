@@ -12,7 +12,7 @@ import (
 )
 
 type serviceEntry struct {
-	kind   string // systemd | docker
+	kind   string
 	name   string
 	status string
 	detail string
@@ -162,6 +162,10 @@ func (m *Model) filteredServices() []serviceEntry {
 	}
 }
 
+func (m *Model) svcLocalChrome() int {
+	return components.FrameChromeRows(true) + components.TabBarRows() + 2
+}
+
 func (m *Model) rebuildSvcTable() {
 	filtered := m.filteredServices()
 	cols := layout.AdaptiveColumns(m.width, []table.Column{
@@ -181,21 +185,17 @@ func (m *Model) rebuildSvcTable() {
 			truncateStr(s.detail, 40),
 		}
 	}
-	h := layout.TableHeight(m.height, 12, 5)
-	m.svcTable = components.StyledTable(cols, rows, h)
+	h := layout.BodyHeight(m.height, m.svcLocalChrome(), 5)
+	m.svcTable = m.svcTable.SetData(m.width, cols, rows, h)
 }
 
 func (m *Model) renderServices() string {
 	filterLabel := theme.MutedText().Render("filter: " + m.svcFilter.label() + "  (a cycle)")
 	if m.servicesState == stateLoading && len(m.services) == 0 {
-		return filterLabel + "\n" + theme.MutedText().Render("  Loading services…")
+		return filterLabel + "\n" + loadingText("Loading services…")
 	}
 	if m.servicesState == stateError {
-		return filterLabel + "\n" + theme.ErrorText().Render("  "+m.servicesErr)
-	}
-	filtered := m.filteredServices()
-	if len(filtered) == 0 {
-		return filterLabel + "\n" + theme.EmptyStateText()
+		return filterLabel + "\n" + errorText(m.servicesErr)
 	}
 	return filterLabel + "\n" + m.svcTable.View()
 }

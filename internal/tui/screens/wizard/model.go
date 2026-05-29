@@ -91,8 +91,8 @@ type Model struct {
 	completed []bool
 	width     int
 	height    int
-	lastOut string
-	lastOK  bool
+	lastOut   string
+	lastOK    bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -102,7 +102,29 @@ func New(ctx *shared.AppContext) *Model {
 	}
 }
 
-func (m *Model) Name() string     { return "Setup Wizard" }
+func (m *Model) Name() string { return "Setup Wizard" }
+
+func (m *Model) KeyBindings() []components.KeyBinding {
+	switch m.mode {
+	case wizConfirm:
+		return []components.KeyBinding{
+			{Key: "y", Desc: "run"},
+			{Key: "n/esc", Desc: "cancel"},
+		}
+	case wizOutput:
+		return []components.KeyBinding{
+			{Key: "enter/esc", Desc: "return"},
+		}
+	default:
+		return []components.KeyBinding{
+			{Key: "↑↓", Desc: "step"},
+			{Key: "enter", Desc: "review & run"},
+		}
+	}
+}
+
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
+
 func (m *Model) SetSize(w, h int) { m.width, m.height = w, h }
 
 func (m *Model) Init() tea.Cmd { return nil }
@@ -204,21 +226,27 @@ func (m *Model) runStep(idx int) tea.Cmd {
 	}
 }
 
+func (m *Model) frame(subtitle, body string) string {
+	return components.ScreenFrame{
+		Title:    "Setup Wizard",
+		Subtitle: subtitle,
+		Width:    m.width,
+		Body:     body,
+	}.View()
+}
+
 func (m *Model) View() string {
-	title := theme.ScreenChrome("Setup Wizard", m.progressLine(), m.width)
 	if m.ctx.ServerID == 0 {
-		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
-		help.Width = m.width
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.WarningText().Render("  Connect to a server first."), "", help.View())
+		return m.frame(m.progressLine(), theme.WarningText().Render("Connect to a server first."))
 	}
 
 	switch m.mode {
 	case wizOutput:
-		return m.viewOutput(title)
+		return m.viewOutput()
 	case wizConfirm:
-		return m.viewConfirm(title)
+		return m.viewConfirm()
 	default:
-		return m.viewBrowse(title)
+		return m.viewBrowse()
 	}
 }
 
@@ -240,7 +268,7 @@ func (m *Model) progressLine() string {
 	return g.View() + theme.MutedText().Render(fmt.Sprintf("  %d/%d steps", done, total))
 }
 
-func (m *Model) viewBrowse(title string) string {
+func (m *Model) viewBrowse() string {
 	var lines []string
 	for i, s := range wizardSteps {
 		mark := theme.MutedText().Render("○")
@@ -253,17 +281,10 @@ func (m *Model) viewBrowse(title string) string {
 		}
 		lines = append(lines, line)
 	}
-	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(strings.Join(lines, "\n"))
-	help := components.NewHelpBar(
-		components.KeyBinding{Key: "↑↓", Desc: "step"},
-		components.KeyBinding{Key: "enter", Desc: "review & run"},
-		components.KeyBinding{Key: "esc", Desc: "back"},
-	)
-	help.Width = m.width
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", help.View())
+	return m.frame(m.progressLine(), strings.Join(lines, "\n"))
 }
 
-func (m *Model) viewConfirm(title string) string {
+func (m *Model) viewConfirm() string {
 	s := wizardSteps[m.stepIdx]
 	var cmdBlock strings.Builder
 	for _, c := range s.cmds {
@@ -271,20 +292,30 @@ func (m *Model) viewConfirm(title string) string {
 		cmdBlock.WriteString(c)
 		cmdBlock.WriteByte('\n')
 	}
-	prompt := theme.WarningText().Render("Run these commands on the remote host?")
-	help := theme.MutedText().Render("  y: run  n/esc: cancel")
-	cmdPanel := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(cmdBlock.String())
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.TitleStyle().Render(s.title), "", cmdPanel, "", prompt, "", help)
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		theme.TitleStyle().Render(s.title),
+		"",
+		cmdBlock.String(),
+		"",
+		theme.WarningText().Render("Run these commands on the remote host?"),
+		theme.MutedText().Render("  y: run  n/esc: cancel"),
+	)
+	return m.frame(m.progressLine(), body)
 }
 
-func (m *Model) viewOutput(title string) string {
+func (m *Model) viewOutput() string {
 	status := theme.ErrorText().Render("Failed")
 	if m.lastOK {
 		status = theme.SuccessText().Render("Completed")
 	}
-	panel := theme.ViewportStyle().Width(layout.PanelWidth(m.width)).Render(m.lastOut)
-	footer := theme.MutedText().Render("  Enter / Esc: return")
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", status, "", panel, "", footer)
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		status,
+		"",
+		m.lastOut,
+		"",
+		theme.MutedText().Render("  Enter / Esc: return"),
+	)
+	return m.frame(m.progressLine(), body)
 }
 
 var _ shared.Screen = (*Model)(nil)
