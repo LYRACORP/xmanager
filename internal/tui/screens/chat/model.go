@@ -15,6 +15,7 @@ import (
 
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -84,16 +85,10 @@ func (m *Model) SetSize(width, height int) {
 }
 
 func (m *Model) layout() {
-	inputRows := 3
-	header := 2
-	help := 1
-	vh := m.height - header - inputRows - help
-	if vh < 5 {
-		vh = 5
-	}
-	m.viewport.Width = max(10, m.width-2)
+	vh := layout.TableHeight(m.height, 6, 5)
+	m.viewport.Width = layout.Clamp(10, m.width-4, m.width-2)
 	m.viewport.Height = vh
-	m.input.Width = max(20, m.width-6)
+	m.input = components.ApplyInputTheme(m.input, m.width, m.focusInput)
 	m.refreshViewportContent()
 }
 
@@ -333,7 +328,7 @@ func (m *Model) refreshViewportContent() {
 
 func (m *Model) renderMessages() string {
 	if len(m.messages) == 0 {
-		return theme.MutedText().Render("No messages yet. Type below and press Enter. Session is stored per server in the local database.")
+		return theme.EmptyStateText()
 	}
 	var b strings.Builder
 	for _, msg := range m.messages {
@@ -345,46 +340,45 @@ func (m *Model) renderMessages() string {
 
 func (m *Model) renderOneMessage(msg ChatMessage) string {
 	ts := msg.CreatedAt.Format("15:04:05")
+	content := strings.TrimSpace(msg.Content)
+	width := m.viewport.Width
+	if width < 10 {
+		width = layout.Clamp(10, m.width-4, m.width-2)
+	}
+	bodyStyle := theme.MessageStyle(msg.Role).Width(width)
+
 	switch msg.Role {
 	case roleUser:
-		head := theme.TitleStyle().Render(fmt.Sprintf("You · %s", ts))
-		body := lipgloss.NewStyle().Foreground(theme.Current.Text).Width(m.viewport.Width).Render(strings.TrimSpace(msg.Content))
-		return lipgloss.JoinVertical(lipgloss.Left, head, body)
+		head := theme.InfoBadge().Render("YOU") + " " + theme.MutedText().Render(ts)
+		return lipgloss.JoinVertical(lipgloss.Left, head, bodyStyle.Render(content))
 	case roleAssistant:
-		head := theme.HeaderStyle().Render(fmt.Sprintf("Assistant · %s", ts))
-		body := lipgloss.NewStyle().Foreground(theme.Current.TextDim).Width(m.viewport.Width).Render(strings.TrimSpace(msg.Content))
-		return lipgloss.JoinVertical(lipgloss.Left, head, body)
+		head := theme.SuccessBadge().Render("AI") + " " + theme.MutedText().Render(ts)
+		return lipgloss.JoinVertical(lipgloss.Left, head, bodyStyle.Render(content))
 	case roleSystem:
-		head := theme.WarningText().Render(fmt.Sprintf("System · %s", ts))
-		body := lipgloss.NewStyle().Foreground(theme.Current.Muted).Width(m.viewport.Width).Render(strings.TrimSpace(msg.Content))
-		return lipgloss.JoinVertical(lipgloss.Left, head, body)
+		head := theme.WarningBadge().Render("SYS") + " " + theme.MutedText().Render(ts)
+		return lipgloss.JoinVertical(lipgloss.Left, head, bodyStyle.Render(content))
 	default:
 		head := theme.MutedText().Render(fmt.Sprintf("%s · %s", msg.Role, ts))
-		body := lipgloss.NewStyle().Foreground(theme.Current.Text).Width(m.viewport.Width).Render(strings.TrimSpace(msg.Content))
-		return lipgloss.JoinVertical(lipgloss.Left, head, body)
+		return lipgloss.JoinVertical(lipgloss.Left, head, bodyStyle.Render(content))
 	}
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("AI Chat")
-	sub := theme.SubtitleStyle().Width(m.width).Render(m.subtitleLine())
-	header := lipgloss.JoinVertical(lipgloss.Left, title, sub)
+	title := theme.ScreenChrome("AI Chat", m.subtitleLine(), m.width)
 
-	vp := theme.PanelStyle().
-		Width(m.width).
+	vp := theme.ViewportStyle().
+		Width(layout.PanelWidth(m.width)).
 		Height(m.viewport.Height + 2).
 		Render(m.viewport.View())
 
-	var inLabel string
+	inLabel := theme.MutedText().Render("Message (Tab to focus)")
 	if m.focusInput {
 		inLabel = theme.KeyStyle().Render("Message") + theme.DescStyle().Render(" (focused)")
-	} else {
-		inLabel = theme.MutedText().Render("Message (Tab to focus)")
 	}
-	inputBlock := lipgloss.JoinVertical(
-		lipgloss.Left,
-		lipgloss.NewStyle().PaddingLeft(1).Render(inLabel),
-		lipgloss.NewStyle().PaddingLeft(1).Render(m.input.View()),
+	inputView := components.ApplyInputTheme(m.input, m.width, m.focusInput).View()
+	inputBlock := components.RenderInputPanel(
+		lipgloss.JoinVertical(lipgloss.Left, inLabel, inputView),
+		m.width, m.focusInput,
 	)
 
 	help := components.NewHelpBar(
@@ -401,7 +395,7 @@ func (m *Model) View() string {
 		status = "\n" + theme.ErrorText().Render("  "+m.status)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header+status, vp, inputBlock, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title+status, vp, inputBlock, help.View())
 }
 
 func (m *Model) subtitleLine() string {

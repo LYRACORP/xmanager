@@ -130,7 +130,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) View() string {
 	if !a.ready {
-		return "Loading XManager..."
+		return theme.MutedText().Render("Loading XManager...")
 	}
 
 	screen := a.screens[a.router.Current()]
@@ -138,27 +138,21 @@ func (a *App) View() string {
 	content := screen.View()
 	footer := a.helpBar.View()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	inner := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return theme.BackgroundStyle(a.width).Render(inner)
 }
 
 func (a *App) renderHeader() string {
-	titleStyle := lipgloss.NewStyle().
+	title := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(theme.Current.Primary).
-		PaddingLeft(1)
+		Render("XManager")
 
 	screenName := lipgloss.NewStyle().
-		Foreground(theme.Current.TextDim).
-		PaddingLeft(1).
-		Render(fmt.Sprintf("/ %s", a.router.Current().String()))
+		Foreground(theme.Current.Secondary).
+		Render(fmt.Sprintf(" / %s", a.router.Current().String()))
 
-	left := titleStyle.Render("XManager") + screenName
-
-	return lipgloss.NewStyle().
-		Background(theme.Current.Surface).
-		Width(a.width).
-		Padding(0, 1).
-		Render(left)
+	return theme.AppHeaderStyle(a.width).Render(title + screenName)
 }
 
 func (a *App) navigate(screen shared.ScreenID) tea.Cmd {

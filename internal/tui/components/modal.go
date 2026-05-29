@@ -3,6 +3,7 @@ package components
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
 
@@ -59,9 +60,9 @@ func (m Modal) View() string {
 		return ""
 	}
 
-	width := 50
+	width := layout.Clamp(40, 50, 72)
 	if m.Width > 0 {
-		width = m.Width
+		width = layout.Clamp(40, m.Width, 72)
 	}
 
 	titleStyle := lipgloss.NewStyle().
@@ -82,14 +83,18 @@ func (m Modal) View() string {
 			theme.KeyStyle().Render("y") + theme.DescStyle().Render(" confirm  ") +
 			theme.KeyStyle().Render("n") + theme.DescStyle().Render(" cancel")
 	case ModalInput:
-		content = m.Input.View()
+		content = ApplyInputTheme(m.Input, width, true).View()
 	case ModalInfo:
 		content = contentStyle.Render(m.Message) + "\n\n" +
 			theme.KeyStyle().Render("Enter") + theme.DescStyle().Render(" close")
 	}
 
+	border := lipgloss.NormalBorder()
+	if theme.Current.Name == "light" {
+		border = lipgloss.RoundedBorder()
+	}
 	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(border).
 		BorderForeground(theme.Current.Primary).
 		Padding(1, 2).
 		Width(width).

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -351,30 +352,27 @@ func extractRoutersFromYAML(content, sourceFile string) []traefikRouter {
 }
 
 func (m *Model) rebuildTable() {
-	h := m.height - 10
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 10, 5)
 	switch m.tab {
 	case tabNginx:
-		cols := []table.Column{
+		cols := layout.AdaptiveColumns(m.width, []table.Column{
 			{Title: "File", Width: 18},
 			{Title: "Domain", Width: 22},
 			{Title: "SSL", Width: 5},
-			{Title: "proxy_pass", Width: 28},
-		}
+			{Title: "proxy_pass", Width: 0},
+		})
 		rows := make([]table.Row, len(m.nginxRows))
 		for i, v := range m.nginxRows {
 			rows[i] = table.Row{v.File, v.Domain, v.SSL, v.ProxyPass}
 		}
 		m.table = components.StyledTable(cols, rows, h)
 	case tabTraefik:
-		cols := []table.Column{
+		cols := layout.AdaptiveColumns(m.width, []table.Column{
 			{Title: "Router", Width: 16},
 			{Title: "Rule", Width: 28},
 			{Title: "Service", Width: 14},
-			{Title: "Config", Width: 24},
-		}
+			{Title: "Config", Width: 0},
+		})
 		rows := make([]table.Row, len(m.traefikRows))
 		for i, r := range m.traefikRows {
 			cfg := r.SourceFile
@@ -667,15 +665,16 @@ func (m *Model) runRenewSSL() tea.Cmd {
 func (m *Model) View() string {
 	switch m.mode {
 	case modeViewConfig:
-		title := theme.HeaderStyle().Render("Config: " + m.viewingTitle)
-		body := theme.PanelStyle().Width(m.width - 2).Render(m.viewingBody)
+		title := theme.ScreenChrome("Config", m.viewingTitle, m.width)
+		body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.viewingBody)
 		foot := theme.MutedText().Render("  Esc / Enter: close")
 		return lipgloss.JoinVertical(lipgloss.Left, title, body, foot)
 	case modeAddVhost:
-		header := theme.HeaderStyle().Render("Add Nginx vhost")
-		form := m.addDomain.View() + "\n" + m.addUpstream.View()
+		header := theme.ScreenChrome("Add Nginx vhost", "new reverse proxy entry", m.width)
+		domain := components.RenderFormField("", components.ApplyInputTheme(m.addDomain, m.width, true).View(), m.width, true)
+		upstream := components.RenderFormField("", components.ApplyInputTheme(m.addUpstream, m.width, false).View(), m.width, false)
 		foot := theme.MutedText().Render("  Tab: field  Enter: next / save  Esc: cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", form, "", foot)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", domain, upstream, "", foot)
 	case modeConfirmRemove:
 		return m.viewList() + "\n\n " + theme.WarningText().Render("Remove vhost file? (y/n)")
 	case modeRenewSSLWait:
@@ -687,7 +686,17 @@ func (m *Model) View() string {
 
 func (m *Model) viewList() string {
 	tabBar := m.renderTabs()
-	title := theme.HeaderStyle().Render("Reverse proxy")
+	title := theme.ScreenChrome("Reverse proxy", "nginx · traefik", m.width)
+	var body string
+	rowCount := len(m.nginxRows)
+	if m.tab == tabTraefik {
+		rowCount = len(m.traefikRows)
+	}
+	if rowCount == 0 {
+		body = components.EmptyState(m.width)
+	} else {
+		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	}
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "1/2", Desc: "nginx/traefik"},
 		components.KeyBinding{Key: "r", Desc: "refresh"},
@@ -702,7 +711,7 @@ func (m *Model) viewList() string {
 	if m.message != "" {
 		msg = "\n " + m.message
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, tabBar, m.table.View(), msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title, tabBar, body, msg, help.View())
 }
 
 func (m *Model) renderTabs() string {

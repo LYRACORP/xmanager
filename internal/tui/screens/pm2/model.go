@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -110,8 +111,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("PM2")
-	body := m.table.View()
+	title := theme.ScreenChrome("PM2", "process manager", m.width)
+	var body string
+	if len(m.processes) == 0 {
+		body = components.EmptyState(m.width)
+	} else {
+		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	}
 
 	msg := ""
 	if m.err != "" {
@@ -137,18 +143,15 @@ func (m *Model) View() string {
 }
 
 func (m *Model) rebuildTable() {
-	h := m.height - 8
-	if h < 5 {
-		h = 5
-	}
-	cols := []table.Column{
+	h := layout.TableHeight(m.height, 8, 5)
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: "ID", Width: 4},
 		{Title: "Name", Width: 22},
 		{Title: "Status", Width: 12},
 		{Title: "CPU%", Width: 8},
 		{Title: "Memory", Width: 12},
-		{Title: "Restarts", Width: 10},
-	}
+		{Title: "Restarts", Width: 0},
+	})
 	rows := make([]table.Row, len(m.processes))
 	for i, p := range m.processes {
 		rows[i] = table.Row{

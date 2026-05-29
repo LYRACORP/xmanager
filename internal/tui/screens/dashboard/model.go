@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -105,11 +106,11 @@ func (m *Model) refresh() tea.Cmd {
 }
 
 func (m *Model) rebuildTable() {
-	cols := []table.Column{
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: " ", Width: 3},
 		{Title: "Service", Width: 28},
-		{Title: "State", Width: 12},
-	}
+		{Title: "State", Width: 0},
+	})
 	rows := make([]table.Row, len(m.services))
 	for i, s := range m.services {
 		st := "active"
@@ -118,10 +119,7 @@ func (m *Model) rebuildTable() {
 		}
 		rows[i] = table.Row{theme.StatusDot(s.active), s.name, st}
 	}
-	h := m.height - 14
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 14, 5)
 	m.serviceTable = components.StyledTable(cols, rows, h)
 }
 
@@ -205,41 +203,54 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Server Dashboard")
+	title := theme.ScreenChrome("Server Dashboard", "live metrics & services", m.width)
 
-	gw := (m.width - 8) / 3
-	if gw < 18 {
-		gw = 18
-	}
+	gw := layout.GaugeWidth(m.width, 3, 2, 18)
 	gCPU := components.NewGauge("CPU", m.cpu)
 	gCPU.Width = gw
 	gRAM := components.NewGauge("RAM", m.ram)
 	gRAM.Width = gw
 	gDisk := components.NewGauge("DSK", m.disk)
 	gDisk.Width = gw
-	gauges := lipgloss.JoinHorizontal(lipgloss.Top, gCPU.View(), "  ", gRAM.View(), "  ", gDisk.View())
+
+	var gauges string
+	if layout.Breakpoint(m.width) == layout.BreakpointNarrow {
+		gauges = lipgloss.JoinVertical(lipgloss.Left,
+			gCPU.View(),
+			gRAM.View(),
+			gDisk.View(),
+		)
+	} else {
+		gauges = lipgloss.JoinHorizontal(lipgloss.Top, gCPU.View(), "  ", gRAM.View(), "  ", gDisk.View())
+	}
 
 	errLine := ""
 	if m.fetchErr != "" {
 		errLine = "\n " + theme.ErrorText().Render(m.fetchErr)
 	}
 
-	leftW := (m.width * 58) / 100
-	if leftW < 32 {
-		leftW = 32
+	leftW, rightW, stack := layout.SplitHorizontal(m.width, 1, 58, 32, 24)
+	var svcContent string
+	if len(m.services) == 0 {
+		svcContent = theme.EmptyStateText()
+	} else {
+		svcContent = m.serviceTable.View()
 	}
-	rightW := m.width - leftW - 2
-	if rightW < 24 {
-		rightW = 24
-	}
-
-	svcPanel := theme.PanelStyle().Width(leftW).Render(m.serviceTable.View())
+	svcPanel := theme.PanelStyle().Width(leftW).Render(svcContent)
 	alertsPanel := theme.PanelStyle().Width(rightW).Render(m.renderAlerts())
-	main := lipgloss.JoinHorizontal(lipgloss.Top, svcPanel, " ", alertsPanel)
 
-	quick := theme.MutedText().Render(
-		" d docker · p pm2 · l logs · m map · e errors · c chat · g db · x proxy · u backup · , settings · r refresh · b back ",
-	)
+	var main string
+	if stack {
+		main = lipgloss.JoinVertical(lipgloss.Left, svcPanel, alertsPanel)
+	} else {
+		main = lipgloss.JoinHorizontal(lipgloss.Top, svcPanel, " ", alertsPanel)
+	}
+
+	quickText := " d docker · p pm2 · l logs · m map · e errors · c chat · g db · x proxy · u backup · , settings · r refresh · b back "
+	if layout.Breakpoint(m.width) == layout.BreakpointNarrow {
+		quickText = " d docker · p pm2 · l logs · b back "
+	}
+	quick := theme.MutedText().Render(quickText)
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "r", Desc: "refresh"},
 		components.KeyBinding{Key: "d/p/l", Desc: "docker/pm2/logs"},
@@ -260,7 +271,7 @@ func (m *Model) View() string {
 
 func (m *Model) renderAlerts() string {
 	if len(m.alerts) == 0 {
-		return theme.MutedText().Render("No recent alerts.")
+		return theme.EmptyStateText()
 	}
 	var b strings.Builder
 	b.WriteString(theme.SubtitleStyle().Render("Recent alerts") + "\n")

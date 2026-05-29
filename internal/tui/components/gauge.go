@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
 
@@ -32,6 +33,9 @@ func (g Gauge) View() string {
 	}
 
 	barWidth := g.Width - 2
+	if barWidth < 4 {
+		barWidth = 4
+	}
 	filled := int(float64(barWidth) * g.Value)
 	if filled > barWidth {
 		filled = barWidth
@@ -47,14 +51,20 @@ func (g Gauge) View() string {
 		color = theme.Current.Success
 	}
 
+	fillChar := theme.GaugeFillChar()
+	emptyChar := theme.GaugeEmptyChar()
 	fillStyle := lipgloss.NewStyle().Foreground(color)
 	emptyStyle := lipgloss.NewStyle().Foreground(theme.Current.Muted)
 
-	bar := "[" + fillStyle.Render(repeat("█", filled)) + emptyStyle.Render(repeat("░", barWidth-filled)) + "]"
+	bar := "[" + fillStyle.Render(repeat(fillChar, filled)) + emptyStyle.Render(repeat(emptyChar, barWidth-filled)) + "]"
 
+	labelW := 6
+	if layout.Breakpoint(g.Width) == layout.BreakpointNarrow {
+		labelW = 4
+	}
 	label := lipgloss.NewStyle().
 		Foreground(theme.Current.Text).
-		Width(6).
+		Width(labelW).
 		Render(g.Label)
 
 	pct := ""

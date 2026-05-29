@@ -33,5 +33,5 @@ clean:
 	rm -rf bin/ dist/
 
 install: build
-	cp bin/$(APP_NAME) /usr/local/bin/$(APP_NAME)
-	ln -sf /usr/local/bin/$(APP_NAME) /usr/local/bin/vpsm
+	sudo cp bin/$(APP_NAME) /usr/local/bin/$(APP_NAME)
+	sudo ln -sf /usr/local/bin/$(APP_NAME) /usr/local/bin/vpsm

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 	"gorm.io/gorm"
@@ -66,13 +67,13 @@ func (m *Model) loadProfile() tea.Msg {
 }
 
 func (m *Model) rebuildTable() {
-	cols := []table.Column{
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: " ", Width: 3},
 		{Title: "Service", Width: 22},
 		{Title: "Tech", Width: 24},
-		{Title: "Port", Width: 6},
-		{Title: "Status", Width: 12},
-	}
+		{Title: "Port", Width: 0},
+		{Title: "Status", Width: 0},
+	})
 	rows := make([]table.Row, len(m.services))
 	for i, s := range m.services {
 		active := statusActive(s.Status)
@@ -92,10 +93,7 @@ func (m *Model) rebuildTable() {
 			s.Status,
 		}
 	}
-	h := m.height - 10
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 10, 5)
 	m.svcTable = components.StyledTable(cols, rows, h)
 }
 
@@ -164,7 +162,7 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Server Map (AI profile)")
+	title := theme.ScreenChrome("Server Map", "AI recon profile", m.width)
 
 	meta := ""
 	if m.profile != nil {
@@ -179,8 +177,10 @@ func (m *Model) View() string {
 	}
 
 	if m.profile == nil && m.parseErr == "" && len(m.services) == 0 {
-		body := theme.MutedText().Render(
-			"\n  No server profile in database. Run a scan or AI discovery for this host,\n  then open Server Map again.",
+		body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(
+			theme.MutedText().Render(
+				"  No server profile in database.\n  Run a scan or AI discovery for this host,\n  then open Server Map again.",
+			),
 		)
 		help := components.NewHelpBar(
 			components.KeyBinding{Key: "r", Desc: "reload"},
@@ -188,6 +188,13 @@ func (m *Model) View() string {
 		)
 		help.Width = m.width
 		return lipgloss.JoinVertical(lipgloss.Left, title, body, errLine, help.View())
+	}
+
+	var body string
+	if len(m.services) == 0 {
+		body = components.EmptyState(m.width)
+	} else {
+		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.svcTable.View())
 	}
 
 	help := components.NewHelpBar(
@@ -202,7 +209,7 @@ func (m *Model) View() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		title+meta,
-		m.svcTable.View()+errLine,
+		body+errLine,
 		help.View(),
 	)
 }
