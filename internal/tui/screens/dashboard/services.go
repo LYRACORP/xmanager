@@ -1,0 +1,201 @@
+package dashboard
+
+import (
+	"strings"
+	"sync"
+
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
+	"github.com/lyracorp/xmanager/internal/tui/theme"
+)
+
+type serviceEntry struct {
+	kind   string // systemd | docker
+	name   string
+	status string
+	detail string
+	active bool
+}
+
+type svcFilterMode int
+
+const (
+	filterAll svcFilterMode = iota
+	filterRunning
+	filterFailed
+)
+
+func (f svcFilterMode) next() svcFilterMode {
+	switch f {
+	case filterAll:
+		return filterRunning
+	case filterRunning:
+		return filterFailed
+	default:
+		return filterAll
+	}
+}
+
+func (f svcFilterMode) label() string {
+	switch f {
+	case filterRunning:
+		return "running"
+	case filterFailed:
+		return "failed"
+	default:
+		return "all"
+	}
+}
+
+type servicesLoadedMsg struct {
+	services []serviceEntry
+	err      error
+}
+
+func (m *Model) loadServices() tea.Cmd {
+	m.servicesState = stateLoading
+	serverID := m.ctx.ServerID
+	pool := m.ctx.Pool
+	return func() tea.Msg {
+		ex, ok := pool.GetExecutor(serverID)
+		if !ok {
+			return servicesLoadedMsg{err: errNotConnected}
+		}
+
+		var systemdOut, dockerOut string
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			systemdOut = ex.RunQuiet("systemctl list-units --type=service --state=running,failed --no-pager --no-legend 2>/dev/null")
+		}()
+		go func() {
+			defer wg.Done()
+			dockerOut = ex.RunQuiet(`docker ps -a --format '{{.Names}}	{{.Status}}	{{.Ports}}' 2>/dev/null`)
+		}()
+		wg.Wait()
+
+		services := parseSystemdEntries(systemdOut)
+		services = append(services, parseDockerEntries(dockerOut)...)
+		return servicesLoadedMsg{services: services}
+	}
+}
+
+func parseSystemdEntries(out string) []serviceEntry {
+	var rows []serviceEntry
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		name := strings.TrimSuffix(fields[0], ".service")
+		activeState := fields[2]
+		sub := fields[3]
+		active := activeState == "active"
+		rows = append(rows, serviceEntry{
+			kind:   "systemd",
+			name:   name,
+			status: sub,
+			detail: strings.Join(fields[4:], " "),
+			active: active,
+		})
+	}
+	return rows
+}
+
+func parseDockerEntries(out string) []serviceEntry {
+	var rows []serviceEntry
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		name := parts[0]
+		status := ""
+		ports := ""
+		if len(parts) > 1 {
+			status = parts[1]
+		}
+		if len(parts) > 2 {
+			ports = parts[2]
+		}
+		low := strings.ToLower(status)
+		active := strings.Contains(low, "up") || strings.Contains(low, "running")
+		rows = append(rows, serviceEntry{
+			kind:   "docker",
+			name:   name,
+			status: status,
+			detail: ports,
+			active: active,
+		})
+	}
+	return rows
+}
+
+func (m *Model) filteredServices() []serviceEntry {
+	switch m.svcFilter {
+	case filterRunning:
+		var out []serviceEntry
+		for _, s := range m.services {
+			if s.active {
+				out = append(out, s)
+			}
+		}
+		return out
+	case filterFailed:
+		var out []serviceEntry
+		for _, s := range m.services {
+			if !s.active {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return m.services
+	}
+}
+
+func (m *Model) rebuildSvcTable() {
+	filtered := m.filteredServices()
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
+		{Title: " ", Width: 3},
+		{Title: "Type", Width: 8},
+		{Title: "Name", Width: 22},
+		{Title: "Status", Width: 14},
+		{Title: "Detail", Width: 0},
+	})
+	rows := make([]table.Row, len(filtered))
+	for i, s := range filtered {
+		rows[i] = table.Row{
+			theme.StatusDot(s.active),
+			s.kind,
+			s.name,
+			truncateStr(s.status, 14),
+			truncateStr(s.detail, 40),
+		}
+	}
+	h := layout.TableHeight(m.height, 12, 5)
+	m.svcTable = components.StyledTable(cols, rows, h)
+}
+
+func (m *Model) renderServices() string {
+	filterLabel := theme.MutedText().Render("filter: " + m.svcFilter.label() + "  (a cycle)")
+	if m.servicesState == stateLoading && len(m.services) == 0 {
+		return filterLabel + "\n" + theme.MutedText().Render("  Loading services…")
+	}
+	if m.servicesState == stateError {
+		return filterLabel + "\n" + theme.ErrorText().Render("  "+m.servicesErr)
+	}
+	filtered := m.filteredServices()
+	if len(filtered) == 0 {
+		return filterLabel + "\n" + theme.EmptyStateText()
+	}
+	return filterLabel + "\n" + m.svcTable.View()
+}

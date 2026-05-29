@@ -109,3 +109,17 @@ func (p *Pool) ActiveConnections() []uint {
 	}
 	return ids
 }
+
+// WithSFTP opens a short-lived SFTP session on the pooled SSH client.
+func (p *Pool) WithSFTP(serverID uint, fn func(*SFTPClient) error) error {
+	client, ok := p.GetClient(serverID)
+	if !ok {
+		return fmt.Errorf("not connected")
+	}
+	sftp, err := NewSFTPClient(client)
+	if err != nil {
+		return err
+	}
+	defer sftp.Close()
+	return fn(sftp)
+}
