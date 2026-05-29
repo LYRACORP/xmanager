@@ -236,10 +236,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	case tabServices:
 		m.svcTable, cmd = m.svcTable.Update(msg)
 	case tabFiles:
+		var scrollCmd tea.Cmd
 		if m.previewOpen && !m.previewOverlay {
-			m.previewScroll, cmd = m.previewScroll.Update(msg)
+			m.previewScroll, scrollCmd = m.previewScroll.Update(msg)
 		}
 		m.dirTable, cmd = m.dirTable.Update(msg)
+		return m, tea.Batch(scrollCmd, cmd)
 	}
 	return m, cmd
 }

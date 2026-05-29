@@ -17,7 +17,6 @@ type ScrollView struct {
 	width         int
 	height        int
 	debounce      time.Duration
-	lastSet       time.Time
 	autoScroll    bool
 	contentDirty  bool
 }
