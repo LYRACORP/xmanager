@@ -61,10 +61,6 @@ func (m *Model) loadMetrics() tea.Cmd {
 			return metricsLoadedMsg{err: errNotConnected}
 		}
 
-		type result struct {
-			key string
-			out string
-		}
 		cmds := map[string]string{
 			"top":      "top -bn1 | head -5",
 			"free":     "free -m",
