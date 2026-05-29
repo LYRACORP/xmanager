@@ -48,16 +48,17 @@ type testResultMsg struct {
 }
 
 type Model struct {
-	ctx     *shared.AppContext
-	table   table.Model
-	servers []storage.Server
-	mode    mode
-	form    [fieldCount]textinput.Model
-	formIdx int
-	width   int
-	height  int
-	message string
-	editID  uint
+	ctx            *shared.AppContext
+	table          table.Model
+	servers        []storage.Server
+	mode           mode
+	form           [fieldCount]textinput.Model
+	formIdx        int
+	width          int
+	height         int
+	message        string
+	editID         uint
+	connectPending uint // navigate to dashboard after successful connect
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -127,16 +128,29 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.rebuildTable()
 		return m, nil
 	case testResultMsg:
+		var cmds []tea.Cmd
 		if msg.ok {
-			m.message = "Connection successful!"
+			if m.connectPending == msg.serverID {
+				m.message = "Connected — opening dashboard..."
+				m.connectPending = 0
+				cmds = append(cmds, func() tea.Msg {
+					return shared.ConnectServerMsg{ServerID: msg.serverID}
+				})
+			} else {
+				m.message = "Connection successful!"
+			}
 			now := time.Now()
 			m.ctx.DB.Model(&storage.Server{}).Where("id = ?", msg.serverID).Updates(map[string]interface{}{
 				"is_active": true, "last_seen": &now,
 			})
 		} else {
+			if m.connectPending == msg.serverID {
+				m.connectPending = 0
+			}
 			m.message = fmt.Sprintf("Connection failed: %v", msg.err)
 		}
-		return m, m.loadServers
+		cmds = append(cmds, m.loadServers)
+		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeList:
@@ -186,12 +200,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "enter":
 		if idx := m.table.Cursor(); idx < len(m.servers) {
 			s := m.servers[idx]
-			return m, tea.Batch(
-				m.testConn(s),
-				func() tea.Msg {
-					return shared.ConnectServerMsg{ServerID: s.ID}
-				},
-			)
+			m.connectPending = s.ID
+			m.message = "Connecting..."
+			return m, m.testConn(s)
 		}
 	case "q", "esc":
 		return m, tea.Quit
