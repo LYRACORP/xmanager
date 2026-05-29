@@ -38,7 +38,7 @@ type TGConfig struct {
 }
 
 type UIConfig struct {
-	Theme        string `mapstructure:"theme"` // dark, light
+	Theme        string `mapstructure:"theme"` // dark (cyberpunk), light
 	RefreshRate  int    `mapstructure:"refresh_rate"`
 }
 

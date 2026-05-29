@@ -2,6 +2,7 @@ package serverlist
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -11,6 +12,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -96,15 +98,15 @@ func (m *Model) loadServers() tea.Msg {
 }
 
 func (m *Model) rebuildTable() {
-	cols := []table.Column{
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: "  ", Width: 3},
 		{Title: "Name", Width: 18},
 		{Title: "Host", Width: 20},
 		{Title: "Port", Width: 6},
 		{Title: "User", Width: 12},
 		{Title: "Tags", Width: 15},
-		{Title: "Last Seen", Width: 20},
-	}
+		{Title: "Last Seen", Width: 0},
+	})
 	rows := make([]table.Row, len(m.servers))
 	for i, s := range m.servers {
 		status := theme.StatusDot(s.IsActive)
@@ -114,10 +116,7 @@ func (m *Model) rebuildTable() {
 		}
 		rows[i] = table.Row{status, s.Name, s.Host, fmt.Sprintf("%d", s.Port), s.User, s.Tags, lastSeen}
 	}
-	h := m.height - 8
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 8, 5)
 	m.table = components.StyledTable(cols, rows, h)
 }
 
@@ -297,7 +296,13 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewList() string {
-	title := theme.HeaderStyle().Render("Servers")
+	title := theme.ScreenChrome("Servers", "manage SSH connections", m.width)
+	var body string
+	if len(m.servers) == 0 {
+		body = components.EmptyState(m.width)
+	} else {
+		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	}
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "a", Desc: "add"},
 		components.KeyBinding{Key: "e", Desc: "edit"},
@@ -313,23 +318,23 @@ func (m *Model) viewList() string {
 	if m.mode == modeConfirmDelete {
 		msg += "\n\n " + theme.WarningText().Render("Delete this server? (y/n)")
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View(), msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
 }
 
 func (m *Model) viewForm() string {
 	title := "Add Server"
+	subtitle := "new SSH target"
 	if m.mode == modeEdit {
 		title = "Edit Server"
+		subtitle = "update connection details"
 	}
-	header := theme.HeaderStyle().Render(title)
-	form := ""
+	header := theme.ScreenChrome(title, subtitle, m.width)
+	var form strings.Builder
 	for i := range m.form {
-		cursor := "  "
-		if i == m.formIdx {
-			cursor = theme.KeyStyle().Render("> ")
-		}
-		form += cursor + m.form[i].View() + "\n"
+		ti := components.ApplyInputTheme(m.form[i], m.width, i == m.formIdx)
+		form.WriteString(components.RenderFormField("", ti.View(), m.width, i == m.formIdx))
+		form.WriteByte('\n')
 	}
 	footer := theme.MutedText().Render("  Tab: next  Shift+Tab: prev  Enter: save  Esc: cancel")
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", form, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", form.String(), footer)
 }

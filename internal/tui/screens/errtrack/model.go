@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -139,15 +140,15 @@ func severityRank(s string) int {
 }
 
 func (m *Model) rebuildTable() {
-	cols := []table.Column{
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: "Severity", Width: 10},
 		{Title: "Svc", Width: 10},
 		{Title: "Message", Width: 28},
 		{Title: "#", Width: 5},
-		{Title: "First", Width: 16},
-		{Title: "Last", Width: 16},
-		{Title: "Flags", Width: 8},
-	}
+		{Title: "First", Width: 0},
+		{Title: "Last", Width: 0},
+		{Title: "Flags", Width: 0},
+	})
 	trows := make([]table.Row, len(m.rows))
 	for i, r := range m.rows {
 		msg := r.message
@@ -174,10 +175,7 @@ func (m *Model) rebuildTable() {
 			flags,
 		}
 	}
-	h := m.height - 8
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 8, 5)
 	m.table = components.StyledTable(cols, trows, h)
 }
 
@@ -341,7 +339,7 @@ func (m *Model) setResolved(v bool) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Error Tracker")
+	title := theme.ScreenChrome("Error Tracker", "grouped error events", m.width)
 	if m.ctx.ServerID == 0 {
 		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
 		help.Width = m.width
@@ -370,9 +368,10 @@ func (m *Model) viewTable(title string) string {
 	)
 	help.Width = m.width
 	if len(m.rows) == 0 {
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.MutedText().Render("  No error events."), "", help.View())
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", components.EmptyState(m.width), "", help.View())
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View(), "", help.View())
+	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title, body, "", help.View())
 }
 
 func (m *Model) viewDetail(title string) string {

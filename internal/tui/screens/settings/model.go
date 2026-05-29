@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -57,7 +58,7 @@ func (m *Model) initForm() {
 	labels := [fieldCount]string{
 		"AI provider", "AI model", "API key", "Ollama host", "Max log lines",
 		"Telegram bot token", "Telegram chat ID", "Telegram enabled (space)",
-		"UI theme (dark/light)", "UI refresh rate (s)",
+		"UI theme (cyberpunk/light)", "UI refresh rate (s)",
 	}
 	for i := range m.form {
 		ti := textinput.New()
@@ -97,7 +98,14 @@ func (m *Model) syncTGEnabledField() {
 }
 
 func (m *Model) Name() string     { return "Settings" }
-func (m *Model) SetSize(w, h int) { m.width, m.height = w, h }
+func (m *Model) SetSize(w, h int) {
+	m.width, m.height = w, h
+	for i := range m.form {
+		if fieldIdx(i) != fieldTGEnabled {
+			m.form[i].Width = layout.InputWidth(m.width)
+		}
+	}
+}
 
 func (m *Model) Init() tea.Cmd {
 	m.loadFromConfig()
@@ -213,28 +221,29 @@ func (m *Model) save() tea.Cmd {
 }
 
 func (m *Model) View() string {
-	header := theme.HeaderStyle().Render("Settings")
+	header := theme.ScreenChrome("Settings", "app configuration", m.width)
 	var b strings.Builder
 	for i := range m.form {
-		cursor := "  "
-		if i == m.focus {
-			cursor = theme.KeyStyle().Render("> ")
-		}
 		fi := fieldIdx(i)
 		if fi == fieldTGEnabled {
 			state := theme.MutedText().Render("off")
 			if m.tgOn {
 				state = theme.SuccessText().Render("on")
 			}
-			b.WriteString(cursor)
-			b.WriteString("Telegram enabled: ")
-			b.WriteString(state)
-			b.WriteString(theme.MutedText().Render("  (space toggles)"))
+			line := theme.KeyStyle().Render("> ") + "Telegram enabled: " + state + theme.MutedText().Render("  (space toggles)")
+			if i != m.focus {
+				line = "  Telegram enabled: " + state + theme.MutedText().Render("  (space toggles)")
+			}
+			style := theme.PanelStyle().Width(layout.PanelWidth(m.width))
+			if i == m.focus {
+				style = theme.ActivePanelStyle().Width(layout.PanelWidth(m.width))
+			}
+			b.WriteString(style.Render(line))
 			b.WriteByte('\n')
 			continue
 		}
-		b.WriteString(cursor)
-		b.WriteString(m.form[i].View())
+		ti := components.ApplyInputTheme(m.form[i], m.width, i == m.focus)
+		b.WriteString(components.RenderFormField("", ti.View(), m.width, i == m.focus))
 		b.WriteByte('\n')
 	}
 	status := ""

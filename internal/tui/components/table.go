@@ -17,16 +17,23 @@ func StyledTable(columns []table.Column, rows []table.Row, height int) table.Mod
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(theme.Current.Border).
+		BorderForeground(theme.Current.Secondary).
 		BorderBottom(true).
 		Bold(true).
 		Foreground(theme.Current.Primary)
 
 	s.Selected = s.Selected.
 		Foreground(theme.Current.Text).
-		Background(theme.Current.Surface).
-		Bold(false)
+		Background(theme.Current.Primary).
+		Bold(true)
+
+	s.Cell = s.Cell.
+		Foreground(theme.Current.Text)
 
 	t.SetStyles(s)
 	return t
+}
+
+func TableEmptyMessage() string {
+	return theme.EmptyStateText()
 }

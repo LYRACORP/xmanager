@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -165,9 +166,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Docker")
+	title := theme.ScreenChrome("Docker", "containers · compose · images", m.width)
 	tabs := m.renderTabs()
-	body := m.table.View()
+	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
 
 	msg := ""
 	if m.err != "" {
@@ -242,20 +243,17 @@ func (m *Model) setTab(t viewTab) {
 }
 
 func (m *Model) rebuildTable() {
-	h := m.height - 10
-	if h < 5 {
-		h = 5
-	}
+	h := layout.TableHeight(m.height, 10, 5)
 
 	switch m.tab {
 	case tabContainers:
-		cols := []table.Column{
+		cols := layout.AdaptiveColumns(m.width, []table.Column{
 			{Title: "ID", Width: 14},
 			{Title: "Names", Width: 22},
 			{Title: "State", Width: 10},
 			{Title: "Status", Width: 28},
-			{Title: "Image", Width: 28},
-		}
+			{Title: "Image", Width: 0},
+		})
 		rows := make([]table.Row, len(m.containers))
 		for i, c := range m.containers {
 			id := c.ID
@@ -267,11 +265,11 @@ func (m *Model) rebuildTable() {
 		m.table = components.StyledTable(cols, rows, h)
 
 	case tabCompose:
-		cols := []table.Column{
+		cols := layout.AdaptiveColumns(m.width, []table.Column{
 			{Title: "Project", Width: 20},
 			{Title: "Status", Width: 22},
-			{Title: "Config", Width: 48},
-		}
+			{Title: "Config", Width: 0},
+		})
 		rows := make([]table.Row, len(m.compose))
 		for i, p := range m.compose {
 			rows[i] = table.Row{p.Name, p.Status, truncate(p.ConfigFiles, 46)}
@@ -279,12 +277,12 @@ func (m *Model) rebuildTable() {
 		m.table = components.StyledTable(cols, rows, h)
 
 	case tabImages:
-		cols := []table.Column{
+		cols := layout.AdaptiveColumns(m.width, []table.Column{
 			{Title: "Repository", Width: 28},
 			{Title: "Tag", Width: 14},
 			{Title: "ID", Width: 14},
-			{Title: "Size", Width: 10},
-		}
+			{Title: "Size", Width: 0},
+		})
 		rows := make([]table.Row, len(m.images))
 		for i, im := range m.images {
 			rows[i] = table.Row{im.Repository, im.Tag, shortID(im.ID, 12), im.Size}

@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -128,16 +129,12 @@ func (m *Model) SetSize(width, height int) {
 }
 
 func (m *Model) layoutViewport() {
-	headerRows := 2
+	headerRows := 3
 	if m.searchMode {
 		headerRows++
 	}
-	help := 1
-	vh := m.height - headerRows - help
-	if vh < 3 {
-		vh = 3
-	}
-	m.viewport.Width = max(10, m.width-2)
+	vh := layout.TableHeight(m.height, headerRows+1, 3)
+	m.viewport.Width = layout.Clamp(10, m.width-4, m.width-2)
 	m.viewport.Height = vh
 	m.syncViewportContent()
 }
@@ -475,7 +472,7 @@ func (m *Model) syncViewportContent() {
 func (m *Model) renderLogBody() string {
 	lines := m.visibleLines()
 	if len(lines) == 0 {
-		return theme.MutedText().Render("No lines yet. Keys 1–4 toggle built-in sources (Docker, PM2, journal, syslog). Connect via server list first.")
+		return theme.EmptyStateText()
 	}
 	var b strings.Builder
 	for _, ln := range lines {
@@ -501,18 +498,21 @@ func shortSource(s string) string {
 
 func (m *Model) highlightLine(s string) string {
 	lower := strings.ToLower(s)
-	levelStyle := lipgloss.NewStyle()
+	level := "default"
 	switch {
 	case strings.Contains(lower, "fatal") || strings.Contains(lower, "panic") ||
 		strings.Contains(lower, "critical") || strings.Contains(lower, "crit"):
-		levelStyle = levelStyle.Foreground(theme.Current.Critical).Bold(true)
+		level = "critical"
 	case strings.Contains(lower, "error") || strings.Contains(lower, " err"):
-		levelStyle = levelStyle.Foreground(theme.Current.Error)
+		level = "error"
 	case strings.Contains(lower, "warn") || strings.Contains(lower, "warning"):
-		levelStyle = levelStyle.Foreground(theme.Current.Warning)
-	default:
-		levelStyle = levelStyle.Foreground(theme.Current.Text)
+		level = "warning"
+	case strings.Contains(lower, "debug") || strings.Contains(lower, "trace"):
+		level = "debug"
+	case strings.Contains(lower, "info"):
+		level = "info"
 	}
+	levelStyle := theme.LogLevelStyle(level)
 
 	if m.searchRe == nil {
 		return levelStyle.Render(s)
@@ -544,16 +544,20 @@ func (m *Model) highlightLine(s string) string {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Logs · SSH stream")
+	title := theme.ScreenChrome("Logs", "SSH stream · live tail", m.width)
 	meta := theme.SubtitleStyle().Width(m.width).Render(m.metaLine())
 	header := lipgloss.JoinVertical(lipgloss.Left, title, meta)
 
 	var searchRow string
 	if m.searchMode {
-		searchRow = lipgloss.NewStyle().PaddingLeft(1).Render(m.searchInput.View())
+		input := components.ApplyInputTheme(m.searchInput, m.width, true)
+		searchRow = components.RenderInputPanel(input.View(), m.width, true)
 	}
 
-	vp := theme.PanelStyle().Width(m.width).Height(m.viewport.Height + 2).Render(m.viewport.View())
+	vp := theme.ViewportStyle().
+		Width(layout.PanelWidth(m.width)).
+		Height(m.viewport.Height + 2).
+		Render(m.viewport.View())
 
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "1-4", Desc: "toggle source"},

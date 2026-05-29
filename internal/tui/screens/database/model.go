@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -304,7 +305,7 @@ func (m *Model) execShell(cmd string) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Database Manager")
+	title := theme.ScreenChrome("Database Manager", m.engLabel()+" operations", m.width)
 	if m.ctx.ServerID == 0 {
 		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
 		help.Width = m.width
@@ -313,7 +314,7 @@ func (m *Model) View() string {
 	tabs := m.renderTabs()
 	switch m.mode {
 	case dbOutput:
-		panel := theme.PanelStyle().Width(m.width - 2).MaxHeight(m.height - 6).Render(m.lastOut)
+		panel := theme.ViewportStyle().Width(layout.PanelWidth(m.width)).MaxHeight(m.height - 6).Render(m.lastOut)
 		foot := theme.MutedText().Render("  Esc: return")
 		return lipgloss.JoinVertical(lipgloss.Left, title, tabs, "", panel, "", foot)
 	case dbConfirmDrop:
@@ -321,8 +322,12 @@ func (m *Model) View() string {
 		help := theme.MutedText().Render("  This is destructive.")
 		return lipgloss.JoinVertical(lipgloss.Left, title, tabs, "", q, "", help)
 	case dbInputName:
+		input := components.RenderInputPanel(
+			components.ApplyInputTheme(m.nameInput, m.width, true).View(),
+			m.width, true,
+		)
 		hint := theme.MutedText().Render(fmt.Sprintf("  %s — enter name, Esc cancel", m.pending))
-		return lipgloss.JoinVertical(lipgloss.Left, title, tabs, "", "  "+m.nameInput.View(), "", hint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, tabs, "", input, "", hint)
 	default:
 		help := components.NewHelpBar(
 			components.KeyBinding{Key: "1-3", Desc: "engine"},

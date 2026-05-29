@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -138,19 +139,16 @@ func ageShort(t time.Time) string {
 }
 
 func (m *Model) rebuildTable() {
-	h := m.height - 8
-	if h < 5 {
-		h = 5
-	}
-	cols := []table.Column{
+	h := layout.TableHeight(m.height, 8, 5)
+	cols := layout.AdaptiveColumns(m.width, []table.Column{
 		{Title: "Type", Width: 10},
 		{Title: "Service", Width: 14},
 		{Title: "Path", Width: 22},
 		{Title: "Size", Width: 10},
 		{Title: "Age", Width: 12},
-		{Title: "Schedule", Width: 14},
-		{Title: "Status", Width: 12},
-	}
+		{Title: "Schedule", Width: 0},
+		{Title: "Status", Width: 0},
+	})
 	rows := make([]table.Row, len(m.backups))
 	for i, b := range m.backups {
 		rows[i] = table.Row{
@@ -408,9 +406,13 @@ func (m *Model) View() string {
 	case modeFormCreate:
 		return m.viewFormCreate()
 	case modeFormSchedule:
-		header := theme.HeaderStyle().Render("Schedule")
+		header := theme.ScreenChrome("Schedule", "backup cron", m.width)
+		input := components.RenderInputPanel(
+			components.ApplyInputTheme(m.scheduleEdit, m.width, true).View(),
+			m.width, true,
+		)
 		foot := theme.MutedText().Render("  Enter: save  Esc: cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", m.scheduleEdit.View(), "", foot)
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", input, "", foot)
 	case modeConfirmDelete:
 		return m.viewList() + "\n\n " + theme.WarningText().Render("Delete this backup record? (y/n)")
 	case modeConfirmRestore:
@@ -421,27 +423,31 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewFormCreate() string {
-	header := theme.HeaderStyle().Render("Create backup")
+	header := theme.ScreenChrome("Create backup", "new backup job", m.width)
 	typeLine := fmt.Sprintf("  Type: %s  (%s)", backupTypes[m.typeIdx], theme.MutedText().Render("t: cycle"))
-	cursorSvc, cursorPath, cursorSched := "  ", "  ", "  "
-	switch m.formIdx {
-	case 0:
-		cursorSvc = theme.KeyStyle().Render("> ")
-	case 1:
-		cursorPath = theme.KeyStyle().Render("> ")
-	default:
-		cursorSched = theme.KeyStyle().Render("> ")
+	inputs := []textinput.Model{m.svcIn, m.pathIn, m.schedIn}
+	var lines []string
+	lines = append(lines, typeLine)
+	for i, ti := range inputs {
+		styled := components.ApplyInputTheme(ti, m.width, m.formIdx == i)
+		lines = append(lines, components.RenderFormField("", styled.View(), m.width, m.formIdx == i))
 	}
-	form := typeLine + "\n" + cursorSvc + m.svcIn.View() + "\n" + cursorPath + m.pathIn.View() + "\n" + cursorSched + m.schedIn.View()
+	form := strings.Join(lines, "\n")
 	foot := theme.MutedText().Render("  Tab: field  t: type  Enter: save  Esc: cancel")
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", form, "", foot)
 }
 
 func (m *Model) viewList() string {
-	title := theme.HeaderStyle().Render("Backups")
-	filter := ""
+	subtitle := "backup records"
 	if m.ctx.ServerID > 0 {
-		filter = theme.MutedText().Render(fmt.Sprintf(" (server %d)", m.ctx.ServerID))
+		subtitle = fmt.Sprintf("server %d", m.ctx.ServerID)
+	}
+	title := theme.ScreenChrome("Backups", subtitle, m.width)
+	var body string
+	if len(m.backups) == 0 {
+		body = components.EmptyState(m.width)
+	} else {
+		body = theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(m.table.View())
 	}
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "c", Desc: "create"},
@@ -456,5 +462,5 @@ func (m *Model) viewList() string {
 	if m.message != "" {
 		msg = "\n " + m.message
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title+filter, m.table.View(), msg, help.View())
+	return lipgloss.JoinVertical(lipgloss.Left, title, body, msg, help.View())
 }

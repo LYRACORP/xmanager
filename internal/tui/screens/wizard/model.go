@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -204,7 +205,7 @@ func (m *Model) runStep(idx int) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	title := theme.HeaderStyle().Render("Setup Wizard")
+	title := theme.ScreenChrome("Setup Wizard", m.progressLine(), m.width)
 	if m.ctx.ServerID == 0 {
 		help := components.NewHelpBar(components.KeyBinding{Key: "esc", Desc: "back"})
 		help.Width = m.width
@@ -221,6 +222,24 @@ func (m *Model) View() string {
 	}
 }
 
+func (m *Model) progressLine() string {
+	done := 0
+	for _, c := range m.completed {
+		if c {
+			done++
+		}
+	}
+	total := len(wizardSteps)
+	if total == 0 {
+		return "0/0 steps"
+	}
+	pct := float64(done) / float64(total)
+	g := components.NewGauge("PROG", pct)
+	g.Width = layout.Clamp(20, m.width/3, 40)
+	g.ShowPct = true
+	return g.View() + theme.MutedText().Render(fmt.Sprintf("  %d/%d steps", done, total))
+}
+
 func (m *Model) viewBrowse(title string) string {
 	var lines []string
 	for i, s := range wizardSteps {
@@ -234,7 +253,7 @@ func (m *Model) viewBrowse(title string) string {
 		}
 		lines = append(lines, line)
 	}
-	body := strings.Join(lines, "\n")
+	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(strings.Join(lines, "\n"))
 	help := components.NewHelpBar(
 		components.KeyBinding{Key: "↑↓", Desc: "step"},
 		components.KeyBinding{Key: "enter", Desc: "review & run"},
@@ -254,7 +273,8 @@ func (m *Model) viewConfirm(title string) string {
 	}
 	prompt := theme.WarningText().Render("Run these commands on the remote host?")
 	help := theme.MutedText().Render("  y: run  n/esc: cancel")
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.TitleStyle().Render(s.title), "", cmdBlock.String(), "", prompt, "", help)
+	cmdPanel := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(cmdBlock.String())
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", theme.TitleStyle().Render(s.title), "", cmdPanel, "", prompt, "", help)
 }
 
 func (m *Model) viewOutput(title string) string {
@@ -262,7 +282,7 @@ func (m *Model) viewOutput(title string) string {
 	if m.lastOK {
 		status = theme.SuccessText().Render("Completed")
 	}
-	panel := theme.PanelStyle().Width(m.width - 4).Render(m.lastOut)
+	panel := theme.ViewportStyle().Width(layout.PanelWidth(m.width)).Render(m.lastOut)
 	footer := theme.MutedText().Render("  Enter / Esc: return")
 	return lipgloss.JoinVertical(lipgloss.Left, title, "", status, "", panel, "", footer)
 }
