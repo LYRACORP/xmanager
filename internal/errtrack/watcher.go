@@ -104,3 +104,17 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// StartWatching is a convenience constructor that creates a Watcher and
+// immediately begins watching all provided log sources over SSH.
+//
+// sources maps a service name to the remote tail/follow command to execute,
+// e.g. {"nginx": "tail -f /var/log/nginx/error.log"}.
+// The returned Watcher is live; call Watcher.Stop() to cancel all streams.
+func StartWatching(exec *ssh.Executor, tracker *Tracker, n notify.Notifier, serverID uint, serverName string, sources map[string]string) *Watcher {
+	w := NewWatcher(tracker, n, serverID, serverName)
+	for service, cmd := range sources {
+		_ = w.Watch(exec, service, cmd)
+	}
+	return w
+}

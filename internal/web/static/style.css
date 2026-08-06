@@ -1,0 +1,14 @@
+/* XManager Web Panel — custom overrides */
+
+/* Smooth scrollbar on dark backgrounds */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #111827; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* HTMX indicator */
+.htmx-indicator { opacity: 0; transition: opacity 0.3s; }
+.htmx-request .htmx-indicator { opacity: 1; }
+
+/* Tailwind doesn't JIT dynamic widths via style= so we allow all */
+[style*="width:"] { transition: width 0.4s ease; }

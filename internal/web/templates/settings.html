@@ -1,0 +1,78 @@
+{{define "settings"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-2xl mx-auto">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-100">Settings</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Current configuration overview</p>
+  </div>
+
+  <div class="space-y-4">
+    <!-- Web section -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Web Panel</h2>
+      <dl class="space-y-2 text-sm">
+        {{with .Config}}
+        {{with .Web}}
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Listen address</dt>
+          <dd class="text-gray-200 font-mono">{{.Host}}:{{.Port}}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Enabled</dt>
+          <dd class="{{if .Enabled}}text-emerald-400{{else}}text-red-400{{end}}">{{if .Enabled}}yes{{else}}no{{end}}</dd>
+        </div>
+        {{end}}
+        {{end}}
+      </dl>
+    </div>
+
+    <!-- Poller section -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Poller</h2>
+      <dl class="space-y-2 text-sm">
+        {{with .Config}}
+        {{with .Poller}}
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Metrics interval</dt>
+          <dd class="text-gray-200 font-mono">{{.IntervalSec}}s</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Metric retention</dt>
+          <dd class="text-gray-200 font-mono">{{.MetricRetention}} snapshots</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Uptime interval</dt>
+          <dd class="text-gray-200 font-mono">{{.UptimeIntervalSec}}s</dd>
+        </div>
+        {{end}}
+        {{end}}
+      </dl>
+    </div>
+
+    <!-- AI section -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">AI</h2>
+      <dl class="space-y-2 text-sm">
+        {{with .Config}}
+        {{with .AI}}
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Provider</dt>
+          <dd class="text-gray-200">{{.Provider}}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Model</dt>
+          <dd class="text-gray-200 font-mono">{{.Model}}</dd>
+        </div>
+        {{end}}
+        {{end}}
+      </dl>
+    </div>
+
+    <p class="text-xs text-gray-600 text-center pt-2">
+      Edit configuration at <code class="font-mono">~/.config/xmanager/config.yaml</code>
+    </p>
+  </div>
+</main>
+{{template "foot" .}}
+{{end}}

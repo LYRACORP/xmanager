@@ -1,0 +1,97 @@
+{{define "uptime"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-screen-xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100">Uptime Monitors</h1>
+      <p class="text-gray-500 text-sm mt-0.5">HTTP and TCP endpoint health checks</p>
+    </div>
+    <button onclick="document.getElementById('new-monitor-modal').classList.remove('hidden')"
+            class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+      + Add Monitor
+    </button>
+  </div>
+
+  {{if .Monitors}}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {{range .Monitors}}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold text-gray-100 truncate">{{.Name}}</h3>
+        {{if eq .LastStatus "up"}}
+          <span class="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full border border-emerald-700/40 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>up
+          </span>
+        {{else if eq .LastStatus "down"}}
+          <span class="text-xs text-red-400 bg-red-900/30 px-2 py-0.5 rounded-full border border-red-700/40">down</span>
+        {{else if eq .LastStatus "degraded"}}
+          <span class="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded-full border border-yellow-700/40">degraded</span>
+        {{else}}
+          <span class="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">unknown</span>
+        {{end}}
+      </div>
+      {{if .URL}}
+        <p class="text-xs text-gray-500 font-mono truncate">{{.URL}}</p>
+      {{else}}
+        <p class="text-xs text-gray-500 font-mono">{{.Host}}:{{.Port}}</p>
+      {{end}}
+      <div class="mt-3 flex justify-between text-xs text-gray-600">
+        <span>every {{.IntervalSec}}s</span>
+        {{if .Enabled}}
+          <span class="text-emerald-600">enabled</span>
+        {{else}}
+          <span class="text-gray-600">disabled</span>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="flex flex-col items-center justify-center py-24 text-gray-600">
+    <span class="text-5xl mb-4">📡</span>
+    <p class="text-lg font-medium">No monitors yet</p>
+    <p class="text-sm mt-1">Add an HTTP or TCP monitor to track uptime.</p>
+  </div>
+  {{end}}
+</main>
+
+<!-- New Monitor Modal -->
+<div id="new-monitor-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+  <div class="bg-gray-900 rounded-2xl border border-gray-700 p-8 w-full max-w-md shadow-2xl">
+    <h2 class="text-lg font-bold text-gray-100 mb-5">Add Uptime Monitor</h2>
+    <form action="/uptime" method="post" class="space-y-4">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Name</label>
+        <input type="text" name="name" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">URL (HTTP check)</label>
+        <input type="text" name="url" placeholder="https://example.com"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Check interval (seconds)</label>
+        <input type="number" name="interval_sec" value="60" min="10"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 rounded-lg text-sm transition-colors">
+          Add Monitor
+        </button>
+        <button type="button"
+                onclick="document.getElementById('new-monitor-modal').classList.add('hidden')"
+                class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-2 rounded-lg text-sm transition-colors">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

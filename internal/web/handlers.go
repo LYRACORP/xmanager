@@ -1,0 +1,383 @@
+package web
+
+import (
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/storage"
+)
+
+type handler struct {
+	opts     Options
+	tmpl     *template.Template
+	sess     *sessionStore
+	staticFS fs.FS
+}
+
+// serverCardData holds display-ready data for a single server card.
+type serverCardData struct {
+	Server   storage.Server
+	Snapshot storage.ServerMetricSnapshot
+	LastSeen string
+}
+
+// pageData is the common template context passed to all pages.
+type pageData struct {
+	Title      string
+	Flash      string
+	Session    *session
+	ServerCards []serverCardData
+	ServerCard  serverCardData
+	Projects   []storage.Project
+	AllServers []storage.Server
+	Monitors   []storage.UptimeMonitor
+	Config     interface{}
+}
+
+func (h *handler) register(mux *http.ServeMux) {
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(h.staticFS)))
+
+	mux.HandleFunc("GET /login", h.getLogin)
+	mux.HandleFunc("POST /login", h.postLogin)
+	mux.HandleFunc("POST /logout", h.requireAuth(h.postLogout))
+
+	mux.HandleFunc("GET /setup", h.getSetup)
+	mux.HandleFunc("POST /setup", h.postSetup)
+
+	mux.HandleFunc("GET /{$}", h.requireAuth(h.getFleet))
+	mux.HandleFunc("GET /api/servers/{id}/metrics", h.requireAuth(h.getServerMetrics))
+	mux.HandleFunc("GET /servers/{id}", h.requireAuth(h.getServerDetail))
+
+	mux.HandleFunc("GET /projects", h.requireAuth(h.getProjects))
+	mux.HandleFunc("POST /projects", h.requireAuth(h.postProjects))
+	mux.HandleFunc("POST /projects/{id}/deploy", h.requireAuth(h.postProjectDeploy))
+
+	mux.HandleFunc("GET /uptime", h.requireAuth(h.getUptime))
+	mux.HandleFunc("POST /uptime", h.requireAuth(h.postUptime))
+
+	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+
+	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
+}
+
+func (h *handler) render(w http.ResponseWriter, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// --- Auth handlers ---
+
+func (h *handler) getLogin(w http.ResponseWriter, r *http.Request) {
+	needsSetup, _ := auth.EnsureAdmin(h.opts.DB)
+	if needsSetup {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
+	h.render(w, "login", pageData{Title: "Login"})
+}
+
+func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	u, err := auth.Authenticate(h.opts.DB, username, password)
+	if err != nil {
+		h.render(w, "login", pageData{Title: "Login", Flash: "Invalid username or password."})
+		return
+	}
+
+	token := h.sess.create(u.ID, u.Username, u.Role)
+	setSessionCookie(w, token)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *handler) postLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookieName); err == nil {
+		h.sess.delete(c.Value)
+	}
+	clearSessionCookie(w)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (h *handler) getSetup(w http.ResponseWriter, r *http.Request) {
+	needsSetup, _ := auth.EnsureAdmin(h.opts.DB)
+	if !needsSetup {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	h.render(w, "setup", pageData{Title: "Setup"})
+}
+
+func (h *handler) postSetup(w http.ResponseWriter, r *http.Request) {
+	needsSetup, _ := auth.EnsureAdmin(h.opts.DB)
+	if !needsSetup {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	if username == "" || password == "" {
+		h.render(w, "setup", pageData{Title: "Setup", Flash: "Username and password are required."})
+		return
+	}
+	if err := auth.CreateUser(h.opts.DB, username, password, "admin"); err != nil {
+		h.render(w, "setup", pageData{Title: "Setup", Flash: "Failed to create user: " + err.Error()})
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// --- Fleet handlers ---
+
+func (h *handler) getFleet(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	var servers []storage.Server
+	h.opts.DB.Order("name asc").Find(&servers)
+
+	snaps, _ := poller.LatestSnapshots(h.opts.DB)
+	cards := buildServerCards(servers, snaps)
+
+	h.render(w, "fleet", pageData{
+		Title:       "Fleet Overview",
+		Session:     sess,
+		ServerCards: cards,
+	})
+}
+
+func (h *handler) getServerMetrics(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var srv storage.Server
+	if err := h.opts.DB.First(&srv, id).Error; err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	var snap storage.ServerMetricSnapshot
+	h.opts.DB.Where("server_id = ?", id).Order("sampled_at desc").First(&snap)
+
+	card := serverCardData{
+		Server:   srv,
+		Snapshot: snap,
+		LastSeen: formatLastSeen(srv.LastSeen),
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "server_card", card); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+func (h *handler) getServerDetail(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var srv storage.Server
+	if err := h.opts.DB.First(&srv, id).Error; err != nil {
+		http.Error(w, "server not found", http.StatusNotFound)
+		return
+	}
+
+	var snap storage.ServerMetricSnapshot
+	h.opts.DB.Where("server_id = ?", id).Order("sampled_at desc").First(&snap)
+
+	card := serverCardData{
+		Server:   srv,
+		Snapshot: snap,
+		LastSeen: formatLastSeen(srv.LastSeen),
+	}
+
+	h.render(w, "server_detail", pageData{
+		Title:      fmt.Sprintf("%s — Detail", srv.Name),
+		Session:    sess,
+		ServerCard: card,
+	})
+}
+
+// --- Project handlers ---
+
+func (h *handler) getProjects(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	var projects []storage.Project
+	h.opts.DB.Preload("Server").Order("name asc").Find(&projects)
+
+	var servers []storage.Server
+	h.opts.DB.Order("name asc").Find(&servers)
+
+	h.render(w, "projects", pageData{
+		Title:      "Projects",
+		Session:    sess,
+		Projects:   projects,
+		AllServers: servers,
+	})
+}
+
+func (h *handler) postProjects(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	serverIDStr := r.FormValue("server_id")
+	serverID, _ := strconv.ParseUint(serverIDStr, 10, 64)
+
+	project := storage.Project{
+		Name:     r.FormValue("name"),
+		ServerID: uint(serverID),
+		Type:     r.FormValue("type"),
+		Source:   r.FormValue("source"),
+		Domain:   r.FormValue("domain"),
+	}
+	h.opts.DB.Create(&project)
+	http.Redirect(w, r, "/projects", http.StatusSeeOther)
+}
+
+func (h *handler) postProjectDeploy(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var project storage.Project
+	if err := h.opts.DB.First(&project, id).Error; err != nil {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+
+	h.opts.DB.Model(&project).Update("deploy_status", "deploying")
+	http.Redirect(w, r, "/projects", http.StatusSeeOther)
+}
+
+// --- Uptime handlers ---
+
+func (h *handler) getUptime(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	var monitors []storage.UptimeMonitor
+	h.opts.DB.Order("name asc").Find(&monitors)
+
+	h.render(w, "uptime", pageData{
+		Title:    "Uptime",
+		Session:  sess,
+		Monitors: monitors,
+	})
+}
+
+func (h *handler) postUptime(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	intervalSec, _ := strconv.Atoi(r.FormValue("interval_sec"))
+	if intervalSec <= 0 {
+		intervalSec = 60
+	}
+	monitor := storage.UptimeMonitor{
+		Name:        r.FormValue("name"),
+		URL:         r.FormValue("url"),
+		IntervalSec: intervalSec,
+		Enabled:     true,
+	}
+	h.opts.DB.Create(&monitor)
+	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
+}
+
+// --- Settings handler ---
+
+func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	h.render(w, "settings", pageData{
+		Title:   "Settings",
+		Session: sess,
+		Config:  h.opts.Config,
+	})
+}
+
+// --- Webhook handler (no auth, validates secret header) ---
+
+func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
+	projectIDStr := r.PathValue("project_id")
+	projectID, err := strconv.ParseUint(projectIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+
+	var project storage.Project
+	if err := h.opts.DB.First(&project, projectID).Error; err != nil {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+
+	if project.WebhookSecret != "" {
+		secret := r.Header.Get("X-Webhook-Secret")
+		if secret != project.WebhookSecret {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	h.opts.DB.Model(&project).Update("deploy_status", "deploying")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+}
+
+// --- Helpers ---
+
+func buildServerCards(servers []storage.Server, snaps map[uint]storage.ServerMetricSnapshot) []serverCardData {
+	cards := make([]serverCardData, 0, len(servers))
+	for _, s := range servers {
+		cards = append(cards, serverCardData{
+			Server:   s,
+			Snapshot: snaps[s.ID],
+			LastSeen: formatLastSeen(s.LastSeen),
+		})
+	}
+	return cards
+}
+
+func formatLastSeen(t *time.Time) string {
+	if t == nil {
+		return "never"
+	}
+	d := time.Since(*t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}

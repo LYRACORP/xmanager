@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -28,6 +27,9 @@ const (
 	fieldTGEnabled
 	fieldUITheme
 	fieldRefresh
+	fieldWebEnabled
+	fieldWebHost
+	fieldWebPort
 	fieldCount
 )
 
@@ -45,6 +47,7 @@ type Model struct {
 	status      string
 	statusIsErr bool
 	tgOn        bool
+	webOn       bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -59,6 +62,7 @@ func (m *Model) initForm() {
 		"AI provider", "AI model", "API key", "Ollama host", "Max log lines",
 		"Telegram bot token", "Telegram chat ID", "Telegram enabled (space)",
 		"UI theme (dark/light)", "UI refresh rate (s)",
+		"Web panel enabled (space)", "Web host", "Web port",
 	}
 	for i := range m.form {
 		ti := textinput.New()
@@ -67,7 +71,7 @@ func (m *Model) initForm() {
 		if fieldIdx(i) == fieldAIKey || fieldIdx(i) == fieldTGBot {
 			ti.EchoMode = textinput.EchoPassword
 		}
-		if fieldIdx(i) == fieldTGEnabled {
+		if fieldIdx(i) == fieldTGEnabled || fieldIdx(i) == fieldWebEnabled {
 			ti.Blur()
 		}
 		m.form[i] = ti
@@ -87,6 +91,10 @@ func (m *Model) loadFromConfig() {
 	m.syncTGEnabledField()
 	m.form[fieldUITheme].SetValue(c.UI.Theme)
 	m.form[fieldRefresh].SetValue(strconv.Itoa(c.UI.RefreshRate))
+	m.webOn = c.Web.Enabled
+	m.syncWebEnabledField()
+	m.form[fieldWebHost].SetValue(c.Web.Host)
+	m.form[fieldWebPort].SetValue(strconv.Itoa(c.Web.Port))
 }
 
 func (m *Model) syncTGEnabledField() {
@@ -97,11 +105,24 @@ func (m *Model) syncTGEnabledField() {
 	m.form[fieldTGEnabled].SetValue(v)
 }
 
+func (m *Model) syncWebEnabledField() {
+	v := "off"
+	if m.webOn {
+		v = "on"
+	}
+	m.form[fieldWebEnabled].SetValue(v)
+}
+
+func (m *Model) isToggle(i int) bool {
+	return fieldIdx(i) == fieldTGEnabled || fieldIdx(i) == fieldWebEnabled
+}
+
 func (m *Model) Name() string { return "Settings" }
 
 func (m *Model) KeyBindings() []components.KeyBinding {
 	return []components.KeyBinding{
 		{Key: "tab", Desc: "field"},
+		{Key: "space", Desc: "toggle"},
 		{Key: "enter", Desc: "save"},
 		{Key: "ctrl+s", Desc: "save"},
 	}
@@ -112,7 +133,7 @@ func (m *Model) OnNavigate(_ map[string]interface{}) {}
 func (m *Model) SetSize(w, h int) {
 	m.width, m.height = w, h
 	for i := range m.form {
-		if fieldIdx(i) != fieldTGEnabled {
+		if !m.isToggle(i) {
 			m.form[i].Width = layout.InputWidth(m.width)
 		}
 	}
@@ -129,7 +150,7 @@ func (m *Model) focusField(i int) {
 		m.form[j].Blur()
 	}
 	m.focus = i
-	if fieldIdx(i) != fieldTGEnabled {
+	if !m.isToggle(i) {
 		m.form[i].Focus()
 	}
 }
@@ -149,14 +170,14 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "tab", "down":
 			next := (m.focus + 1) % int(fieldCount)
 			m.focusField(next)
-			if fieldIdx(m.focus) != fieldTGEnabled {
+			if !m.isToggle(m.focus) {
 				return m, textinput.Blink
 			}
 			return m, nil
 		case "shift+tab", "up":
 			next := (m.focus - 1 + int(fieldCount)) % int(fieldCount)
 			m.focusField(next)
-			if fieldIdx(m.focus) != fieldTGEnabled {
+			if !m.isToggle(m.focus) {
 				return m, textinput.Blink
 			}
 			return m, nil
@@ -166,24 +187,29 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 				m.syncTGEnabledField()
 				return m, nil
 			}
+			if fieldIdx(m.focus) == fieldWebEnabled {
+				m.webOn = !m.webOn
+				m.syncWebEnabledField()
+				return m, nil
+			}
 		case "enter":
 			if m.focus < int(fieldCount)-1 {
 				m.focusField(m.focus + 1)
-				if fieldIdx(m.focus) != fieldTGEnabled {
+				if !m.isToggle(m.focus) {
 					return m, textinput.Blink
 				}
 				return m, nil
 			}
 			return m, m.save()
 		}
-		if fieldIdx(m.focus) != fieldTGEnabled {
+		if !m.isToggle(m.focus) {
 			var cmd tea.Cmd
 			m.form[m.focus], cmd = m.form[m.focus].Update(msg)
 			return m, cmd
 		}
 		return m, nil
 	}
-	if fieldIdx(m.focus) != fieldTGEnabled {
+	if !m.isToggle(m.focus) {
 		var cmd tea.Cmd
 		m.form[m.focus], cmd = m.form[m.focus].Update(msg)
 		return m, cmd
@@ -197,25 +223,22 @@ func (m *Model) applyFormToConfig() error {
 	cfg.AI.Model = strings.TrimSpace(m.form[fieldAIModel].Value())
 	cfg.AI.APIKey = m.form[fieldAIKey].Value()
 	cfg.AI.OllamaHost = strings.TrimSpace(m.form[fieldOllama].Value())
-	n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldMaxLogLines].Value()))
-	if err != nil || n < 1 {
-		return fmt.Errorf("max log lines must be a positive integer")
+	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldMaxLogLines].Value())); err == nil {
+		cfg.AI.MaxLogLines = n
 	}
-	cfg.AI.MaxLogLines = n
 	cfg.Telegram.BotToken = m.form[fieldTGBot].Value()
 	cfg.Telegram.ChatID = strings.TrimSpace(m.form[fieldTGChat].Value())
 	cfg.Telegram.Enabled = m.tgOn
-	themeName := strings.TrimSpace(strings.ToLower(m.form[fieldUITheme].Value()))
-	if themeName != "light" && themeName != "dark" {
-		return fmt.Errorf("theme must be dark or light")
+	cfg.UI.Theme = strings.TrimSpace(m.form[fieldUITheme].Value())
+	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldRefresh].Value())); err == nil {
+		cfg.UI.RefreshRate = n
 	}
-	cfg.UI.Theme = themeName
-	r, err := strconv.Atoi(strings.TrimSpace(m.form[fieldRefresh].Value()))
-	if err != nil || r < 1 {
-		return fmt.Errorf("refresh rate must be a positive integer (seconds)")
+	cfg.Web.Enabled = m.webOn
+	cfg.Web.Host = strings.TrimSpace(m.form[fieldWebHost].Value())
+	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldWebPort].Value())); err == nil {
+		cfg.Web.Port = n
 	}
-	cfg.UI.RefreshRate = r
-	return nil
+	return config.Save(cfg)
 }
 
 func (m *Model) save() tea.Cmd {
@@ -223,55 +246,49 @@ func (m *Model) save() tea.Cmd {
 		if err := m.applyFormToConfig(); err != nil {
 			return saveStatusMsg{text: err.Error(), err: true}
 		}
-		if err := config.Save(m.ctx.Config); err != nil {
-			return saveStatusMsg{text: err.Error(), err: true}
-		}
 		theme.SetTheme(m.ctx.Config.UI.Theme)
-		return saveStatusMsg{text: "Saved.", err: false}
+		return saveStatusMsg{text: "settings saved"}
 	}
 }
 
 func (m *Model) View() string {
 	var b strings.Builder
-	for i := range m.form {
-		fi := fieldIdx(i)
-		if fi == fieldTGEnabled {
-			state := theme.MutedText().Render("off")
-			if m.tgOn {
-				state = theme.SuccessText().Render("on")
-			}
-			line := theme.KeyStyle().Render("> ") + "Telegram enabled: " + state + theme.MutedText().Render("  (space toggles)")
-			if i != m.focus {
-				line = "  Telegram enabled: " + state + theme.MutedText().Render("  (space toggles)")
-			}
-			style := theme.PanelStyle().Width(layout.PanelWidth(m.width))
-			if i == m.focus {
-				style = theme.ActivePanelStyle().Width(layout.PanelWidth(m.width))
-			}
-			b.WriteString(style.Render(line))
-			b.WriteByte('\n')
-			continue
-		}
-		ti := components.ApplyInputTheme(m.form[i], m.width, i == m.focus)
-		b.WriteString(components.RenderFormField("", ti.View(), m.width, i == m.focus))
-		b.WriteByte('\n')
-	}
-	status := ""
-	if m.status != "" {
-		if m.statusIsErr {
-			status = "\n " + theme.ErrorText().Render(m.status)
-		} else {
-			status = "\n " + theme.SuccessText().Render(m.status)
-		}
-	}
-	footer := theme.MutedText().Render("  API key and bot token are hidden while typing.")
-	body := lipgloss.JoinVertical(lipgloss.Left, b.String(), status, "", footer)
-	return components.ScreenFrame{
-		Title:    "Settings",
-		Subtitle: "app configuration",
-		Width:    m.width,
-		Body:     body,
-	}.View()
-}
+	title := theme.TitleStyle().Render("Settings")
+	b.WriteString(title + "\n\n")
 
-var _ shared.Screen = (*Model)(nil)
+	for i := range m.form {
+		line := m.form[i].View()
+		if m.isToggle(i) {
+			state := m.form[i].Value()
+			label := "Telegram enabled"
+			if fieldIdx(i) == fieldWebEnabled {
+				label = "Web panel enabled"
+			}
+			line = label + ": " + state + theme.MutedText().Render("  (space toggles)")
+			if m.focus == i {
+				line = theme.KeyStyle().Render("> ") + line
+			} else {
+				line = "  " + line
+			}
+		} else if m.focus == i {
+			line = theme.KeyStyle().Render("> ") + line
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line + "\n")
+	}
+
+	if m.status != "" {
+		style := theme.SuccessText()
+		if m.statusIsErr {
+			style = theme.ErrorText()
+		}
+		b.WriteString("\n" + style.Render(m.status))
+	}
+
+	box := lipgloss.NewStyle().
+		Width(m.width - 2).
+		MaxHeight(m.height).
+		Render(b.String())
+	return box
+}

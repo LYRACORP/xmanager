@@ -1,0 +1,108 @@
+{{define "server_detail"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-4xl mx-auto">
+  <div class="mb-6">
+    <a href="/" class="text-sm text-indigo-400 hover:text-indigo-300 transition-colors">← Fleet</a>
+    <h1 class="text-2xl font-bold text-gray-100 mt-2">{{.ServerCard.Server.Name}}</h1>
+    <p class="text-gray-500 text-sm font-mono mt-0.5">
+      {{.ServerCard.Server.Host}}:{{.ServerCard.Server.Port}} · user: {{.ServerCard.Server.User}}
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <!-- Status card -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">Current Status</h2>
+      <div class="flex items-center gap-2 mb-4">
+        {{if .ServerCard.Snapshot.Online}}
+        <span class="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></span>
+        <span class="text-emerald-400 font-medium">Online</span>
+        {{else}}
+        <span class="w-2.5 h-2.5 bg-red-400 rounded-full"></span>
+        <span class="text-red-400 font-medium">Offline</span>
+        {{end}}
+        <span class="text-gray-500 text-sm ml-auto">last seen {{.ServerCard.LastSeen}}</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>CPU</span><span class="font-mono">{{printf "%.1f" .ServerCard.Snapshot.CPUPct}}%</span>
+          </div>
+          <div class="bg-gray-800 rounded-full h-2">
+            <div class="h-2 rounded-full bg-indigo-500" style="width: {{printf "%.0f" .ServerCard.Snapshot.CPUPct}}%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>RAM</span>
+            <span class="font-mono">{{printf "%.1f" .ServerCard.Snapshot.RAMPct}}%
+              ({{printf "%.0f" .ServerCard.Snapshot.RAMUsedMB}} / {{printf "%.0f" .ServerCard.Snapshot.RAMTotalMB}} MB)
+            </span>
+          </div>
+          <div class="bg-gray-800 rounded-full h-2">
+            <div class="h-2 rounded-full bg-sky-500" style="width: {{printf "%.0f" .ServerCard.Snapshot.RAMPct}}%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>Disk</span>
+            <span class="font-mono">{{printf "%.1f" .ServerCard.Snapshot.DiskPct}}%
+              ({{printf "%.1f" .ServerCard.Snapshot.DiskUsedGB}} / {{printf "%.1f" .ServerCard.Snapshot.DiskTotalGB}} GB)
+            </span>
+          </div>
+          <div class="bg-gray-800 rounded-full h-2">
+            <div class="h-2 rounded-full bg-emerald-500" style="width: {{printf "%.0f" .ServerCard.Snapshot.DiskPct}}%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info card -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">Server Info</h2>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Host</dt>
+          <dd class="text-gray-200 font-mono">{{.ServerCard.Server.Host}}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Port</dt>
+          <dd class="text-gray-200 font-mono">{{.ServerCard.Server.Port}}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">User</dt>
+          <dd class="text-gray-200 font-mono">{{.ServerCard.Server.User}}</dd>
+        </div>
+        {{if .ServerCard.Server.Tags}}
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Tags</dt>
+          <dd class="text-indigo-400">{{.ServerCard.Server.Tags}}</dd>
+        </div>
+        {{end}}
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Containers</dt>
+          <dd class="text-gray-200">{{.ServerCard.Snapshot.ContainerCount}}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Net RX</dt>
+          <dd class="text-gray-200 font-mono">{{printf "%.1f" .ServerCard.Snapshot.NetRxKBps}} KB/s</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Net TX</dt>
+          <dd class="text-gray-200 font-mono">{{printf "%.1f" .ServerCard.Snapshot.NetTxKBps}} KB/s</dd>
+        </div>
+      </dl>
+    </div>
+  </div>
+
+  <!-- Live refresh section -->
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-5"
+       hx-get="/api/servers/{{.ServerCard.Server.ID}}/metrics"
+       hx-trigger="every 10s"
+       hx-swap="none">
+    <p class="text-xs text-gray-600 text-center">Metrics auto-refresh every 10s via HTMX</p>
+  </div>
+</main>
+{{template "foot" .}}
+{{end}}

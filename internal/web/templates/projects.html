@@ -1,0 +1,132 @@
+{{define "projects"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-screen-xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100">Projects</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Manage deployed applications</p>
+    </div>
+    <button onclick="document.getElementById('new-project-modal').classList.remove('hidden')"
+            class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+      + New Project
+    </button>
+  </div>
+
+  {{if .Projects}}
+  <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wide">
+          <th class="text-left px-5 py-3">Name</th>
+          <th class="text-left px-5 py-3">Server</th>
+          <th class="text-left px-5 py-3">Type</th>
+          <th class="text-left px-5 py-3">Domain</th>
+          <th class="text-left px-5 py-3">Status</th>
+          <th class="text-left px-5 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        {{range .Projects}}
+        <tr class="hover:bg-gray-800/50 transition-colors">
+          <td class="px-5 py-3 font-medium text-gray-100">{{.Name}}</td>
+          <td class="px-5 py-3 text-gray-400 font-mono text-xs">{{.Server.Name}}</td>
+          <td class="px-5 py-3">
+            <span class="bg-gray-800 text-indigo-300 text-xs px-2 py-0.5 rounded font-mono">{{.Type}}</span>
+          </td>
+          <td class="px-5 py-3 text-gray-400 font-mono text-xs">{{if .Domain}}{{.Domain}}{{else}}—{{end}}</td>
+          <td class="px-5 py-3">
+            {{if eq .DeployStatus "deployed"}}
+              <span class="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full border border-emerald-700/40">deployed</span>
+            {{else if eq .DeployStatus "deploying"}}
+              <span class="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded-full border border-yellow-700/40">deploying…</span>
+            {{else if eq .DeployStatus "failed"}}
+              <span class="text-xs text-red-400 bg-red-900/30 px-2 py-0.5 rounded-full border border-red-700/40">failed</span>
+            {{else}}
+              <span class="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full">{{.DeployStatus}}</span>
+            {{end}}
+          </td>
+          <td class="px-5 py-3">
+            <form action="/projects/{{.ID}}/deploy" method="post" class="inline">
+              <button type="submit"
+                class="text-xs bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1 rounded transition-colors">
+                Deploy
+              </button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="flex flex-col items-center justify-center py-24 text-gray-600">
+    <span class="text-5xl mb-4">📦</span>
+    <p class="text-lg font-medium">No projects yet</p>
+    <p class="text-sm mt-1">Create a new project to get started.</p>
+  </div>
+  {{end}}
+</main>
+
+<!-- New Project Modal -->
+<div id="new-project-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+  <div class="bg-gray-900 rounded-2xl border border-gray-700 p-8 w-full max-w-md shadow-2xl">
+    <h2 class="text-lg font-bold text-gray-100 mb-5">New Project</h2>
+    <form action="/projects" method="post" class="space-y-4">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Name</label>
+        <input type="text" name="name" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Server</label>
+        <select name="server_id" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">— Select server —</option>
+          {{range .AllServers}}
+          <option value="{{.ID}}">{{.Name}} ({{.Host}})</option>
+          {{end}}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Type</label>
+        <select name="type" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="compose">compose</option>
+          <option value="image">image</option>
+          <option value="dockerfile">dockerfile</option>
+          <option value="git">git</option>
+          <option value="scratch">scratch</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Source</label>
+        <input type="text" name="source" placeholder="repo URL or image name"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">Domain (optional)</label>
+        <input type="text" name="domain" placeholder="app.example.com"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 rounded-lg text-sm transition-colors">
+          Create Project
+        </button>
+        <button type="button"
+                onclick="document.getElementById('new-project-modal').classList.add('hidden')"
+                class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-2 rounded-lg text-sm transition-colors">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

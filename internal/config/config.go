@@ -15,16 +15,19 @@ var (
 )
 
 type Config struct {
-	DataDir    string     `mapstructure:"-"`
-	ConfigPath string     `mapstructure:"-"`
-	AI         AIConfig   `mapstructure:"ai"`
-	Telegram   TGConfig   `mapstructure:"telegram"`
-	UI         UIConfig   `mapstructure:"ui"`
-	Log        LogConfig  `mapstructure:"log"`
+	DataDir    string      `mapstructure:"-"`
+	ConfigPath string      `mapstructure:"-"`
+	AI         AIConfig    `mapstructure:"ai"`
+	Telegram   TGConfig    `mapstructure:"telegram"`
+	UI         UIConfig    `mapstructure:"ui"`
+	Log        LogConfig   `mapstructure:"log"`
+	Web        WebConfig   `mapstructure:"web"`
+	Poller     PollerConfig `mapstructure:"poller"`
+	Email      EmailConfig `mapstructure:"email"`
 }
 
 type AIConfig struct {
-	Provider    string `mapstructure:"provider"`    // openai, anthropic, ollama
+	Provider    string `mapstructure:"provider"`
 	Model       string `mapstructure:"model"`
 	APIKey      string `mapstructure:"api_key"`
 	OllamaHost  string `mapstructure:"ollama_host"`
@@ -38,13 +41,34 @@ type TGConfig struct {
 }
 
 type UIConfig struct {
-	Theme        string `mapstructure:"theme"` // dark (cyberpunk), light
-	RefreshRate  int    `mapstructure:"refresh_rate"`
+	Theme       string `mapstructure:"theme"`
+	RefreshRate int    `mapstructure:"refresh_rate"`
 }
 
 type LogConfig struct {
-	Level string `mapstructure:"level"` // debug, info, warn, error
+	Level string `mapstructure:"level"`
 	File  string `mapstructure:"file"`
+}
+
+type WebConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Host    string `mapstructure:"host"`
+	Port    int    `mapstructure:"port"`
+}
+
+type PollerConfig struct {
+	IntervalSec       int `mapstructure:"interval_sec"`
+	MetricRetention   int `mapstructure:"metric_retention"` // snapshots per server
+	UptimeIntervalSec int `mapstructure:"uptime_interval_sec"`
+}
+
+type EmailConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	SMTPHost string `mapstructure:"smtp_host"`
+	SMTPPort int    `mapstructure:"smtp_port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
 }
 
 func DefaultDataDir() string {
@@ -73,6 +97,14 @@ func Load() (*Config, error) {
 	viper.SetDefault("ui.refresh_rate", 5)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", filepath.Join(dataDir, "xmanager.log"))
+	viper.SetDefault("web.enabled", false)
+	viper.SetDefault("web.host", "127.0.0.1")
+	viper.SetDefault("web.port", 8080)
+	viper.SetDefault("poller.interval_sec", 30)
+	viper.SetDefault("poller.metric_retention", 288)
+	viper.SetDefault("poller.uptime_interval_sec", 60)
+	viper.SetDefault("email.enabled", false)
+	viper.SetDefault("email.smtp_port", 587)
 
 	viper.SetEnvPrefix("XMANAGER")
 	viper.AutomaticEnv()
@@ -108,6 +140,18 @@ func Save(cfg *Config) error {
 	viper.Set("ui.refresh_rate", cfg.UI.RefreshRate)
 	viper.Set("log.level", cfg.Log.Level)
 	viper.Set("log.file", cfg.Log.File)
+	viper.Set("web.enabled", cfg.Web.Enabled)
+	viper.Set("web.host", cfg.Web.Host)
+	viper.Set("web.port", cfg.Web.Port)
+	viper.Set("poller.interval_sec", cfg.Poller.IntervalSec)
+	viper.Set("poller.metric_retention", cfg.Poller.MetricRetention)
+	viper.Set("poller.uptime_interval_sec", cfg.Poller.UptimeIntervalSec)
+	viper.Set("email.enabled", cfg.Email.Enabled)
+	viper.Set("email.smtp_host", cfg.Email.SMTPHost)
+	viper.Set("email.smtp_port", cfg.Email.SMTPPort)
+	viper.Set("email.username", cfg.Email.Username)
+	viper.Set("email.password", cfg.Email.Password)
+	viper.Set("email.from", cfg.Email.From)
 
 	if err := viper.WriteConfigAs(cfg.ConfigPath); err != nil {
 		return fmt.Errorf("writing config: %w", err)

@@ -8,13 +8,13 @@ type Router struct {
 
 func NewRouter() *Router {
 	return &Router{
-		stack: []shared.ScreenID{shared.ScreenServerList},
+		stack: []shared.ScreenID{shared.ScreenFleetOverview},
 	}
 }
 
 func (r *Router) Current() shared.ScreenID {
 	if len(r.stack) == 0 {
-		return shared.ScreenServerList
+		return shared.ScreenFleetOverview
 	}
 	return r.stack[len(r.stack)-1]
 }

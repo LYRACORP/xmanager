@@ -3,6 +3,7 @@ package shared
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"gorm.io/gorm"
@@ -11,7 +12,7 @@ import (
 type ScreenID int
 
 const (
-	ScreenServerList ScreenID = iota
+	ScreenFleetOverview ScreenID = iota // 0 — default home
 	ScreenDashboard
 	ScreenServerMap
 	ScreenDocker
@@ -23,16 +24,28 @@ const (
 	ScreenDatabase
 	ScreenProxy
 	ScreenBackup
-	ScreenMultiServer
 	ScreenSettings
+	ScreenProjects
+	ScreenCronJobs
+	ScreenScripts
+	ScreenUptime
+	ScreenServices
+	ScreenRecon
+)
+
+// Backward-compatible aliases.
+const (
+	ScreenServerList  = ScreenFleetOverview
+	ScreenMultiServer = ScreenFleetOverview
 )
 
 func (s ScreenID) String() string {
 	names := [...]string{
-		"Server List", "Dashboard", "Server Map", "Docker",
+		"Fleet Overview", "Dashboard", "Server Map", "Docker",
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
-		"Multi-Server", "Settings",
+		"Settings", "Projects", "Cron Jobs", "Scripts",
+		"Uptime", "Services", "Recon",
 	}
 	if int(s) < len(names) {
 		return names[s]
@@ -77,4 +90,5 @@ type AppContext struct {
 	DB       *gorm.DB
 	Pool     *ssh.Pool
 	ServerID uint
+	Poller   *poller.Poller // optional; nil if poller not started
 }

@@ -1,50 +1,40 @@
 ---
 name: xmanager
 description: >-
-  XManager TUI (lyracorp/xmanager): Go + Bubble Tea SSH VPS orchestrator.
+  XManager TUI + optional web/MCP (lyracorp/xmanager): Go + Bubble Tea SSH VPS/PaaS orchestrator.
   Use for any work in this repo — architecture, bugs, features, refactors.
 ---
 
 # XManager — project context
 
-## Product constraints (do not violate)
+## Product constraints
 
-- **SSH-only, zero server agent** — all remote ops via `internal/ssh`; never add daemons/installers on managed hosts.
-- **Terminal-only** — no web UI.
-- **Out of scope**: Kubernetes, server-side agents, telemetry.
+- **SSH-only, zero server agent** — all remote ops via `internal/ssh`; no daemons on managed hosts.
+- **TUI primary** — Bubble Tea is the default UI; optional HTMX web panel is off by default.
+- **Optional services** — registry/gitea/k8s/etc. are opt-in per server (disabled by default).
 
 ## Module & build
 
 - Import path: `github.com/lyracorp/xmanager`
-- Entry: `cmd/xmanager/main.go` → `internal/tui`
-- Build: `make build` (requires **CGO_ENABLED=1** for SQLite)
+- Entry: `cmd/xmanager/main.go` → TUI / `web` / `mcp`
+- Build: `make build`
 - Verify: `make test`, `make lint`
 
-## Package map (read on demand)
+## Package map
 
 | Path | Role |
 |------|------|
-| `internal/tui/` | App, router, screens, components, theme |
+| `internal/tui/` | FleetOverview home + screens |
+| `internal/web/` | HTMX web panel |
+| `internal/mcp/` | MCP stdio tools for AI agents |
+| `internal/poller/` | SSH metrics + uptime polling |
 | `internal/ssh/` | Client, pool, executor, SFTP |
-| `internal/ai/` | Provider interface + OpenAI/Anthropic/Ollama |
-| `internal/storage/` | GORM + SQLite models/migrations |
-| `internal/config/` | Viper + AES-256-GCM for secrets |
-| `internal/docker`, `pm2`, `proxy`, `dbmanager`, `backup`, `recon`, `errtrack`, `notify` | Domain logic over SSH |
-| `wizards/*.yaml` | Setup wizard step definitions |
+| `internal/project/` | Deploy engine (10 project types) |
+| `internal/services/` | Optional self-hosted stacks |
+| `internal/ai/` | Providers + agent helpers |
+| `apps/` | One-click CapRover YAML apps |
 
-## Token-efficient exploration
-
-1. **Grep first** — locate symbols before opening large `model.go` files.
-2. **One reference screen** — for TUI work, read `internal/tui/screens/dashboard/model.go` (async cmds + parsing) unless editing another screen.
-3. **Skip** `go.sum`, generated assets, and unrelated `internal/*` packages.
-4. **Minimal diff** — match existing screen/package layout; no drive-by refactors.
-
-## Code style (from CONTRIBUTING)
-
-- `gofmt` / `goimports`; self-documenting code, sparse comments
-- Errors: lowercase, no trailing period; wrap with `fmt.Errorf("context: %w", err)`
-
-## Related skills (load only when needed)
+## Related skills
 
 | Task | Skill |
 |------|--------|
@@ -53,7 +43,3 @@ description: >-
 | AI provider | `xmanager-ai` |
 | Wizard YAML | `xmanager-wizard` |
 | Commits, PRs, secrets | `xmanager-public-contrib` |
-
-## Public repo
-
-Never commit real API keys, bot tokens, passwords, or private hostnames. See `xmanager-public-contrib`.

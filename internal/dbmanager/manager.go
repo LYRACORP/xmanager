@@ -8,6 +8,7 @@ const (
 	PostgreSQL DBType = "postgres"
 	MySQL      DBType = "mysql"
 	MongoDB    DBType = "mongodb"
+	// MariaDB, ClickHouse, Redis are defined in their respective files.
 )
 
 type Database struct {
@@ -50,6 +51,12 @@ func NewManagerWithOptions(dbType DBType, exec *ssh.Executor, opts ManagerOption
 		return &MySQLManager{exec: exec}
 	case MongoDB:
 		return &MongoManager{exec: exec}
+	case MariaDB:
+		return &MariaDBManager{exec: exec}
+	case ClickHouse:
+		return newClickHouseManager(exec)
+	case Redis:
+		return newRedisManager(exec)
 	default:
 		return nil
 	}
@@ -61,5 +68,8 @@ func DetectAvailable(exec *ssh.Executor) map[DBType]bool {
 		PostgreSQL: NewManager(PostgreSQL, exec).IsAvailable(),
 		MySQL:      NewManager(MySQL, exec).IsAvailable(),
 		MongoDB:    NewManager(MongoDB, exec).IsAvailable(),
+		MariaDB:    NewManager(MariaDB, exec).IsAvailable(),
+		ClickHouse: NewManager(ClickHouse, exec).IsAvailable(),
+		Redis:      NewManager(Redis, exec).IsAvailable(),
 	}
 }

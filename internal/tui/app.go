@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
@@ -18,6 +19,8 @@ import (
 type AppOptions struct {
 	Config        *config.Config
 	DB            *gorm.DB
+	Pool          *ssh.Pool
+	Poller        *poller.Poller
 	InitialTarget string
 }
 
@@ -36,10 +39,16 @@ type App struct {
 func newApp(opts AppOptions) *App {
 	theme.SetTheme(opts.Config.UI.Theme)
 
+	pool := opts.Pool
+	if pool == nil {
+		pool = ssh.NewPool()
+	}
+
 	ctx := &shared.AppContext{
 		Config: opts.Config,
 		DB:     opts.DB,
-		Pool:   ssh.NewPool(),
+		Pool:   pool,
+		Poller: opts.Poller,
 	}
 
 	app := &App{
@@ -59,7 +68,7 @@ func newApp(opts AppOptions) *App {
 }
 
 func (a *App) initScreens() {
-	a.screens[shared.ScreenServerList] = NewServerListScreen(a.ctx)
+	a.screens[shared.ScreenFleetOverview] = NewFleetOverviewScreen(a.ctx)
 	a.screens[shared.ScreenDashboard] = NewDashboardScreen(a.ctx)
 	a.screens[shared.ScreenServerMap] = NewServerMapScreen(a.ctx)
 	a.screens[shared.ScreenDocker] = NewDockerScreen(a.ctx)
@@ -71,8 +80,13 @@ func (a *App) initScreens() {
 	a.screens[shared.ScreenDatabase] = NewDatabaseScreen(a.ctx)
 	a.screens[shared.ScreenProxy] = NewProxyScreen(a.ctx)
 	a.screens[shared.ScreenBackup] = NewBackupScreen(a.ctx)
-	a.screens[shared.ScreenMultiServer] = NewMultiServerScreen(a.ctx)
 	a.screens[shared.ScreenSettings] = NewSettingsScreen(a.ctx)
+	a.screens[shared.ScreenProjects] = NewProjectsScreen(a.ctx)
+	a.screens[shared.ScreenCronJobs] = NewCronJobsScreen(a.ctx)
+	a.screens[shared.ScreenScripts] = NewScriptsScreen(a.ctx)
+	a.screens[shared.ScreenUptime] = NewUptimeScreen(a.ctx)
+	a.screens[shared.ScreenServices] = NewServicesScreen(a.ctx)
+	a.screens[shared.ScreenRecon] = NewReconScreen(a.ctx)
 }
 
 func (a *App) Init() tea.Cmd {
@@ -87,8 +101,7 @@ func (a *App) contentHeight() int {
 func (a *App) globalBindings() []components.KeyBinding {
 	return []components.KeyBinding{
 		{Key: "?", Desc: "help"},
-		{Key: "ctrl+s", Desc: "servers"},
-		{Key: "ctrl+m", Desc: "multi-server"},
+		{Key: "ctrl+s", Desc: "fleet"},
 		{Key: "ctrl+a", Desc: "AI chat"},
 		{Key: "esc", Desc: "back"},
 	}
@@ -147,6 +160,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			a.ctx.Pool.DisconnectAll()
+			if a.ctx.Poller != nil {
+				a.ctx.Poller.Stop()
+			}
 			return a, tea.Quit
 		case "?":
 			a.showHelp = true
@@ -159,9 +175,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.helpOverlay.Height = a.height
 			return a, nil
 		case "ctrl+s":
-			return a, a.replaceNavigate(shared.ScreenServerList, nil)
-		case "ctrl+m":
-			return a, a.replaceNavigate(shared.ScreenMultiServer, nil)
+			return a, a.replaceNavigate(shared.ScreenFleetOverview, nil)
 		case "ctrl+a":
 			return a, a.replaceNavigate(shared.ScreenChat, nil)
 		}
@@ -186,6 +200,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shared.ServerConnectedMsg:
 		a.refreshStatusBar()
+
+	case poller.MetricsUpdatedMsg:
+		// Forward to fleet overview so cards update in real time.
+		if fleet, ok := a.screens[shared.ScreenFleetOverview]; ok {
+			newFleet, cmd := fleet.Update(msg)
+			a.screens[shared.ScreenFleetOverview] = newFleet
+			return a, cmd
+		}
 	}
 
 	current := a.router.Current()
@@ -258,6 +280,11 @@ func (a *App) replaceNavigate(screen shared.ScreenID, params map[string]interfac
 func Run(opts AppOptions) error {
 	app := newApp(opts)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	if opts.Poller != nil {
+		opts.Poller.SetOnMetric(func(msg poller.MetricsUpdatedMsg) {
+			p.Send(msg)
+		})
+	}
 	_, err := p.Run()
 	return err
 }

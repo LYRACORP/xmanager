@@ -4,20 +4,26 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lyracorp/xmanager/internal/backup"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/mcp"
+	"github.com/lyracorp/xmanager/internal/notify"
+	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui"
+	"github.com/lyracorp/xmanager/internal/web"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
 	Use:     "xmanager",
 	Aliases: []string{"vpsm"},
-	Short:   "AI-powered terminal UI for VPS orchestration",
-	Long: `XManager TUI — Manage any server like a senior DevOps engineer, from your terminal.
+	Short:   "AI-powered TUI + optional web panel for VPS orchestration",
+	Long: `XManager — Manage any server like a senior DevOps engineer.
 
-Connect to any SSH server, AI identifies everything running, and you manage
-it all from a beautiful terminal UI. Zero server-side footprint.`,
+Connect via SSH, deploy projects, monitor fleet metrics, run scripts,
+and manage optional self-hosted services. Zero server-side agents.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTUI()
 	},
@@ -27,7 +33,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("XManager TUI %s\n", config.Version)
+		fmt.Printf("XManager %s\n", config.Version)
 		fmt.Printf("  Commit:  %s\n", config.Commit)
 		fmt.Printf("  Built:   %s\n", config.BuildTime)
 	},
@@ -65,6 +71,67 @@ var resetCmd = &cobra.Command{
 	},
 }
 
+var webCmd = &cobra.Command{
+	Use:   "web",
+	Short: "Start the optional HTMX web panel",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		cfg.Web.Enabled = true
+		db, err := storage.Open(cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		pool := ssh.NewPool()
+		notifier := buildNotifier(cfg)
+		p := poller.New(db, pool, cfg.Poller, notifier)
+		p.Start()
+		defer p.Stop()
+		sched := backup.NewScheduler(db)
+		schedStop := make(chan struct{})
+		go sched.StartScheduler(pool, schedStop)
+		defer close(schedStop)
+		return web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p})
+	},
+}
+
+var mcpCmd = &cobra.Command{
+	Use:   "mcp",
+	Short: "Start MCP server for AI agents (stdio)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		db, err := storage.Open(cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		pool := ssh.NewPool()
+		return mcp.RunStdio(mcp.Options{Config: cfg, DB: db, Pool: pool})
+	},
+}
+
+func buildNotifier(cfg *config.Config) notify.Notifier {
+	var ns []notify.Notifier
+	if cfg.Telegram.Enabled && cfg.Telegram.BotToken != "" {
+		ns = append(ns, notify.NewTelegram(cfg.Telegram.BotToken, cfg.Telegram.ChatID))
+	}
+	if cfg.Email.Enabled && cfg.Email.SMTPHost != "" {
+		ns = append(ns, notify.NewEmail(
+			cfg.Email.SMTPHost, cfg.Email.SMTPPort,
+			cfg.Email.Username, cfg.Email.Password, cfg.Email.From,
+			[]string{cfg.Email.From},
+		))
+	}
+	if len(ns) == 0 {
+		return nil
+	}
+	return notify.NewMulti(ns...)
+}
+
 func runTUI(initialServer ...string) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -76,19 +143,39 @@ func runTUI(initialServer ...string) error {
 		return fmt.Errorf("opening database: %w", err)
 	}
 
+	pool := ssh.NewPool()
+	notifier := buildNotifier(cfg)
+	p := poller.New(db, pool, cfg.Poller, notifier)
+	p.Start()
+	defer p.Stop()
+
+	sched := backup.NewScheduler(db)
+	schedStop := make(chan struct{})
+	go sched.StartScheduler(pool, schedStop)
+	defer close(schedStop)
+
 	opts := tui.AppOptions{
 		Config: cfg,
 		DB:     db,
+		Pool:   pool,
+		Poller: p,
 	}
 	if len(initialServer) > 0 {
 		opts.InitialTarget = initialServer[0]
+	}
+
+	// Optionally start web panel alongside TUI
+	if cfg.Web.Enabled {
+		go func() {
+			_ = web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p})
+		}()
 	}
 
 	return tui.Run(opts)
 }
 
 func main() {
-	rootCmd.AddCommand(versionCmd, connectCmd, setupCmd, resetCmd)
+	rootCmd.AddCommand(versionCmd, connectCmd, setupCmd, resetCmd, webCmd, mcpCmd)
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	if err := rootCmd.Execute(); err != nil {

@@ -358,6 +358,30 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenProxy, ServerID: m.ctx.ServerID}
 		}, true
+	case "j":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenProjects, ServerID: m.ctx.ServerID}
+		}, true
+	case "o":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenCronJobs, ServerID: m.ctx.ServerID}
+		}, true
+	case "t":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenScripts, ServerID: m.ctx.ServerID}
+		}, true
+	case "y":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenUptime, ServerID: m.ctx.ServerID}
+		}, true
+	case "v":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenServices, ServerID: m.ctx.ServerID}
+		}, true
+	case "z":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenRecon, ServerID: m.ctx.ServerID}
+		}, true
 	case ",":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenSettings, ServerID: m.ctx.ServerID}
@@ -446,6 +470,8 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 		return []components.KeyBinding{
 			{Key: "r", Desc: "refresh"},
 			{Key: "d/p/l", Desc: "docker/pm2/logs"},
+			{Key: "j/o/t", Desc: "projects/cron/scripts"},
+			{Key: "y/v/z", Desc: "uptime/services/recon"},
 			{Key: "n", Desc: "database"},
 			{Key: "1/2/3", Desc: "tabs"},
 			{Key: "b", Desc: "back"},

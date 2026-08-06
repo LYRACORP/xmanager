@@ -1,0 +1,35 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="en" class="bg-gray-950">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} — XManager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+{{end}}
+
+{{define "nav"}}
+<nav class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+  <a href="/" class="text-xl font-bold text-indigo-400 tracking-tight">⚡ XManager</a>
+  <div class="flex gap-6 text-sm font-medium">
+    <a href="/" class="text-gray-300 hover:text-indigo-300 transition-colors">Fleet</a>
+    <a href="/projects" class="text-gray-300 hover:text-indigo-300 transition-colors">Projects</a>
+    <a href="/uptime" class="text-gray-300 hover:text-indigo-300 transition-colors">Uptime</a>
+    <a href="/settings" class="text-gray-300 hover:text-indigo-300 transition-colors">Settings</a>
+  </div>
+  <div class="flex items-center gap-4 text-sm text-gray-400">
+    {{if .Session}}<span class="text-gray-300">{{.Session.Username}}</span>{{end}}
+    <form action="/logout" method="post" class="inline">
+      <button type="submit" class="text-red-400 hover:text-red-300 transition-colors">Logout</button>
+    </form>
+  </div>
+</nav>
+{{end}}
+
+{{define "foot"}}
+</body>
+</html>
+{{end}}
