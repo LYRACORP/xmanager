@@ -165,11 +165,81 @@ func sshAgentAuth() ssh.AuthMethod {
 	return ssh.PublicKeysCallback(agent.NewClient(conn).Signers)
 }
 
+// knownHostsCallback verifies host keys against ~/.ssh/known_hosts.
+// Unknown hosts are accepted on first connect (TOFU) and appended to the file,
+// matching typical OpenSSH interactive behavior. Changed keys still fail.
 func knownHostsCallback() (ssh.HostKeyCallback, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	khPath := filepath.Join(home, ".ssh", "known_hosts")
-	return knownhosts.New(khPath)
+
+	// Ensure ~/.ssh and known_hosts exist so knownhosts.New succeeds.
+	if err := os.MkdirAll(filepath.Dir(khPath), 0700); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(khPath); os.IsNotExist(err) {
+		if f, createErr := os.OpenFile(khPath, os.O_CREATE|os.O_WRONLY, 0600); createErr == nil {
+			_ = f.Close()
+		}
+	}
+
+	base, err := knownhosts.New(khPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := base(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+
+		var keyErr *knownhosts.KeyError
+		if !asKeyError(err, &keyErr) {
+			return err
+		}
+
+		// Known host but key mismatch — do not silently trust.
+		if len(keyErr.Want) > 0 {
+			return fmt.Errorf("host key mismatch for %s (remote key changed; remove the old entry from %s)", hostname, khPath)
+		}
+
+		// Unknown host — trust on first use and persist.
+		if appendErr := appendKnownHost(khPath, hostname, remote, key); appendErr != nil {
+			return fmt.Errorf("accepting new host key: %w", appendErr)
+		}
+		return nil
+	}, nil
+}
+
+func asKeyError(err error, target **knownhosts.KeyError) bool {
+	ke, ok := err.(*knownhosts.KeyError)
+	if !ok {
+		return false
+	}
+	*target = ke
+	return true
+}
+
+func appendKnownHost(khPath, hostname string, remote net.Addr, key ssh.PublicKey) error {
+	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// knownhosts.Line formats "[host]:port keytype base64..." correctly.
+	addr := []string{hostname}
+	if remote != nil {
+		if host, _, splitErr := net.SplitHostPort(remote.String()); splitErr == nil && host != "" {
+			addr = []string{knownhosts.Normalize(remote.String())}
+		}
+	}
+	line := knownhosts.Line(addr, key)
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		return err
+	}
+	return nil
 }
