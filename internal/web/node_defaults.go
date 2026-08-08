@@ -82,7 +82,13 @@ func (h *handler) ensureOneDefaultService(exec *ssh.Executor, serverID uint, nam
 	}
 
 	log.Printf("node: enabling default service %s (status=%q)…", name, status)
-	if err := svc.Enable(exec, map[string]string{}); err != nil {
+	cfg := map[string]string{}
+	if name == "mailinbox" {
+		// Avoid clashing with the node panel on :8080; prefer non-privileged SMTP fallback path.
+		cfg["https_port"] = "8085"
+		cfg["smtp_port"] = "25"
+	}
+	if err := svc.Enable(exec, cfg); err != nil {
 		log.Printf("node: default service %s enable failed: %v", name, err)
 		return
 	}

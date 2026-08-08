@@ -28,8 +28,8 @@
             {{end}}
           </div>
           <p class="text-xs text-gray-500 mt-1 font-mono">{{.Status}}</p>
-          {{if eq .Name "netdata"}}
-          <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
+          {{if eq .Name "mailinbox"}}
+          <p class="text-xs text-gray-600 mt-2">Admin UI on host port <span class="font-mono text-gray-400">8085</span> (not 8080 — reserved for this panel). SMTP may use 2525 if :25 is unavailable.</p>
           {{end}}
         </div>
         <div class="shrink-0">

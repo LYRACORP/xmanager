@@ -205,7 +205,12 @@ func (w *WebPanel) enableDefaultNodeStacks() {
 		if st != "" && st != "stopped" {
 			continue
 		}
-		if err := item.Enable(w.exec, map[string]string{}); err != nil {
+		cfg := map[string]string{}
+		if item.Name() == "mailinbox" {
+			cfg["https_port"] = "8085"
+			cfg["smtp_port"] = "25"
+		}
+		if err := item.Enable(w.exec, cfg); err != nil {
 			// Non-fatal: panel is up; node boot ensure will retry.
 			fmt.Printf("webpanel: default stack %s: %v\n", item.Name(), err)
 		} else {
