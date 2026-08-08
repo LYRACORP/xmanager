@@ -17,6 +17,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
 	svcs "github.com/lyracorp/xmanager/internal/services"
+	"github.com/lyracorp/xmanager/internal/services/bugsink"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -26,7 +27,6 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/rabbitmq"
 	"github.com/lyracorp/xmanager/internal/services/registry"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
-	"github.com/lyracorp/xmanager/internal/services/sentry"
 	"github.com/lyracorp/xmanager/internal/services/umami"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -475,8 +475,8 @@ func (h *handler) lookupNodeService(name string) svcs.Service {
 		return kafka.New(db, sid)
 	case "mattermost":
 		return mattermost.New(db, sid)
-	case "sentry":
-		return sentry.New(db, sid)
+	case "bugsink":
+		return bugsink.New(db, sid)
 	case "umami":
 		return umami.New(db, sid)
 	case "powerdns":
@@ -494,7 +494,7 @@ func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	names := []string{
 		"registry", "gitea", "rustfs", "rabbitmq", "kafka",
-		"mattermost", "sentry", "umami", "powerdns", "mailinbox", "netdata",
+		"mattermost", "bugsink", "umami", "powerdns", "mailinbox", "netdata",
 	}
 	exec := h.localExec()
 	var list []nodeServiceView

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	svcs "github.com/lyracorp/xmanager/internal/services"
+	"github.com/lyracorp/xmanager/internal/services/bugsink"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -16,7 +17,6 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/rabbitmq"
 	"github.com/lyracorp/xmanager/internal/services/registry"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
-	"github.com/lyracorp/xmanager/internal/services/sentry"
 	"github.com/lyracorp/xmanager/internal/services/umami"
 	"github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -29,7 +29,7 @@ import (
 var optionalServices = []string{
 	"webpanel",
 	"registry", "gitea", "rustfs", "rabbitmq", "kafka",
-	"mattermost", "sentry", "netdata", "umami", "powerdns",
+	"mattermost", "bugsink", "netdata", "umami", "powerdns",
 	"mailinbox",
 }
 
@@ -248,8 +248,8 @@ func lookupService(svcType string, ctx *shared.AppContext, serverID uint) svcs.S
 		return registry.New(db, serverID)
 	case "rustfs":
 		return rustfs.New(db, serverID)
-	case "sentry":
-		return sentry.New(db, serverID)
+	case "bugsink":
+		return bugsink.New(db, serverID)
 	case "netdata":
 		return netdata.New(db, serverID)
 	case "umami":

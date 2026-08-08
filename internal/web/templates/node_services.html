@@ -3,7 +3,7 @@
 {{template "nav" .}}
 <main class="p-6 max-w-6xl mx-auto">
   <h1 class="text-2xl font-bold mb-2">Services</h1>
-  <p class="text-gray-500 text-sm mb-6">Optional stacks on this host. Registry, Gitea, RustFS, PowerDNS, and Mailinbox are enabled by default on node install (unless you disable them).</p>
+  <p class="text-gray-500 text-sm mb-6">Optional stacks on this host. Registry, Gitea, RustFS, PowerDNS, Mailinbox, and Bugsink are enabled by default on node install (unless you disable them).</p>
   {{if .Flash}}<p class="text-amber-300 mb-4 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
   <div class="grid md:grid-cols-2 gap-4">
@@ -28,8 +28,14 @@
             {{end}}
           </div>
           <p class="text-xs text-gray-500 mt-1 font-mono">{{.Status}}</p>
+          {{if eq .Name "bugsink"}}
+          <p class="text-xs text-gray-600 mt-2">Self-hosted error tracking (Sentry SDK compatible) on <span class="font-mono text-gray-400">:8000</span> — default login <span class="font-mono">admin</span> · <a class="text-indigo-400" href="https://www.bugsink.com/" target="_blank" rel="noopener">bugsink.com</a></p>
+          {{end}}
           {{if eq .Name "mailinbox"}}
           <p class="text-xs text-gray-600 mt-2">Admin UI on host port <span class="font-mono text-gray-400">8085</span> (not 8080 — reserved for this panel). SMTP may use 2525 if :25 is unavailable.</p>
+          {{end}}
+          {{if eq .Name "netdata"}}
+          <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
           {{end}}
         </div>
         <div class="shrink-0">

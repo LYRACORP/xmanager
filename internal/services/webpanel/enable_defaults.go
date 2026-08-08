@@ -2,6 +2,7 @@ package webpanel
 
 import (
 	svcs "github.com/lyracorp/xmanager/internal/services"
+	"github.com/lyracorp/xmanager/internal/services/bugsink"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
@@ -19,5 +20,6 @@ func defaultRemoteStacks(db *gorm.DB, serverID uint) []svcs.Service {
 		rustfs.New(db, serverID),
 		powerdns.New(db, serverID),
 		mailinbox.New(db, serverID),
+		bugsink.New(db, serverID),
 	}
 }

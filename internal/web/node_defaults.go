@@ -18,6 +18,7 @@ var defaultNodeServices = []string{
 	"rustfs",
 	"powerdns",
 	"mailinbox",
+	"bugsink",
 }
 
 func isDefaultNodeService(name string) bool {

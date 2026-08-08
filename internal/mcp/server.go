@@ -15,6 +15,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/recon"
 	"github.com/lyracorp/xmanager/internal/scripts"
+	bugsinksvc "github.com/lyracorp/xmanager/internal/services/bugsink"
 	giteasvc "github.com/lyracorp/xmanager/internal/services/gitea"
 	k8ssvc "github.com/lyracorp/xmanager/internal/services/k8s"
 	kafkasvc "github.com/lyracorp/xmanager/internal/services/kafka"
@@ -25,7 +26,6 @@ import (
 	rabbitsvc "github.com/lyracorp/xmanager/internal/services/rabbitmq"
 	registrysvc "github.com/lyracorp/xmanager/internal/services/registry"
 	rustfssvc "github.com/lyracorp/xmanager/internal/services/rustfs"
-	sentrysvc "github.com/lyracorp/xmanager/internal/services/sentry"
 	umamisvc "github.com/lyracorp/xmanager/internal/services/umami"
 	webpanelsvc "github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -620,8 +620,8 @@ func lookupService(serviceType string, db *gorm.DB, serverID uint) togglable {
 		return registrysvc.New(db, serverID)
 	case "rustfs":
 		return rustfssvc.New(db, serverID)
-	case "sentry", "glitchtip":
-		return sentrysvc.New(db, serverID)
+	case "bugsink", "sentry", "glitchtip":
+		return bugsinksvc.New(db, serverID)
 	case "netdata":
 		return netdatasvc.New(db, serverID)
 	case "umami":
