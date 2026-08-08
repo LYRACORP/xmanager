@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *Kafka {
 func (k *Kafka) Name() string { return serviceType }
 
 func (k *Kafka) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect kafka 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "kafka") || k.InstanceEnabled(k.serverID, serviceType)
 }
 
 func (k *Kafka) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -40,6 +40,7 @@ func (k *Kafka) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	compose := fmt.Sprintf(`services:
   kafka:
     image: bitnami/kafka:latest
+    container_name: kafka
     restart: unless-stopped
     environment:
       - KAFKA_CFG_NODE_ID=0
@@ -68,13 +69,10 @@ func (k *Kafka) Disable(exec *ssh.Executor) error {
 	if err := k.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("kafka disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f kafka 2>/dev/null || true")
 	return k.SaveInstance(k.serverID, serviceType, "stopped", "")
 }
 
 func (k *Kafka) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' kafka 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "kafka")
 }

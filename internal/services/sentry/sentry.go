@@ -24,7 +24,7 @@ func New(db *gorm.DB, serverID uint) *Sentry {
 func (s *Sentry) Name() string { return serviceType }
 
 func (s *Sentry) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect glitchtip-web 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "glitchtip") || s.InstanceEnabled(s.serverID, serviceType)
 }
 
 func (s *Sentry) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -112,13 +112,10 @@ func (s *Sentry) Disable(exec *ssh.Executor) error {
 	if err := s.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("sentry disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f glitchtip-web 2>/dev/null || true")
 	return s.SaveInstance(s.serverID, serviceType, "stopped", "")
 }
 
 func (s *Sentry) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' glitchtip-web 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "glitchtip")
 }

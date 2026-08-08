@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *PowerDNS {
 func (p *PowerDNS) Name() string { return serviceType }
 
 func (p *PowerDNS) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect pdns-auth 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "pdns") || p.InstanceEnabled(p.serverID, serviceType)
 }
 
 func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -91,13 +91,10 @@ func (p *PowerDNS) Disable(exec *ssh.Executor) error {
 	if err := p.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("powerdns disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f pdns-auth 2>/dev/null || true")
 	return p.SaveInstance(p.serverID, serviceType, "stopped", "")
 }
 
 func (p *PowerDNS) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' pdns-auth 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "pdns")
 }

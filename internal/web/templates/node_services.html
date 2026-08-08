@@ -4,23 +4,38 @@
 <main class="p-6 max-w-6xl mx-auto">
   <h1 class="text-2xl font-bold mb-2">Services</h1>
   <p class="text-gray-500 text-sm mb-6">Optional self-hosted stacks on this host (disabled by default)</p>
-  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="text-amber-300 mb-4 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
   <div class="grid md:grid-cols-2 gap-4">
     {{range .NodeServices}}
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <div class="bg-gray-900 border rounded-xl p-5 {{if .Enabled}}border-emerald-800/80{{else}}border-gray-800{{end}}">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <h2 class="font-semibold text-gray-100 capitalize">{{.Name}}</h2>
-          <p class="text-xs text-gray-500 mt-1">{{.Status}}</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 class="font-semibold text-gray-100 capitalize">{{.Name}}</h2>
+            {{if .Enabled}}
+            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">enabled</span>
+            {{if .Running}}
+            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-900/50 text-sky-300 border border-sky-800/50">running</span>
+            {{else}}
+            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-300 border border-amber-800/40">marked on · not running</span>
+            {{end}}
+            {{else}}
+            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700">disabled</span>
+            {{end}}
+          </div>
+          <p class="text-xs text-gray-500 mt-1 font-mono">{{.Status}}</p>
           {{if eq .Name "netdata"}}
-          <p class="text-xs text-gray-600 mt-2">After enable: open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
+          <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
           {{end}}
         </div>
-        <div>
+        <div class="shrink-0">
           {{if .Enabled}}
           <form method="post" action="/services/{{.Name}}/disable">
-            <button class="text-xs bg-red-900/50 text-red-300 border border-red-800 px-3 py-1.5 rounded">Disable</button>
+            <button class="text-xs bg-red-900/50 hover:bg-red-900/80 text-red-300 border border-red-800 px-3 py-1.5 rounded"
+                    onclick="return confirm('Stop and disable {{.Name}}?')">
+              Disable / Stop
+            </button>
           </form>
           {{else}}
           <form method="post" action="/services/{{.Name}}/enable" class="space-y-2">
@@ -28,7 +43,7 @@
             <input name="nginx_user" placeholder="basic auth user" value="admin" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             <input name="nginx_pass" placeholder="basic auth pass" type="password" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             {{end}}
-            <button class="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded">Enable</button>
+            <button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded">Enable</button>
           </form>
           {{end}}
         </div>

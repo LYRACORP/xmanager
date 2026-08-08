@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *Gitea {
 func (g *Gitea) Name() string { return serviceType }
 
 func (g *Gitea) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect gitea 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "gitea") || g.InstanceEnabled(g.serverID, serviceType)
 }
 
 func (g *Gitea) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -39,6 +39,7 @@ func (g *Gitea) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	compose := fmt.Sprintf(`services:
   gitea:
     image: gitea/gitea:latest
+    container_name: gitea
     restart: unless-stopped
     environment:
       - USER_UID=1000
@@ -65,13 +66,10 @@ func (g *Gitea) Disable(exec *ssh.Executor) error {
 	if err := g.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("gitea disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f gitea 2>/dev/null || true")
 	return g.SaveInstance(g.serverID, serviceType, "stopped", "")
 }
 
 func (g *Gitea) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' gitea 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "gitea")
 }

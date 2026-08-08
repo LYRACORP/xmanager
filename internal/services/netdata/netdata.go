@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *Netdata {
 func (n *Netdata) Name() string { return serviceType }
 
 func (n *Netdata) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect netdata 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "netdata") || n.InstanceEnabled(n.serverID, serviceType)
 }
 
 func (n *Netdata) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -111,16 +111,13 @@ func (n *Netdata) Disable(exec *ssh.Executor) error {
 	if err := n.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("netdata disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f netdata 2>/dev/null || true")
 	_, _ = exec.Run("sudo rm -f /etc/nginx/sites-enabled/netdata && sudo nginx -s reload 2>/dev/null || true")
 	return n.SaveInstance(n.serverID, serviceType, "stopped", "")
 }
 
 func (n *Netdata) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' netdata 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "netdata")
 }
 
 func shellQuote(s string) string {

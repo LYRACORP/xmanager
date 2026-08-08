@@ -96,6 +96,11 @@ func (h *handler) localExec() *ssh.Executor {
 }
 
 func (h *handler) localServerID() uint {
+	if h.localSrvID == 0 && h.opts.DB != nil {
+		if srv, err := EnsureLocalServer(h.opts.DB); err == nil {
+			h.localSrvID = srv.ID
+		}
+	}
 	return h.localSrvID
 }
 
@@ -449,6 +454,7 @@ func (h *handler) postNodeDatabaseLink(w http.ResponseWriter, r *http.Request) {
 type nodeServiceView struct {
 	Name    string
 	Enabled bool
+	Running bool
 	Status  string
 }
 
@@ -496,15 +502,22 @@ func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
 		if svc == nil {
 			continue
 		}
+		enabled := svc.IsEnabled(exec)
+		status := svc.Status(exec)
+		running := enabled && status != "stopped" && status != ""
 		list = append(list, nodeServiceView{
 			Name:    n,
-			Enabled: svc.IsEnabled(exec),
-			Status:  svc.Status(exec),
+			Enabled: enabled,
+			Running: running,
+			Status:  status,
 		})
 	}
 	data := h.basePage(sess, "Services")
 	data.ActiveNav = "services"
 	data.NodeServices = list
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
 	h.render(w, "node_services", data)
 }
 
@@ -523,18 +536,29 @@ func (h *handler) postNodeServiceEnable(w http.ResponseWriter, r *http.Request) 
 			cfg["nginx_pass"] = "xmanager"
 		}
 	}
-	if svc != nil {
-		_ = svc.Enable(h.localExec(), cfg)
+	if svc == nil {
+		http.Redirect(w, r, "/services?flash=unknown+service", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/services", http.StatusSeeOther)
+	if err := svc.Enable(h.localExec(), cfg); err != nil {
+		http.Redirect(w, r, "/services?flash="+url.QueryEscape("enable failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/services?flash="+url.QueryEscape(name+" enabled"), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeServiceDisable(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if svc := h.lookupNodeService(name); svc != nil {
-		_ = svc.Disable(h.localExec())
+	svc := h.lookupNodeService(name)
+	if svc == nil {
+		http.Redirect(w, r, "/services", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/services", http.StatusSeeOther)
+	if err := svc.Disable(h.localExec()); err != nil {
+		http.Redirect(w, r, "/services?flash="+url.QueryEscape("disable failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/services?flash="+url.QueryEscape(name+" disabled"), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeRustfsBucket(w http.ResponseWriter, r *http.Request) {

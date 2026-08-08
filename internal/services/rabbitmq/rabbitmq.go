@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *RabbitMQ {
 func (r *RabbitMQ) Name() string { return serviceType }
 
 func (r *RabbitMQ) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect rabbitmq 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "rabbitmq") || r.InstanceEnabled(r.serverID, serviceType)
 }
 
 func (r *RabbitMQ) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -47,6 +47,7 @@ func (r *RabbitMQ) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	compose := fmt.Sprintf(`services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
     restart: unless-stopped
     environment:
       - RABBITMQ_DEFAULT_USER=%s
@@ -71,13 +72,10 @@ func (r *RabbitMQ) Disable(exec *ssh.Executor) error {
 	if err := r.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("rabbitmq disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f rabbitmq 2>/dev/null || true")
 	return r.SaveInstance(r.serverID, serviceType, "stopped", "")
 }
 
 func (r *RabbitMQ) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' rabbitmq 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "rabbitmq")
 }

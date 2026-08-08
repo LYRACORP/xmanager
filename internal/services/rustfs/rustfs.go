@@ -24,7 +24,7 @@ func New(db *gorm.DB, serverID uint) *RustFS {
 func (r *RustFS) Name() string { return serviceType }
 
 func (r *RustFS) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect rustfs 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "rustfs") || r.InstanceEnabled(r.serverID, serviceType)
 }
 
 func (r *RustFS) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -48,6 +48,7 @@ func (r *RustFS) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	compose := fmt.Sprintf(`services:
   rustfs:
     image: rustfs/rustfs:latest
+    container_name: rustfs
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -73,13 +74,10 @@ func (r *RustFS) Disable(exec *ssh.Executor) error {
 	if err := r.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("rustfs disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f rustfs 2>/dev/null || true")
 	return r.SaveInstance(r.serverID, serviceType, "stopped", "")
 }
 
 func (r *RustFS) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' rustfs 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "rustfs")
 }

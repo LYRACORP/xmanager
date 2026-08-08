@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *Umami {
 func (u *Umami) Name() string { return serviceType }
 
 func (u *Umami) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect umami 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "umami") || u.InstanceEnabled(u.serverID, serviceType)
 }
 
 func (u *Umami) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -52,6 +52,7 @@ func (u *Umami) Enable(exec *ssh.Executor, cfg map[string]string) error {
       - umami_db:/var/lib/postgresql/data
   umami:
     image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: umami
     restart: unless-stopped
     depends_on:
       - postgres
@@ -76,13 +77,10 @@ func (u *Umami) Disable(exec *ssh.Executor) error {
 	if err := u.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("umami disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f umami 2>/dev/null || true")
 	return u.SaveInstance(u.serverID, serviceType, "stopped", "")
 }
 
 func (u *Umami) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' umami 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "umami")
 }

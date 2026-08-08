@@ -23,7 +23,7 @@ func New(db *gorm.DB, serverID uint) *Mattermost {
 func (m *Mattermost) Name() string { return serviceType }
 
 func (m *Mattermost) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker inspect mattermost 2>/dev/null | grep -q running && echo yes") == "yes"
+	return services.ServiceUp(exec, dir, "mattermost") || m.InstanceEnabled(m.serverID, serviceType)
 }
 
 func (m *Mattermost) Enable(exec *ssh.Executor, cfg map[string]string) error {
@@ -52,6 +52,7 @@ func (m *Mattermost) Enable(exec *ssh.Executor, cfg map[string]string) error {
       - mm_postgres:/var/lib/postgresql/data
   mattermost:
     image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
     restart: unless-stopped
     depends_on:
       - postgres
@@ -83,13 +84,10 @@ func (m *Mattermost) Disable(exec *ssh.Executor) error {
 	if err := m.ComposeDown(exec, dir); err != nil {
 		return fmt.Errorf("mattermost disable: %w", err)
 	}
+	_, _ = exec.Run("docker rm -f mattermost 2>/dev/null || true")
 	return m.SaveInstance(m.serverID, serviceType, "stopped", "")
 }
 
 func (m *Mattermost) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("docker inspect --format='{{.State.Status}}' mattermost 2>/dev/null")
-	if out == "" {
-		return "stopped"
-	}
-	return out
+	return services.ContainerStatus(exec, "mattermost")
 }
