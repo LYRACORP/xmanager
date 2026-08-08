@@ -1,0 +1,52 @@
+i want a server management tool . it supposed to be tui running on my local machine and can manage multiplie servers (using ssh or ansible ) . with a web panel (user can enable/disable it if he wants , but disabled by default) . 
+for each server it must able to do : 
+ - install/uninstall docker, docker-compose, python, node,npm,pm2, my custom bashscripts, etc...
+ 
+ - can monitor cpu usage, memory usage, disk usage, network usage, active users, docker containers(with resource usage and logs), incoming requests to webserver, list open ports ,  etc... 
+ - can run custom bashscripts, python scripts, nodejs scripts, on one server or multiplie servers or all servers at once   
+ - run and manage cron jobs on servers, and monitor them live, show logs for previus runs and show the next run time and status
+ - can run and manage private self hosted docker registery (if user enable it , disabled by default) 
+-  can run and manage private self hosted gitea server (if user enable it , disabled by default) 
+- Database Management with Backups, Manage and back up MySQL, PostgreSQL, MongoDB, MariaDB, clickhouse, Redis directly. manage db users and permissions for databases . can run multiplie db versions  isolated . 
+- must have rustfs s3 storage selfhosted (if user enable it , disabled by default) . can create and manage buckets .
+- must have rabbitmq selfohsted and kafka selfhosted , if user enable it , disabled by default . must have management tools for them . or even better if it can be managed from the same tool .
+- can setup servers based on the lists and bash scripts we give it . 
+- can enable/disable mattermost or similar services on servers , if user enable it , disabled by default . 
+- can enable/disable sentry or similar services on servers , if user enable it , disabled by default . 
+- multiplie ai agents be runn on sandbox and manage an project  and can be interacted with multiplie users remotely . 
+- can run and manage online meet+ drawing board, task board-kanban.
+- need alert and monitoring for each/all servers . tg/email/sms/webhook/etc...
+- can run and manage umama, disabled by default . 
+- manage dns server using powerdns, disabled by default . 
+- manage email server using mail-in-a-box, disabled by default . 
+- manage and setup kubernetes cluster using kubespary, disabled by default . 
+  - something like netdata (netdata dosent has auth,if you can add auth to it then netdata is good enough )
+
+
+
+- feel free to run agent for all this on server or use ansiblle . idk , maybe only use agents for heartbeat like stuff . i prefer no agent/deamon on server . 
+
+- make it ai agent friendly ,   ai agents can manage/setup/monitor/configure/control the server and the tools and services on it . need mcp for it . 
+
+- can recon(check ports) on our servers for open ports and ping  . 
+- must have something like https://uptimerobot.com/ for monitoring and alerting servers, web services, sites, etc...
+
+
+
+flow  : 
+user login , select project type and create project , must check "Has Persistent Data" checkbox if the project has persistent data (like database, docker volume,  files, etc...) . 
+project types :  
+1 - from image
+2- from docker compose 
+3- from docker file 
+4- from git repo (most be connected to github/gitlab/bitbucket/local git repo, local gitea server, etc...) . after creating project , it must be able to pull the code from the repo and build the project . and also on each push to repo it must pull and build/run the project .
+5 - from one click applications (like heroku )
+6- clone other project from our projects list .
+7 - from tui/cli on users machine, pushes project to server .
+8 - from scratch 
+9 - from .tar/.zip file 
+10 - run simple functions  (go, python, nodejs, etc...) 
+
+user can connect domains to projects,databases,mailboxes,etc...
+user can create database and db users and connect them to projects or connect to it from his local machine . 
+user can create mailboxes/addresses for connected domains . 
