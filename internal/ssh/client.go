@@ -13,13 +13,13 @@ import (
 )
 
 type ClientConfig struct {
-	Host       string
-	Port       int
-	User       string
-	KeyPath    string
-	Password   string
-	JumpHost   string
-	Timeout    time.Duration
+	Host     string
+	Port     int
+	User     string
+	KeyPath  string
+	Password string
+	JumpHost string
+	Timeout  time.Duration
 }
 
 type Client struct {

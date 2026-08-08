@@ -1,0 +1,77 @@
+{{define "node_cron"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold mb-2">Cron</h1>
+  <p class="text-gray-500 text-sm mb-6">Jobs on this host — next run, status, logs</p>
+  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+
+  <form method="post" action="/cron" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 grid gap-3 md:grid-cols-4">
+    <input name="name" required placeholder="name" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+    <input name="expression" required placeholder="*/5 * * * *" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+    <input name="command" required placeholder="command" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+    <button type="submit" class="md:col-span-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">Add job</button>
+  </form>
+
+  {{if .CronJobs}}
+  <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-gray-500 text-left border-b border-gray-800">
+        <tr>
+          <th class="px-4 py-3">Name</th>
+          <th class="px-4 py-3">Schedule</th>
+          <th class="px-4 py-3">Next</th>
+          <th class="px-4 py-3">Last</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        {{range .CronJobs}}
+        <tr>
+          <td class="px-4 py-3 font-medium">{{.Name}}</td>
+          <td class="px-4 py-3 font-mono text-xs text-gray-400">{{.Expression}}</td>
+          <td class="px-4 py-3 text-xs text-gray-400">{{if .NextRun}}{{.NextRun.Format "Jan 2 15:04"}}{{else}}—{{end}}</td>
+          <td class="px-4 py-3 text-xs text-gray-400">{{if .LastRun}}{{.LastRun.Format "Jan 2 15:04"}}{{else}}—{{end}}</td>
+          <td class="px-4 py-3 text-xs">{{if .Enabled}}<span class="text-emerald-400">enabled</span>{{else}}<span class="text-gray-500">disabled</span>{{end}} · {{.Status}}</td>
+          <td class="px-4 py-3 space-x-2 whitespace-nowrap">
+            <form action="/cron/{{.ID}}/toggle" method="post" class="inline"><button class="text-xs text-sky-400 hover:underline">Toggle</button></form>
+            <a href="/cron/{{.ID}}/logs" class="text-xs text-indigo-400 hover:underline">Logs</a>
+            <form action="/cron/{{.ID}}/delete" method="post" class="inline" onsubmit="return confirm('Delete?')"><button class="text-xs text-red-400 hover:underline">Delete</button></form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="text-gray-600">No cron jobs yet</p>
+  {{end}}
+</main>
+{{template "foot" .}}
+{{end}}
+
+{{define "node_cron_logs"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-6xl mx-auto">
+  <div class="flex justify-between mb-4">
+    <h1 class="text-2xl font-bold">Cron run logs</h1>
+    <a href="/cron" class="text-indigo-400 text-sm">← Cron</a>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+  {{if .CronRuns}}
+  <div class="space-y-3">
+    {{range .CronRuns}}
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+      <div class="text-xs text-gray-500 mb-1">{{.StartedAt.Format "2006-01-02 15:04:05"}} · exit {{.ExitCode}}</div>
+      <pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{{.Log}}</pre>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="text-gray-600">No run logs</p>
+  {{end}}
+</main>
+{{template "foot" .}}
+{{end}}

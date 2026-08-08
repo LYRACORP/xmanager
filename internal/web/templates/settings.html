@@ -19,6 +19,10 @@
           <dd class="text-gray-200 font-mono">{{.Host}}:{{.Port}}</dd>
         </div>
         <div class="flex justify-between">
+          <dt class="text-gray-500">Role</dt>
+          <dd class="text-gray-200 font-mono">{{if .Role}}{{.Role}}{{else}}control{{end}}</dd>
+        </div>
+        <div class="flex justify-between">
           <dt class="text-gray-500">Enabled</dt>
           <dd class="{{if .Enabled}}text-emerald-400{{else}}text-red-400{{end}}">{{if .Enabled}}yes{{else}}no{{end}}</dd>
         </div>

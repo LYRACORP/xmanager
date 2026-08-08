@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -17,6 +18,7 @@ type ExecResult struct {
 
 type Executor struct {
 	client *Client
+	local  bool
 }
 
 func NewExecutor(client *Client) *Executor {
@@ -24,6 +26,9 @@ func NewExecutor(client *Client) *Executor {
 }
 
 func (e *Executor) Run(cmd string) (*ExecResult, error) {
+	if e.local {
+		return e.runLocal(cmd)
+	}
 	session, err := e.client.conn.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
@@ -66,6 +71,21 @@ func (e *Executor) RunCombined(cmd string) (string, error) {
 }
 
 func (e *Executor) Stream(cmd string) (io.Reader, func(), error) {
+	if e.local {
+		c := exec.Command("bash", "-c", cmd)
+		stdout, err := c.StdoutPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := c.Start(); err != nil {
+			return nil, nil, err
+		}
+		cleanup := func() {
+			_ = c.Process.Kill()
+			_ = c.Wait()
+		}
+		return stdout, cleanup, nil
+	}
 	session, err := e.client.conn.NewSession()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating session: %w", err)

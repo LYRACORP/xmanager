@@ -65,13 +65,13 @@ type ErrorEvent struct {
 
 type AlertRule struct {
 	gorm.Model
-	ServerID   uint   `gorm:"index" json:"server_id"`
-	MonitorID  uint   `gorm:"index" json:"monitor_id"`
-	Type       string `gorm:"not null" json:"type"` // cpu, ram, disk, error, unreachable, uptime
-	Threshold  string `json:"threshold"`
-	ChannelID  uint   `json:"channel_id"`
-	Channel    string `gorm:"default:telegram" json:"channel"`
-	Enabled    bool   `gorm:"default:true" json:"enabled"`
+	ServerID  uint   `gorm:"index" json:"server_id"`
+	MonitorID uint   `gorm:"index" json:"monitor_id"`
+	Type      string `gorm:"not null" json:"type"` // cpu, ram, disk, error, unreachable, uptime
+	Threshold string `json:"threshold"`
+	ChannelID uint   `json:"channel_id"`
+	Channel   string `gorm:"default:telegram" json:"channel"`
+	Enabled   bool   `gorm:"default:true" json:"enabled"`
 }
 
 type DeployHistory struct {
@@ -151,18 +151,18 @@ type ProjectDomain struct {
 
 type ProjectEnvVar struct {
 	gorm.Model
-	ProjectID       uint    `gorm:"index;not null" json:"project_id"`
-	Project         Project `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	Key             string  `gorm:"not null" json:"key"`
-	ValueEncrypted  string  `gorm:"type:text" json:"-"`
+	ProjectID      uint    `gorm:"index;not null" json:"project_id"`
+	Project        Project `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Key            string  `gorm:"not null" json:"key"`
+	ValueEncrypted string  `gorm:"type:text" json:"-"`
 }
 
 type GitCredential struct {
 	gorm.Model
-	Provider        string `gorm:"not null" json:"provider"` // github, gitlab, bitbucket, gitea
-	Username        string `json:"username"`
-	TokenEncrypted  string `gorm:"type:text" json:"-"`
-	Endpoint        string `json:"endpoint"`
+	Provider       string `gorm:"not null" json:"provider"` // github, gitlab, bitbucket, gitea
+	Username       string `json:"username"`
+	TokenEncrypted string `gorm:"type:text" json:"-"`
+	Endpoint       string `json:"endpoint"`
 }
 
 type CronJob struct {
@@ -202,12 +202,12 @@ type UptimeMonitor struct {
 
 type UptimeEvent struct {
 	gorm.Model
-	MonitorID  uint          `gorm:"index;not null" json:"monitor_id"`
-	Monitor    UptimeMonitor `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	Status     string        `json:"status"` // up, down, degraded
-	CheckedAt  time.Time     `json:"checked_at"`
-	LatencyMS  int64         `json:"latency_ms"`
-	Message    string        `json:"message"`
+	MonitorID uint          `gorm:"index;not null" json:"monitor_id"`
+	Monitor   UptimeMonitor `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Status    string        `json:"status"` // up, down, degraded
+	CheckedAt time.Time     `json:"checked_at"`
+	LatencyMS int64         `json:"latency_ms"`
+	Message   string        `json:"message"`
 }
 
 type AlertChannel struct {
@@ -230,13 +230,13 @@ type ServiceInstance struct {
 
 type ScriptRun struct {
 	gorm.Model
-	Name         string    `gorm:"not null" json:"name"`
-	ScriptType   string    `json:"script_type"` // bash, python, node
-	Content      string    `gorm:"type:text" json:"content"`
-	TargetIDs    string    `json:"target_ids"` // comma-separated server IDs or "all"
-	StartedAt    time.Time `json:"started_at"`
-	ExitCode     int       `json:"exit_code"`
-	Output       string    `gorm:"type:text" json:"output"`
+	Name       string    `gorm:"not null" json:"name"`
+	ScriptType string    `json:"script_type"` // bash, python, node
+	Content    string    `gorm:"type:text" json:"content"`
+	TargetIDs  string    `json:"target_ids"` // comma-separated server IDs or "all"
+	StartedAt  time.Time `json:"started_at"`
+	ExitCode   int       `json:"exit_code"`
+	Output     string    `gorm:"type:text" json:"output"`
 }
 
 type DatabaseUser struct {
@@ -247,4 +247,25 @@ type DatabaseUser struct {
 	Username  string `gorm:"not null" json:"username"`
 	Databases string `json:"databases"` // comma-separated
 	Host      string `gorm:"default:%" json:"host"`
+}
+
+// Mailbox is an email address on a connected domain (mail-in-a-box / similar).
+type Mailbox struct {
+	gorm.Model
+	ServerID  uint   `gorm:"index;not null" json:"server_id"`
+	Server    Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Domain    string `gorm:"not null;index" json:"domain"`
+	Address   string `gorm:"not null" json:"address"` // local-part@domain
+	ProjectID *uint  `gorm:"index" json:"project_id,omitempty"`
+}
+
+// ProjectDatabase links a project to a database name/engine.
+type ProjectDatabase struct {
+	gorm.Model
+	ProjectID uint    `gorm:"index;not null" json:"project_id"`
+	Project   Project `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	ServerID  uint    `gorm:"index;not null" json:"server_id"`
+	DBType    string  `gorm:"not null" json:"db_type"`
+	DBName    string  `gorm:"not null" json:"db_name"`
+	Username  string  `json:"username"`
 }

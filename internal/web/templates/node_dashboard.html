@@ -104,8 +104,51 @@
       </table>
     </div>
     {{else}}
-    <p class="text-gray-600 text-sm">No running containers (or Docker unavailable)</p>
+    <p class="text-gray-600 text-sm">No running containers (or Docker unavailable) — <a class="text-indigo-400" href="/docker">Docker page</a></p>
     {{end}}
+    <p class="text-xs text-gray-600 mt-3"><a href="/docker" class="text-indigo-400 hover:underline">Manage containers →</a></p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Active users</h2>
+      {{if .Node.ActiveUsers}}
+      <table class="w-full text-sm font-mono">
+        <thead class="text-gray-500 text-left"><tr><th class="pb-2">User</th><th class="pb-2">TTY</th><th class="pb-2">From</th><th class="pb-2">Login</th></tr></thead>
+        <tbody class="divide-y divide-gray-800">
+          {{range .Node.ActiveUsers}}
+          <tr>
+            <td class="py-1 text-indigo-300">{{.User}}</td>
+            <td class="py-1 text-gray-400">{{.TTY}}</td>
+            <td class="py-1 text-gray-500">{{if .From}}{{.From}}{{else}}—{{end}}</td>
+            <td class="py-1 text-gray-500">{{.Login}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="text-gray-600 text-sm">No interactive sessions</p>
+      {{end}}
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Web requests</h2>
+      {{if .Node.WebReqs.Source}}
+      <p class="text-xs text-gray-500 mb-2">source: {{.Node.WebReqs.Source}} · last {{.Node.WebReqs.Total}} lines</p>
+      <p class="text-sm font-mono text-gray-300 mb-2">
+        2xx {{.Node.WebReqs.Status2xx}} · 3xx {{.Node.WebReqs.Status3xx}} · 4xx {{.Node.WebReqs.Status4xx}} · 5xx {{.Node.WebReqs.Status5xx}}
+      </p>
+      {{if .Node.WebReqs.TopPaths}}
+      <ul class="text-xs text-gray-400 font-mono space-y-1 mb-3">
+        {{range .Node.WebReqs.TopPaths}}<li>{{.}}</li>{{end}}
+      </ul>
+      {{end}}
+      <div class="max-h-40 overflow-y-auto text-xs font-mono text-gray-500 space-y-0.5">
+        {{range .Node.WebReqs.Lines}}<div class="truncate">{{.}}</div>{{end}}
+      </div>
+      {{else}}
+      <p class="text-gray-600 text-sm">No access logs found (nginx/caddy/apache/proxy)</p>
+      {{end}}
+    </div>
   </div>
 
   <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">

@@ -14,28 +14,50 @@ import (
 
 // Snapshot is a point-in-time view of the local host.
 type Snapshot struct {
-	Hostname       string      `json:"hostname"`
-	SampledAt      time.Time   `json:"sampled_at"`
-	CPUPct         float64     `json:"cpu_pct"`
-	RAMPct         float64     `json:"ram_pct"`
-	RAMUsedMB      float64     `json:"ram_used_mb"`
-	RAMTotalMB     float64     `json:"ram_total_mb"`
-	DiskPct        float64     `json:"disk_pct"`
-	DiskUsedGB     float64     `json:"disk_used_gb"`
-	DiskTotalGB    float64     `json:"disk_total_gb"`
-	Load1          float64     `json:"load1"`
-	Load5          float64     `json:"load5"`
-	Load15         float64     `json:"load15"`
-	Cores          int         `json:"cores"`
-	Kernel         string      `json:"kernel"`
-	UptimeSec      int64       `json:"uptime_sec"`
-	NetIface       string      `json:"net_iface"`
-	NetRxBytes     uint64      `json:"net_rx_bytes"`
-	NetTxBytes     uint64      `json:"net_tx_bytes"`
-	ContainerCount int         `json:"container_count"`
-	Containers     []Container `json:"containers"`
-	Ports          []Port      `json:"ports"`
-	Error          string      `json:"error,omitempty"`
+	Hostname       string       `json:"hostname"`
+	SampledAt      time.Time    `json:"sampled_at"`
+	CPUPct         float64      `json:"cpu_pct"`
+	RAMPct         float64      `json:"ram_pct"`
+	RAMUsedMB      float64      `json:"ram_used_mb"`
+	RAMTotalMB     float64      `json:"ram_total_mb"`
+	DiskPct        float64      `json:"disk_pct"`
+	DiskUsedGB     float64      `json:"disk_used_gb"`
+	DiskTotalGB    float64      `json:"disk_total_gb"`
+	Load1          float64      `json:"load1"`
+	Load5          float64      `json:"load5"`
+	Load15         float64      `json:"load15"`
+	Cores          int          `json:"cores"`
+	Kernel         string       `json:"kernel"`
+	UptimeSec      int64        `json:"uptime_sec"`
+	NetIface       string       `json:"net_iface"`
+	NetRxBytes     uint64       `json:"net_rx_bytes"`
+	NetTxBytes     uint64       `json:"net_tx_bytes"`
+	ContainerCount int          `json:"container_count"`
+	Containers     []Container  `json:"containers"`
+	Ports          []Port       `json:"ports"`
+	ActiveUsers    []ActiveUser `json:"active_users"`
+	WebReqs        WebReqStats  `json:"web_reqs"`
+	Error          string       `json:"error,omitempty"`
+}
+
+type ActiveUser struct {
+	User  string `json:"user"`
+	TTY   string `json:"tty"`
+	From  string `json:"from"`
+	Login string `json:"login"`
+	Idle  string `json:"idle"`
+	What  string `json:"what"`
+}
+
+type WebReqStats struct {
+	Source    string   `json:"source"`
+	Total     int      `json:"total"`
+	Status2xx int      `json:"status_2xx"`
+	Status3xx int      `json:"status_3xx"`
+	Status4xx int      `json:"status_4xx"`
+	Status5xx int      `json:"status_5xx"`
+	TopPaths  []string `json:"top_paths"`
+	Lines     []string `json:"lines"`
 }
 
 type Container struct {
@@ -138,6 +160,8 @@ func Sample() Snapshot {
 	snap.Containers = sampleContainers()
 	snap.ContainerCount = len(snap.Containers)
 	snap.Ports = samplePorts()
+	snap.ActiveUsers = sampleActiveUsers()
+	snap.WebReqs = sampleWebReqs()
 	return snap
 }
 
@@ -416,6 +440,151 @@ func parseListenPort(addr string) int {
 		}
 	}
 	return 0
+}
+
+func sampleActiveUsers() []ActiveUser {
+	out, err := exec.Command("bash", "-c", "who -u 2>/dev/null || who 2>/dev/null").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+	var users []ActiveUser
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		u := ActiveUser{User: fields[0], TTY: fields[1]}
+		if len(fields) >= 4 {
+			u.Login = strings.Join(fields[2:4], " ")
+		}
+		if len(fields) >= 5 {
+			// who -u: idle may be in field
+			u.Idle = fields[len(fields)-1]
+			if strings.HasPrefix(fields[len(fields)-1], "(") {
+				u.From = strings.Trim(fields[len(fields)-1], "()")
+			}
+		}
+		for _, f := range fields {
+			if strings.HasPrefix(f, "(") && strings.HasSuffix(f, ")") {
+				u.From = strings.Trim(f, "()")
+			}
+		}
+		users = append(users, u)
+		if len(users) >= 20 {
+			break
+		}
+	}
+	return users
+}
+
+func sampleWebReqs() WebReqStats {
+	stats := WebReqStats{}
+	candidates := []string{
+		"/var/log/nginx/access.log",
+		"/var/log/caddy/access.log",
+		"/var/log/apache2/access.log",
+		"/var/log/httpd/access_log",
+	}
+	var raw []byte
+	for _, path := range candidates {
+		out, err := exec.Command("bash", "-c", fmt.Sprintf("tail -n 200 %s 2>/dev/null", path)).Output()
+		if err == nil && len(out) > 0 {
+			raw = out
+			stats.Source = path
+			break
+		}
+	}
+	if len(raw) == 0 {
+		// Try docker nginx/caddy container logs
+		out, err := exec.Command("bash", "-c",
+			`cid=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'nginx|caddy|traefik|proxy' | head -1); [ -n "$cid" ] && docker logs --tail 200 "$cid" 2>&1`).Output()
+		if err == nil && len(out) > 0 {
+			raw = out
+			stats.Source = "docker proxy"
+		}
+	}
+	if len(raw) == 0 {
+		return stats
+	}
+
+	pathCount := map[string]int{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		stats.Total++
+		if len(stats.Lines) < 15 {
+			stats.Lines = append(stats.Lines, truncate(line, 160))
+		}
+		// crude status code detection
+		for _, code := range []struct {
+			prefix string
+			inc    *int
+		}{
+			{"\" 2", &stats.Status2xx},
+			{" 2", &stats.Status2xx},
+			{"\" 3", &stats.Status3xx},
+			{"\" 4", &stats.Status4xx},
+			{"\" 5", &stats.Status5xx},
+		} {
+			if strings.Contains(line, code.prefix+"00") || strings.Contains(line, code.prefix+"01") ||
+				strings.Contains(line, code.prefix+"02") || strings.Contains(line, code.prefix+"03") ||
+				strings.Contains(line, code.prefix+"04") || strings.Contains(line, code.prefix+"01 ") {
+				// fall through to simpler check below
+				_ = code
+			}
+		}
+		if i := strings.Index(line, `" `); i > 0 && i+5 < len(line) {
+			codeStr := line[i+2 : i+5]
+			if n, err := strconv.Atoi(codeStr); err == nil {
+				switch {
+				case n >= 200 && n < 300:
+					stats.Status2xx++
+				case n >= 300 && n < 400:
+					stats.Status3xx++
+				case n >= 400 && n < 500:
+					stats.Status4xx++
+				case n >= 500:
+					stats.Status5xx++
+				}
+			}
+		}
+		// path from "GET /foo HTTP
+		if idx := strings.Index(line, `"`); idx >= 0 {
+			rest := line[idx+1:]
+			parts := strings.Fields(rest)
+			if len(parts) >= 2 {
+				pathCount[parts[1]]++
+			}
+		}
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	var ranked []kv
+	for k, v := range pathCount {
+		ranked = append(ranked, kv{k, v})
+	}
+	for i := 0; i < len(ranked); i++ {
+		for j := i + 1; j < len(ranked); j++ {
+			if ranked[j].v > ranked[i].v {
+				ranked[i], ranked[j] = ranked[j], ranked[i]
+			}
+		}
+	}
+	for i := 0; i < len(ranked) && i < 5; i++ {
+		stats.TopPaths = append(stats.TopPaths, fmt.Sprintf("%s (%d)", ranked[i].k, ranked[i].v))
+	}
+	return stats
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func FormatBytes(b uint64) string {

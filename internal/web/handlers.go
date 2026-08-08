@@ -11,19 +11,25 @@ import (
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/dbmanager"
+	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
 
 type handler struct {
-	opts     Options
-	tmpl     *template.Template
-	sess     *sessionStore
-	staticFS fs.FS
-	nodeMode bool
-	node     *nodemetrics.Collector
+	opts       Options
+	tmpl       *template.Template
+	sess       *sessionStore
+	staticFS   fs.FS
+	nodeMode   bool
+	node       *nodemetrics.Collector
+	exec       *ssh.Executor
+	localSrvID uint
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -33,22 +39,44 @@ type serverCardData struct {
 	LastSeen string
 }
 
+type nodeDBView struct {
+	Type      string
+	Databases []dbmanager.Database
+	Users     []dbmanager.DBUser
+}
+
 // pageData is the common template context passed to all pages.
 type pageData struct {
-	Title       string
-	Flash       string
-	Session     *session
-	NodeMode    bool
-	ServerCards []serverCardData
-	ServerCard  serverCardData
-	Projects    []storage.Project
-	AllServers  []storage.Server
-	Monitors    []storage.UptimeMonitor
-	Config      interface{}
-	Node        nodemetrics.Snapshot
-	NetRx       string
-	NetTx       string
-	UptimeHuman string
+	Title          string
+	Flash          string
+	Session        *session
+	NodeMode       bool
+	ActiveNav      string
+	ServerID       uint
+	ServerCards    []serverCardData
+	ServerCard     serverCardData
+	Projects       []storage.Project
+	ProjectTypes   []string
+	AllServers     []storage.Server
+	Monitors       []storage.UptimeMonitor
+	Config         interface{}
+	Node           nodemetrics.Snapshot
+	NetRx          string
+	NetTx          string
+	UptimeHuman    string
+	Containers     []docker.Container
+	ContainerID    string
+	LogText        string
+	CronJobs       []storage.CronJob
+	CronRuns       []storage.CronRun
+	CronJobID      uint
+	NodeDBs        []nodeDBView
+	ProjectDBs     []storage.ProjectDatabase
+	NodeServices   []nodeServiceView
+	ProjectDomains []storage.ProjectDomain
+	Mailboxes      []storage.Mailbox
+	VHosts         []proxy.VHost
+	AlertChannels  []storage.AlertChannel
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -62,11 +90,7 @@ func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /setup", h.postSetup)
 
 	if h.nodeMode {
-		mux.HandleFunc("GET /{$}", h.requireAuth(h.getNodeHome))
-		mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
-		mux.HandleFunc("POST /api/node/ports/open", h.requireAuth(h.postNodePortsOpen))
-		mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
-		mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+		h.registerNode(mux)
 		return
 	}
 

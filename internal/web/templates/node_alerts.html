@@ -1,0 +1,81 @@
+{{define "node_alerts"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold mb-2">Alerts</h1>
+  <p class="text-gray-500 text-sm mb-6">Telegram · email · SMS · webhook channels and uptime monitors</p>
+  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+
+  <form method="post" action="/alerts/channel" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 space-y-3">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase">Add channel</h2>
+    <div class="grid md:grid-cols-3 gap-2">
+      <input name="name" required placeholder="Name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <select name="type" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <option value="telegram">telegram</option>
+        <option value="email">email</option>
+        <option value="webhook">webhook</option>
+        <option value="sms">sms</option>
+      </select>
+      <input name="bot_token" placeholder="TG bot token" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="chat_id" placeholder="TG chat id" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="url" placeholder="Webhook / SMS gateway URL" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm md:col-span-2">
+      <input name="smtp_host" placeholder="SMTP host" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="smtp_port" placeholder="587" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="username" placeholder="SMTP user" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="password" type="password" placeholder="SMTP / API password" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="from" placeholder="From email" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="to" placeholder="To email(s)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="api_key" placeholder="SMS API key" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="to_num" placeholder="SMS to number" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    </div>
+    <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Save channel</button>
+  </form>
+
+  {{if .AlertChannels}}
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-8">
+    <table class="w-full text-sm">
+      <thead class="text-gray-500 text-left border-b border-gray-800">
+        <tr><th class="px-4 py-3">Name</th><th class="px-4 py-3">Type</th><th class="px-4 py-3">Actions</th></tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        {{range .AlertChannels}}
+        <tr>
+          <td class="px-4 py-3">{{.Name}}</td>
+          <td class="px-4 py-3 font-mono text-xs text-indigo-300">{{.Type}}</td>
+          <td class="px-4 py-3 space-x-2">
+            <form action="/alerts/channel/{{.ID}}/test" method="post" class="inline"><button class="text-xs text-sky-400">Test</button></form>
+            <form action="/alerts/channel/{{.ID}}/delete" method="post" class="inline"><button class="text-xs text-red-400">Delete</button></form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  <form method="post" action="/alerts/monitor" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-2 items-end">
+    <h2 class="w-full text-sm font-semibold text-gray-400 uppercase">Uptime monitor</h2>
+    <input name="name" required placeholder="Name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <input name="url" required placeholder="https://..." class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-64">
+    <input name="interval_sec" placeholder="60" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-20">
+    <input name="alert_channels" placeholder="channel names" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <button class="bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg">Add monitor</button>
+  </form>
+
+  {{if .Monitors}}
+  <ul class="space-y-2">
+    {{range .Monitors}}
+    <li class="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex justify-between text-sm">
+      <div>
+        <span class="font-medium">{{.Name}}</span>
+        <span class="text-xs text-gray-500 font-mono ml-2">{{.URL}}</span>
+        <span class="text-xs ml-2 {{if eq .LastStatus "up"}}text-emerald-400{{else}}text-gray-500{{end}}">{{.LastStatus}}</span>
+      </div>
+      <form method="post" action="/alerts/monitor/{{.ID}}/delete"><button class="text-xs text-red-400">Delete</button></form>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</main>
+{{template "foot" .}}
+{{end}}

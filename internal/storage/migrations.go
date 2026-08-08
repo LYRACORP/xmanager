@@ -26,5 +26,7 @@ func runMigrations(db *gorm.DB) error {
 		&ServiceInstance{},
 		&ScriptRun{},
 		&DatabaseUser{},
+		&Mailbox{},
+		&ProjectDatabase{},
 	)
 }

@@ -65,6 +65,10 @@ func Run(opts Options) error {
 	}
 
 	if h.nodeMode {
+		h.exec = ssh.NewLocalExecutor()
+		if srv, err := EnsureLocalServer(opts.DB); err == nil {
+			h.localSrvID = srv.ID
+		}
 		h.node = nodemetrics.NewCollector(5 * time.Second)
 		h.node.Start()
 		defer h.node.Stop()

@@ -1,0 +1,81 @@
+{{define "node_projects"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold mb-2">Projects</h1>
+  <p class="text-gray-500 text-sm mb-6">Create and deploy apps on this host (10 project types)</p>
+  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+
+  <form method="post" action="/projects" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-8 space-y-3">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase">New project</h2>
+    <div class="grid md:grid-cols-2 gap-3">
+      <input name="name" required placeholder="Name" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <select name="type" required class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+        {{range .ProjectTypes}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select>
+      <input name="domain" placeholder="Domain (optional)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <input name="ports" placeholder="Ports e.g. 8080:80" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="image" placeholder="Image (image type)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="tag" placeholder="Tag" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="repo_url" placeholder="Git repo URL" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm md:col-span-2">
+      <input name="branch" placeholder="Branch (main)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <input name="pushed_image" placeholder="Pushed image (push type)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="archive_path" placeholder="Archive path on host" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="runtime" placeholder="Function runtime (python|node|go)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <input name="handler" placeholder="Function handler" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <textarea name="compose_yaml" rows="4" placeholder="docker-compose YAML (compose / oneclick)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2"></textarea>
+      <textarea name="dockerfile" rows="4" placeholder="Dockerfile content" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2"></textarea>
+    </div>
+    <label class="flex items-center gap-2 text-sm text-gray-300">
+      <input type="checkbox" name="persistent_data" value="on" class="rounded border-gray-600">
+      Has Persistent Data (database, volumes, files…)
+    </label>
+    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">Create project</button>
+  </form>
+
+  {{if .Projects}}
+  <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-gray-500 text-left border-b border-gray-800">
+        <tr>
+          <th class="px-4 py-3">Name</th>
+          <th class="px-4 py-3">Type</th>
+          <th class="px-4 py-3">Domain</th>
+          <th class="px-4 py-3">Persistent</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        {{range .Projects}}
+        <tr>
+          <td class="px-4 py-3 font-medium">{{.Name}}</td>
+          <td class="px-4 py-3 font-mono text-xs text-indigo-300">{{.Type}}</td>
+          <td class="px-4 py-3 text-xs text-gray-400">{{if .Domain}}{{.Domain}}{{else}}—{{end}}</td>
+          <td class="px-4 py-3 text-xs">{{if .PersistentData}}yes{{else}}no{{end}}</td>
+          <td class="px-4 py-3 text-xs">{{.DeployStatus}}</td>
+          <td class="px-4 py-3 space-y-2">
+            <div class="space-x-2">
+              <form action="/projects/{{.ID}}/deploy" method="post" class="inline"><button class="text-xs bg-indigo-700 hover:bg-indigo-600 text-white px-2 py-1 rounded">Deploy</button></form>
+              <form action="/projects/{{.ID}}/stop" method="post" class="inline"><button class="text-xs text-amber-400 hover:underline">Stop</button></form>
+            </div>
+            <form action="/projects/{{.ID}}/domain" method="post" class="flex gap-1 mt-1">
+              <input name="domain" placeholder="domain" class="bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-xs w-28">
+              <input name="upstream" placeholder="http://127.0.0.1:8080" class="bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-xs w-36">
+              <button class="text-xs text-emerald-400">Attach</button>
+            </form>
+            {{if .WebhookSecret}}
+            <p class="text-[10px] text-gray-600 font-mono">webhook: POST /webhook/{{.ID}} · X-Webhook-Secret</p>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="text-gray-600">No projects yet</p>
+  {{end}}
+</main>
+{{template "foot" .}}
+{{end}}
