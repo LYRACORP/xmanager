@@ -71,21 +71,30 @@ func (w *WebPanel) readPort(exec *ssh.Executor) string {
 	return out
 }
 
-// Enable installs the panel on the remote host via binary + systemd.
-// cfg: port (default 8080). Docker method is not used (image unpublished).
+// Enable installs or upgrades the panel on the remote host via binary + systemd.
+// cfg: port (default 8080), force ("true" to re-upload binary + rewrite node config even if already installed).
 func (w *WebPanel) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	port := cfg["port"]
 	if port == "" {
 		port = "8080"
 	}
+	force := cfg["force"] == "true" || cfg["force"] == "1"
 
-	if err := w.enableBinary(exec, port); err != nil {
+	if err := w.enableBinary(exec, port, force); err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("http://%s:%s", w.hostOr("host"), port)
 	return w.SaveInstance(w.serverID, ServiceType, "running",
 		fmt.Sprintf(`{"port":"%s","url":"%s"}`, port, url))
+}
+
+// Upgrade force-reinstalls the node panel (new binary + role:node config + restart).
+func (w *WebPanel) Upgrade(exec *ssh.Executor, port string) error {
+	if port == "" {
+		port = "8080"
+	}
+	return w.Enable(exec, map[string]string{"port": port, "force": "true"})
 }
 
 func (w *WebPanel) hostOr(fallback string) string {
@@ -107,12 +116,12 @@ func normalizeArch(a string) string {
 	}
 }
 
-func (w *WebPanel) enableBinary(exec *ssh.Executor, port string) error {
+func (w *WebPanel) enableBinary(exec *ssh.Executor, port string, force bool) error {
 	if err := w.run(exec, "mkdir -p "+installDir+" /root/.config/xmanager"); err != nil {
 		return fmt.Errorf("creating dirs: %w", err)
 	}
 
-	if err := w.ensureBinary(exec); err != nil {
+	if err := w.ensureBinary(exec, force); err != nil {
 		return err
 	}
 
@@ -136,7 +145,7 @@ poller:
 	}
 
 	unit := fmt.Sprintf(`[Unit]
-Description=XManager Web Panel
+Description=XManager Node Web Panel
 After=network.target
 
 [Service]
@@ -157,7 +166,7 @@ WantedBy=multi-user.target
 		return fmt.Errorf("writing systemd unit: %w", err)
 	}
 
-	if err := w.run(exec, "systemctl daemon-reload && systemctl enable --now xmanager-web 2>&1"); err != nil {
+	if err := w.run(exec, "systemctl daemon-reload && systemctl enable --now xmanager-web && systemctl restart xmanager-web 2>&1"); err != nil {
 		return fmt.Errorf("starting xmanager-web: %w", err)
 	}
 	return nil
@@ -179,8 +188,8 @@ func (w *WebPanel) run(exec *ssh.Executor, cmd string) error {
 	return nil
 }
 
-func (w *WebPanel) ensureBinary(exec *ssh.Executor) error {
-	if exec.RunQuiet("test -x "+binPath+" && "+binPath+` web --help >/dev/null 2>&1 && echo yes`) == "yes" {
+func (w *WebPanel) ensureBinary(exec *ssh.Executor, force bool) error {
+	if !force && exec.RunQuiet("test -x "+binPath+" && "+binPath+` web --help >/dev/null 2>&1 && echo yes`) == "yes" {
 		return nil
 	}
 

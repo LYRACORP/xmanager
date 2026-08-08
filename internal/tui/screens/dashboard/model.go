@@ -83,7 +83,7 @@ type Model struct {
 
 	// web panel
 	webInstalled bool
-	webConfirm   int // 0 none, 1 install, 2 uninstall
+	webConfirm   int // 0 none, 1 install, 2 manage menu, 3 uninstall, 4 upgrade
 	webBusy      bool
 	statusMsg    string
 }
@@ -272,7 +272,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		}
 		m.webInstalled = msg.installed
 		if msg.installed {
-			m.statusMsg = fmt.Sprintf("Web panel installed — %s", msg.url)
+			m.statusMsg = fmt.Sprintf("Node web panel ready — %s", msg.url)
 		} else {
 			m.statusMsg = "Web panel uninstalled"
 		}
@@ -431,7 +431,7 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		m.refreshWebInstalled()
 		if m.webInstalled {
 			m.webConfirm = 2
-			m.statusMsg = "Uninstall node web panel from this server? (y/n)"
+			m.statusMsg = "Node panel: [r] reinstall/upgrade  [u] uninstall  [esc] cancel"
 		} else {
 			m.webConfirm = 1
 			m.statusMsg = "Install node web panel (this host metrics only, :8080)? (y/n)"
@@ -450,26 +450,50 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
-		install := m.webConfirm == 1
-		m.webConfirm = 0
-		m.webBusy = true
-		if install {
-			m.statusMsg = "Installing web panel…"
-		} else {
-			m.statusMsg = "Uninstalling web panel…"
+	switch m.webConfirm {
+	case 2: // manage menu when already installed
+		switch msg.String() {
+		case "r", "R":
+			m.webConfirm = 4
+			m.statusMsg = "Reinstall/upgrade to node panel (new binary + role:node)? (y/n)"
+			return m, nil
+		case "u", "U":
+			m.webConfirm = 3
+			m.statusMsg = "Uninstall node web panel from this server? (y/n)"
+			return m, nil
+		case "esc", "n", "N":
+			m.webConfirm = 0
+			m.statusMsg = ""
+			return m, nil
 		}
-		return m, m.runWebPanel(install)
-	case "n", "N", "esc":
-		m.webConfirm = 0
-		m.statusMsg = ""
 		return m, nil
+	case 1, 3, 4:
+		switch msg.String() {
+		case "y", "Y":
+			action := m.webConfirm
+			m.webConfirm = 0
+			m.webBusy = true
+			switch action {
+			case 1:
+				m.statusMsg = "Installing node web panel…"
+				return m, m.runWebPanel("install")
+			case 4:
+				m.statusMsg = "Upgrading node web panel…"
+				return m, m.runWebPanel("upgrade")
+			default:
+				m.statusMsg = "Uninstalling web panel…"
+				return m, m.runWebPanel("uninstall")
+			}
+		case "n", "N", "esc":
+			m.webConfirm = 0
+			m.statusMsg = ""
+			return m, nil
+		}
 	}
 	return m, nil
 }
 
-func (m *Model) runWebPanel(install bool) tea.Cmd {
+func (m *Model) runWebPanel(action string) tea.Cmd {
 	serverID := m.ctx.ServerID
 	return func() tea.Msg {
 		var srv storage.Server
@@ -484,7 +508,6 @@ func (m *Model) runWebPanel(install bool) tea.Cmd {
 			Password: srv.Password,
 			JumpHost: srv.JumpHost,
 		}
-		// Fresh connection — pooled sessions often go stale under poller load.
 		_, err := m.ctx.Pool.Reconnect(srv.ID, cfg)
 		if err != nil {
 			return webPanelDashMsg{err: fmt.Errorf("reconnect: %w", err)}
@@ -496,16 +519,23 @@ func (m *Model) runWebPanel(install bool) tea.Cmd {
 		svc := webpanel.New(m.ctx.DB, serverID)
 		svc.SetHost(srv.Host)
 		svc.SetSSH(cfg)
-		if install {
+		switch action {
+		case "install":
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
 				return webPanelDashMsg{err: err}
 			}
 			return webPanelDashMsg{installed: true, url: fmt.Sprintf("http://%s:8080", srv.Host)}
+		case "upgrade":
+			if err := svc.Upgrade(exec, "8080"); err != nil {
+				return webPanelDashMsg{err: err}
+			}
+			return webPanelDashMsg{installed: true, url: fmt.Sprintf("http://%s:8080", srv.Host)}
+		default:
+			if err := svc.Disable(exec); err != nil {
+				return webPanelDashMsg{err: err}
+			}
+			return webPanelDashMsg{installed: false}
 		}
-		if err := svc.Disable(exec); err != nil {
-			return webPanelDashMsg{err: err}
-		}
-		return webPanelDashMsg{installed: false}
 	}
 }
 
@@ -593,6 +623,13 @@ func (m *Model) previewHeight() int {
 }
 
 func (m *Model) KeyBindings() []components.KeyBinding {
+	if m.webConfirm == 2 {
+		return []components.KeyBinding{
+			{Key: "r", Desc: "reinstall/upgrade"},
+			{Key: "u", Desc: "uninstall"},
+			{Key: "esc", Desc: "cancel"},
+		}
+	}
 	if m.webConfirm != 0 {
 		return []components.KeyBinding{
 			{Key: "y", Desc: "confirm"},
