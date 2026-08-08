@@ -281,12 +281,25 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 
 func (m *Model) toggleWebPanel(s storage.Server, install bool) tea.Cmd {
 	return func() tea.Msg {
-		exec, err := m.ensureExec(s)
+		cfg := ssh.ClientConfig{
+			Host:     s.Host,
+			Port:     s.Port,
+			User:     s.User,
+			KeyPath:  s.SSHKeyPath,
+			Password: s.Password,
+			JumpHost: s.JumpHost,
+		}
+		_, err := m.ctx.Pool.Reconnect(s.ID, cfg)
 		if err != nil {
-			return webPanelResultMsg{serverID: s.ID, err: err}
+			return webPanelResultMsg{serverID: s.ID, err: fmt.Errorf("reconnect: %w", err)}
+		}
+		exec, ok := m.ctx.Pool.GetExecutor(s.ID)
+		if !ok {
+			return webPanelResultMsg{serverID: s.ID, err: fmt.Errorf("executor unavailable")}
 		}
 		svc := webpanel.New(m.ctx.DB, s.ID)
 		svc.SetHost(s.Host)
+		svc.SetSSH(cfg)
 		if install {
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
 				return webPanelResultMsg{serverID: s.ID, err: err}

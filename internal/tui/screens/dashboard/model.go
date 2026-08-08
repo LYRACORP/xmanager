@@ -476,12 +476,26 @@ func (m *Model) runWebPanel(install bool) tea.Cmd {
 		if err := m.ctx.DB.First(&srv, serverID).Error; err != nil {
 			return webPanelDashMsg{err: err}
 		}
-		exec, err := m.ensureExec(srv)
+		cfg := ssh.ClientConfig{
+			Host:     srv.Host,
+			Port:     srv.Port,
+			User:     srv.User,
+			KeyPath:  srv.SSHKeyPath,
+			Password: srv.Password,
+			JumpHost: srv.JumpHost,
+		}
+		// Fresh connection — pooled sessions often go stale under poller load.
+		_, err := m.ctx.Pool.Reconnect(srv.ID, cfg)
 		if err != nil {
-			return webPanelDashMsg{err: err}
+			return webPanelDashMsg{err: fmt.Errorf("reconnect: %w", err)}
+		}
+		exec, ok := m.ctx.Pool.GetExecutor(srv.ID)
+		if !ok {
+			return webPanelDashMsg{err: fmt.Errorf("executor unavailable after reconnect")}
 		}
 		svc := webpanel.New(m.ctx.DB, serverID)
 		svc.SetHost(srv.Host)
+		svc.SetSSH(cfg)
 		if install {
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
 				return webPanelDashMsg{err: err}
@@ -496,17 +510,20 @@ func (m *Model) runWebPanel(install bool) tea.Cmd {
 }
 
 func (m *Model) ensureExec(srv storage.Server) (*ssh.Executor, error) {
-	if exec, ok := m.ctx.Pool.GetExecutor(srv.ID); ok {
-		return exec, nil
-	}
-	_, err := m.ctx.Pool.Connect(srv.ID, ssh.ClientConfig{
+	cfg := ssh.ClientConfig{
 		Host:     srv.Host,
 		Port:     srv.Port,
 		User:     srv.User,
 		KeyPath:  srv.SSHKeyPath,
 		Password: srv.Password,
 		JumpHost: srv.JumpHost,
-	})
+	}
+	if exec, ok := m.ctx.Pool.GetExecutor(srv.ID); ok {
+		if client, cok := m.ctx.Pool.GetClient(srv.ID); cok && client.IsConnected() {
+			return exec, nil
+		}
+	}
+	_, err := m.ctx.Pool.Reconnect(srv.ID, cfg)
 	if err != nil {
 		return nil, err
 	}
