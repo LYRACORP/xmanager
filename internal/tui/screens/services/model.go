@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	svcs "github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -23,7 +24,6 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
-	svcs "github.com/lyracorp/xmanager/internal/services"
 )
 
 var optionalServices = []string{
@@ -55,8 +55,8 @@ func New(ctx *shared.AppContext) *Model {
 	return &Model{ctx: ctx}
 }
 
-func (m *Model) Name() string     { return "Services" }
-func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
+func (m *Model) Name() string                        { return "Services" }
+func (m *Model) SetSize(w, h int)                    { m.width = w; m.height = h; m.rebuildTable() }
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
@@ -225,7 +225,16 @@ func lookupService(svcType string, ctx *shared.AppContext, serverID uint) svcs.S
 		var srv storage.Server
 		if ctx.DB.First(&srv, serverID).Error == nil {
 			wp.SetHost(srv.Host)
+			wp.SetSSH(ssh.ClientConfig{
+				Host:     srv.Host,
+				Port:     srv.Port,
+				User:     srv.User,
+				KeyPath:  srv.SSHKeyPath,
+				Password: srv.Password,
+				JumpHost: srv.JumpHost,
+			})
 		}
+		wp.SetPool(ctx.Pool)
 		return wp
 	case "gitea":
 		return gitea.New(db, serverID)

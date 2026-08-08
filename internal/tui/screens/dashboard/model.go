@@ -519,6 +519,7 @@ func (m *Model) runWebPanel(action string) tea.Cmd {
 		svc := webpanel.New(m.ctx.DB, serverID)
 		svc.SetHost(srv.Host)
 		svc.SetSSH(cfg)
+		svc.SetPool(m.ctx.Pool)
 		switch action {
 		case "install":
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {

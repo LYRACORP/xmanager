@@ -29,6 +29,8 @@ type WebPanel struct {
 	serverID uint
 	host     string
 	sshCfg   ssh.ClientConfig
+	pool     *ssh.Pool
+	exec     *ssh.Executor
 }
 
 func New(db *gorm.DB, serverID uint) *WebPanel {
@@ -37,8 +39,11 @@ func New(db *gorm.DB, serverID uint) *WebPanel {
 
 func (w *WebPanel) SetHost(host string) { w.host = host }
 
-// SetSSH stores credentials used for reconnect / scp fallback.
+// SetSSH stores credentials used for reconnect / scp / system-ssh fallback.
 func (w *WebPanel) SetSSH(cfg ssh.ClientConfig) { w.sshCfg = cfg }
+
+// SetPool enables reconnect after stale sessions (upload / long install).
+func (w *WebPanel) SetPool(p *ssh.Pool) { w.pool = p }
 
 func (w *WebPanel) Name() string { return ServiceType }
 
@@ -74,13 +79,14 @@ func (w *WebPanel) readPort(exec *ssh.Executor) string {
 // Enable installs or upgrades the panel on the remote host via binary + systemd.
 // cfg: port (default 8080), force ("true" to re-upload binary + rewrite node config even if already installed).
 func (w *WebPanel) Enable(exec *ssh.Executor, cfg map[string]string) error {
+	w.exec = exec
 	port := cfg["port"]
 	if port == "" {
 		port = "8080"
 	}
 	force := cfg["force"] == "true" || cfg["force"] == "1"
 
-	if err := w.enableBinary(exec, port, force); err != nil {
+	if err := w.enableBinary(port, force); err != nil {
 		return err
 	}
 
@@ -116,14 +122,17 @@ func normalizeArch(a string) string {
 	}
 }
 
-func (w *WebPanel) enableBinary(exec *ssh.Executor, port string, force bool) error {
-	if err := w.run(exec, "mkdir -p "+installDir+" /root/.config/xmanager"); err != nil {
+func (w *WebPanel) enableBinary(port string, force bool) error {
+	if err := w.run("mkdir -p " + installDir + " /root/.config/xmanager"); err != nil {
 		return fmt.Errorf("creating dirs: %w", err)
 	}
 
-	if err := w.ensureBinary(exec, force); err != nil {
+	if err := w.ensureBinary(force); err != nil {
 		return err
 	}
+
+	// Upload / SFTP often leaves the pooled session dead — refresh before systemd steps.
+	_ = w.reconnect()
 
 	configYAML := fmt.Sprintf(`web:
   enabled: true
@@ -140,7 +149,7 @@ poller:
 `, port)
 
 	cmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", configPath, configYAML)
-	if err := w.run(exec, cmd); err != nil {
+	if err := w.run(cmd); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 
@@ -162,18 +171,81 @@ WantedBy=multi-user.target
 `, binPath)
 
 	unitCmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", unitPath, unit)
-	if err := w.run(exec, unitCmd); err != nil {
+	if err := w.run(unitCmd); err != nil {
 		return fmt.Errorf("writing systemd unit: %w", err)
 	}
 
-	if err := w.run(exec, "systemctl daemon-reload && systemctl enable --now xmanager-web && systemctl restart xmanager-web 2>&1"); err != nil {
-		return fmt.Errorf("starting xmanager-web: %w", err)
+	// Fresh connection again — restart can race with MaxSessions / stale TCP.
+	_ = w.reconnect()
+	start := "systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && systemctl is-active xmanager-web"
+	if err := w.run(start); err != nil {
+		// Last resort: system OpenSSH (independent of the Go pool).
+		if err2 := w.runSystemSSH(start); err2 != nil {
+			return fmt.Errorf("starting xmanager-web: %v (ssh fallback: %w)", err, err2)
+		}
 	}
 	return nil
 }
 
-// run executes a remote command; surfaces stdout/stderr on non-zero exit.
-func (w *WebPanel) run(exec *ssh.Executor, cmd string) error {
+func isSSHSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, frag := range []string{
+		"creating session",
+		"connect failed",
+		"connection reset",
+		"connection lost",
+		"broken pipe",
+		"eof",
+		"use of closed network connection",
+		"session already closed",
+	} {
+		if strings.Contains(s, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *WebPanel) reconnect() error {
+	if w.pool == nil || w.sshCfg.Host == "" {
+		return fmt.Errorf("no pool/ssh config")
+	}
+	if _, err := w.pool.Reconnect(w.serverID, w.sshCfg); err != nil {
+		return err
+	}
+	exec, ok := w.pool.GetExecutor(w.serverID)
+	if !ok {
+		return fmt.Errorf("executor missing after reconnect")
+	}
+	w.exec = exec
+	return nil
+}
+
+// run executes a remote command; on dead SSH sessions, reconnects once then falls back to system ssh.
+func (w *WebPanel) run(cmd string) error {
+	if w.exec != nil {
+		err := w.runOnce(w.exec, cmd)
+		if err == nil {
+			return nil
+		}
+		if !isSSHSessionError(err) {
+			return err
+		}
+		if rerr := w.reconnect(); rerr == nil {
+			if err2 := w.runOnce(w.exec, cmd); err2 == nil {
+				return nil
+			} else if !isSSHSessionError(err2) {
+				return err2
+			}
+		}
+	}
+	return w.runSystemSSH(cmd)
+}
+
+func (w *WebPanel) runOnce(exec *ssh.Executor, cmd string) error {
 	res, err := exec.Run(cmd)
 	if err != nil {
 		return err
@@ -188,40 +260,108 @@ func (w *WebPanel) run(exec *ssh.Executor, cmd string) error {
 	return nil
 }
 
-func (w *WebPanel) ensureBinary(exec *ssh.Executor, force bool) error {
-	if !force && exec.RunQuiet("test -x "+binPath+" && "+binPath+` web --help >/dev/null 2>&1 && echo yes`) == "yes" {
-		return nil
+func (w *WebPanel) runSystemSSH(cmd string) error {
+	if w.sshCfg.Host == "" {
+		return fmt.Errorf("no SSH config for system-ssh fallback")
+	}
+	port := w.sshCfg.Port
+	if port == 0 {
+		port = 22
+	}
+	keyPath := expandHome(w.sshCfg.KeyPath)
+	args := []string{
+		"-p", strconv.Itoa(port),
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=20",
+	}
+	if keyPath != "" {
+		args = append(args, "-i", keyPath)
+	}
+	args = append(args, fmt.Sprintf("%s@%s", w.sshCfg.User, w.sshCfg.Host), cmd)
+	out, err := execcmd.Command("ssh", args...).CombinedOutput()
+	msg := strings.TrimSpace(string(out))
+	if err != nil {
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+func (w *WebPanel) ensureBinary(force bool) error {
+	check := "test -x " + binPath + " && " + binPath + ` web --help >/dev/null 2>&1 && echo yes`
+	if !force {
+		if w.exec != nil && w.exec.RunQuiet(check) == "yes" {
+			return nil
+		}
+		if out, err := w.systemSSHOutput(check); err == nil && strings.TrimSpace(out) == "yes" {
+			return nil
+		}
 	}
 
 	var errs []string
 
-	if err := w.crossBuildAndUpload(exec); err == nil {
+	if err := w.crossBuildAndUpload(); err == nil {
 		return nil
 	} else {
 		errs = append(errs, "cross-build: "+err.Error())
 	}
 
-	remoteArch := normalizeArch(exec.RunQuiet("uname -m"))
+	remoteArch := ""
+	if w.exec != nil {
+		remoteArch = normalizeArch(w.exec.RunQuiet("uname -m"))
+	}
+	if remoteArch == "" {
+		if out, err := w.systemSSHOutput("uname -m"); err == nil {
+			remoteArch = normalizeArch(out)
+		}
+	}
 	if runtime.GOOS == "linux" && remoteArch == runtime.GOARCH {
-		if err := w.uploadFile(exec, mustExecutable()); err == nil {
+		if err := w.uploadFile(mustExecutable()); err == nil {
 			return nil
 		} else {
 			errs = append(errs, "upload local: "+err.Error())
 		}
 	}
 
-	// Download release directly on the remote host (own TCP, no local SFTP).
-	res, err := exec.Run("curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1")
-	if err == nil && res.ExitCode == 0 && exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
-		return nil
-	}
-	if err != nil {
+	install := "curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1"
+	if err := w.run(install); err == nil {
+		if w.exec != nil && w.exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
+			return nil
+		}
+		if out, err2 := w.systemSSHOutput("test -x " + binPath + " && echo yes"); err2 == nil && strings.TrimSpace(out) == "yes" {
+			return nil
+		}
+	} else {
 		errs = append(errs, "install.sh: "+err.Error())
-	} else if res != nil {
-		errs = append(errs, "install.sh: "+strings.TrimSpace(res.Stdout+" "+res.Stderr))
 	}
 
 	return fmt.Errorf("could not install xmanager on remote (%s)", strings.Join(errs, "; "))
+}
+
+func (w *WebPanel) systemSSHOutput(cmd string) (string, error) {
+	if w.sshCfg.Host == "" {
+		return "", fmt.Errorf("no SSH config")
+	}
+	port := w.sshCfg.Port
+	if port == 0 {
+		port = 22
+	}
+	keyPath := expandHome(w.sshCfg.KeyPath)
+	args := []string{
+		"-p", strconv.Itoa(port),
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=20",
+	}
+	if keyPath != "" {
+		args = append(args, "-i", keyPath)
+	}
+	args = append(args, fmt.Sprintf("%s@%s", w.sshCfg.User, w.sshCfg.Host), cmd)
+	out, err := execcmd.Command("ssh", args...).CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 func mustExecutable() string {
@@ -229,7 +369,7 @@ func mustExecutable() string {
 	return exe
 }
 
-func (w *WebPanel) crossBuildAndUpload(remote *ssh.Executor) error {
+func (w *WebPanel) crossBuildAndUpload() error {
 	goBin, err := execcmd.LookPath("go")
 	if err != nil {
 		return fmt.Errorf("go not found on local machine")
@@ -240,7 +380,15 @@ func (w *WebPanel) crossBuildAndUpload(remote *ssh.Executor) error {
 		return err
 	}
 
-	arch := normalizeArch(remote.RunQuiet("uname -m"))
+	arch := ""
+	if w.exec != nil {
+		arch = normalizeArch(w.exec.RunQuiet("uname -m"))
+	}
+	if arch == "" {
+		if out, err := w.systemSSHOutput("uname -m"); err == nil {
+			arch = normalizeArch(out)
+		}
+	}
 	if arch != "amd64" && arch != "arm64" {
 		return fmt.Errorf("unsupported remote arch %q", arch)
 	}
@@ -264,7 +412,7 @@ func (w *WebPanel) crossBuildAndUpload(remote *ssh.Executor) error {
 		return fmt.Errorf("go build linux/%s: %w (%s)", arch, err, strings.TrimSpace(string(output)))
 	}
 
-	return w.uploadFile(remote, out)
+	return w.uploadFile(out)
 }
 
 func findModuleRoot() (string, error) {
@@ -322,14 +470,14 @@ func findGoModUp(start string) string {
 	return ""
 }
 
-func (w *WebPanel) uploadFile(remote *ssh.Executor, localPath string) error {
-	// 1) SFTP over existing connection
-	if err := w.uploadViaSFTP(remote, localPath); err == nil {
+func (w *WebPanel) uploadFile(localPath string) error {
+	if err := w.uploadViaSFTP(localPath); err == nil {
+		_ = w.reconnect()
 		return nil
 	} else {
 		sftpErr := err
-		// 2) scp using a fresh local OpenSSH client (avoids dead pooled sessions / disabled subsystem)
 		if err := w.uploadViaSCP(localPath); err == nil {
+			_ = w.reconnect()
 			return nil
 		} else {
 			return fmt.Errorf("sftp: %v; scp: %w", sftpErr, err)
@@ -337,12 +485,15 @@ func (w *WebPanel) uploadFile(remote *ssh.Executor, localPath string) error {
 	}
 }
 
-func (w *WebPanel) uploadViaSFTP(remote *ssh.Executor, localPath string) error {
+func (w *WebPanel) uploadViaSFTP(localPath string) error {
 	data, err := os.ReadFile(localPath)
 	if err != nil {
 		return fmt.Errorf("reading binary: %w", err)
 	}
-	client := remote.UnderlyingClient()
+	if w.exec == nil {
+		return fmt.Errorf("no SSH executor")
+	}
+	client := w.exec.UnderlyingClient()
 	if client == nil {
 		return fmt.Errorf("no SSH client")
 	}
@@ -359,7 +510,7 @@ func (w *WebPanel) uploadViaSFTP(remote *ssh.Executor, localPath string) error {
 	if err := sftp.WriteFile(tmp, data, 0755); err != nil {
 		return fmt.Errorf("writing: %w", err)
 	}
-	return w.run(remote, fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
+	return w.run(fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
 }
 
 func (w *WebPanel) uploadViaSCP(localPath string) error {
@@ -390,23 +541,10 @@ func (w *WebPanel) uploadViaSCP(localPath string) error {
 		return fmt.Errorf("%w (%s)", err, strings.TrimSpace(string(out)))
 	}
 
-	// Fix permissions / symlink via a one-shot ssh command (also fresh connection).
-	sshArgs := []string{
-		"-p", strconv.Itoa(port),
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "BatchMode=yes",
-	}
-	if keyPath != "" {
-		sshArgs = append(sshArgs, "-i", keyPath)
-	}
-	sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", w.sshCfg.User, w.sshCfg.Host),
-		fmt.Sprintf("chmod +x %s && ln -sfn %s /usr/local/bin/vpsm && mkdir -p %s /root/.config/xmanager", binPath, binPath, installDir))
-	sshCmd := execcmd.Command("ssh", sshArgs...)
-	out, err = sshCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("post-scp ssh: %w (%s)", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return w.runSystemSSH(fmt.Sprintf(
+		"chmod +x %s && ln -sfn %s /usr/local/bin/vpsm && mkdir -p %s /root/.config/xmanager",
+		binPath, binPath, installDir,
+	))
 }
 
 func expandHome(path string) string {
@@ -421,9 +559,12 @@ func expandHome(path string) string {
 }
 
 func (w *WebPanel) Disable(exec *ssh.Executor) error {
-	_, _ = exec.Run("systemctl disable --now xmanager-web 2>/dev/null || true")
-	_, _ = exec.Run("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true")
-	_ = w.ComposeDown(exec, installDir)
-	_, _ = exec.Run("docker rm -f xmanager-web 2>/dev/null || true")
+	w.exec = exec
+	_ = w.run("systemctl disable --now xmanager-web 2>/dev/null || true")
+	_ = w.run("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true")
+	if exec != nil {
+		_ = w.ComposeDown(exec, installDir)
+		_, _ = exec.Run("docker rm -f xmanager-web 2>/dev/null || true")
+	}
 	return w.SaveInstance(w.serverID, ServiceType, "stopped", "")
 }
