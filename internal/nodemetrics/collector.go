@@ -39,11 +39,16 @@ type Snapshot struct {
 }
 
 type Container struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Image  string `json:"image"`
-	Status string `json:"status"`
-	Ports  string `json:"ports"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+	Status   string `json:"status"`
+	Ports    string `json:"ports"`
+	CPUPct   string `json:"cpu_pct"`
+	MemUsage string `json:"mem_usage"`
+	MemPct   string `json:"mem_pct"`
+	NetIO    string `json:"net_io"`
+	BlockIO  string `json:"block_io"`
 }
 
 type Port struct {
@@ -297,6 +302,7 @@ func sampleContainers() []Container {
 		return nil
 	}
 	var list []Container
+	byID := map[string]int{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if line == "" {
 			continue
@@ -321,7 +327,51 @@ func sampleContainers() []Container {
 		if len(f) > 4 {
 			c.Ports = f[4]
 		}
+		byID[c.ID] = len(list)
 		list = append(list, c)
+		if len(list) >= 50 {
+			break
+		}
+	}
+	if len(list) == 0 {
+		return list
+	}
+
+	statsOut, err := exec.Command("docker", "stats", "--no-stream", "--format",
+		"{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}").Output()
+	if err != nil {
+		return list
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(statsOut)), "\n") {
+		if line == "" {
+			continue
+		}
+		f := strings.Split(line, "\t")
+		if len(f) < 2 {
+			continue
+		}
+		id := f[0]
+		if len(id) > 12 {
+			id = id[:12]
+		}
+		idx, ok := byID[id]
+		if !ok {
+			continue
+		}
+		c := &list[idx]
+		c.CPUPct = strings.TrimSpace(f[1])
+		if len(f) > 2 {
+			c.MemUsage = strings.TrimSpace(f[2])
+		}
+		if len(f) > 3 {
+			c.MemPct = strings.TrimSpace(f[3])
+		}
+		if len(f) > 4 {
+			c.NetIO = strings.TrimSpace(f[4])
+		}
+		if len(f) > 5 {
+			c.BlockIO = strings.TrimSpace(f[5])
+		}
 	}
 	return list
 }
