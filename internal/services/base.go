@@ -127,6 +127,19 @@ func (b *BaseDeployer) ComposeDown(exec *ssh.Executor, dir string) error {
 
 // SaveInstance persists or updates a ServiceInstance in the DB.
 func (b *BaseDeployer) SaveInstance(serverID uint, serviceType, status, configJSON string) error {
+	if status != "running" && (configJSON == "" || configJSON == "{}") {
+		// Mark intentional stop so node defaults do not auto-reenable.
+		configJSON = `{"user_disabled":true}`
+	}
+	if status == "running" && strings.Contains(configJSON, `"user_disabled":true`) {
+		configJSON = strings.ReplaceAll(configJSON, `"user_disabled":true,`, "")
+		configJSON = strings.ReplaceAll(configJSON, `,"user_disabled":true`, "")
+		configJSON = strings.ReplaceAll(configJSON, `"user_disabled":true`, "")
+		if configJSON == "" || configJSON == "{}" {
+			configJSON = "{}"
+		}
+	}
+
 	var inst storage.ServiceInstance
 	res := b.DB.Where("server_id = ? AND service_type = ?", serverID, serviceType).First(&inst)
 	if res.Error != nil {

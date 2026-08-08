@@ -184,7 +184,34 @@ WantedBy=multi-user.target
 			return fmt.Errorf("starting xmanager-web: %v (ssh fallback: %w)", err, err2)
 		}
 	}
+
+	// Kick default node stacks (gitea, registry, …) over SSH so they don't
+	// depend solely on the panel process noticing them after restart.
+	w.enableDefaultNodeStacks()
 	return nil
+}
+
+// enableDefaultNodeStacks deploys the default-on services on the managed host.
+func (w *WebPanel) enableDefaultNodeStacks() {
+	_ = w.reconnect()
+	if w.exec == nil {
+		return
+	}
+	for _, item := range defaultRemoteStacks(w.DB, w.serverID) {
+		if item == nil {
+			continue
+		}
+		st := item.Status(w.exec)
+		if st != "" && st != "stopped" {
+			continue
+		}
+		if err := item.Enable(w.exec, map[string]string{}); err != nil {
+			// Non-fatal: panel is up; node boot ensure will retry.
+			fmt.Printf("webpanel: default stack %s: %v\n", item.Name(), err)
+		} else {
+			fmt.Printf("webpanel: default stack %s enabled\n", item.Name())
+		}
+	}
 }
 
 func isSSHSessionError(err error) bool {
