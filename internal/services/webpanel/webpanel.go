@@ -3,8 +3,11 @@ package webpanel
 import (
 	"fmt"
 	"os"
+	execcmd "os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -23,14 +26,13 @@ const (
 type WebPanel struct {
 	services.BaseDeployer
 	serverID uint
-	host     string // public host for status URL
+	host     string
 }
 
 func New(db *gorm.DB, serverID uint) *WebPanel {
 	return &WebPanel{BaseDeployer: services.BaseDeployer{DB: db}, serverID: serverID}
 }
 
-// SetHost sets the server hostname/IP used in status messages.
 func (w *WebPanel) SetHost(host string) { w.host = host }
 
 func (w *WebPanel) Name() string { return ServiceType }
@@ -40,7 +42,6 @@ func (w *WebPanel) IsEnabled(exec *ssh.Executor) bool {
 	if strings.TrimSpace(out) == "active" {
 		return true
 	}
-	// Docker fallback
 	return exec.RunQuiet("docker inspect xmanager-web 2>/dev/null | grep -q running && echo yes") == "yes"
 }
 
@@ -65,26 +66,28 @@ func (w *WebPanel) readPort(exec *ssh.Executor) string {
 	return out
 }
 
-// Enable installs the binary (upload or curl), writes config, and starts systemd.
-// cfg keys: port (default 8080), method (binary|docker, default auto).
+// Enable installs the panel on the remote host.
+// cfg: port (default 8080), method (binary|docker|auto — default binary).
+// Auto/binary never pulls ghcr.io (image may not be published); use method=docker explicitly.
 func (w *WebPanel) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	port := cfg["port"]
 	if port == "" {
 		port = "8080"
 	}
 	method := cfg["method"]
-	if method == "" {
-		method = "auto"
+	if method == "" || method == "auto" {
+		method = "binary"
 	}
 
-	if method == "docker" || (method == "auto" && dockerAvailable(exec) && !binaryInstallPreferred(exec)) {
-		if err := w.enableDocker(exec, port); err != nil {
-			return err
-		}
-	} else {
-		if err := w.enableBinary(exec, port); err != nil {
-			return err
-		}
+	var err error
+	switch method {
+	case "docker":
+		err = w.enableDocker(exec, port)
+	default:
+		err = w.enableBinary(exec, port)
+	}
+	if err != nil {
+		return err
 	}
 
 	url := fmt.Sprintf("http://%s:%s", w.hostOr("host"), port)
@@ -97,16 +100,6 @@ func (w *WebPanel) hostOr(fallback string) string {
 		return w.host
 	}
 	return fallback
-}
-
-func dockerAvailable(exec *ssh.Executor) bool {
-	return exec.RunQuiet("docker --version >/dev/null 2>&1 && echo yes") == "yes"
-}
-
-func binaryInstallPreferred(exec *ssh.Executor) bool {
-	// Prefer binary when we can match arch with the local binary.
-	remote := normalizeArch(exec.RunQuiet("uname -m"))
-	return remote == runtime.GOARCH && runtime.GOOS == "linux"
 }
 
 func normalizeArch(a string) string {
@@ -183,50 +176,155 @@ WantedBy=multi-user.target
 }
 
 func (w *WebPanel) ensureBinary(exec *ssh.Executor) error {
-	// Already installed?
-	if exec.RunQuiet("test -x " + binPath + " && echo yes") == "yes" {
+	// Reuse remote binary only if it already has the `web` subcommand.
+	if exec.RunQuiet("test -x "+binPath+" && "+binPath+` web --help >/dev/null 2>&1 && echo yes`) == "yes" {
 		return nil
 	}
 
+	var errs []string
+
+	// 1) Cross-compile Linux binary on this machine (works from macOS) and upload.
+	if err := w.crossBuildAndUpload(exec); err == nil {
+		return nil
+	} else {
+		errs = append(errs, "cross-build: "+err.Error())
+	}
+
+	// 2) Upload current binary only when already a Linux build of matching arch.
 	remoteArch := normalizeArch(exec.RunQuiet("uname -m"))
-	if remoteArch == runtime.GOARCH && runtime.GOOS == "linux" {
-		if err := w.uploadLocalBinary(exec); err == nil {
+	if runtime.GOOS == "linux" && remoteArch == runtime.GOARCH {
+		if err := w.uploadFile(exec, mustExecutable()); err == nil {
+			return nil
+		} else {
+			errs = append(errs, "upload local: "+err.Error())
+		}
+	}
+
+	// 3) Remote install.sh (GitHub release — may be older than local).
+	res, err := exec.Run("curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1")
+	if err == nil && res.ExitCode == 0 {
+		if exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
 			return nil
 		}
 	}
-
-	// Fall back to official install script (Linux releases).
-	res, err := exec.Run("curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1")
 	if err != nil {
-		return fmt.Errorf("installing xmanager binary: %w", err)
+		errs = append(errs, "install.sh: "+err.Error())
+	} else if res != nil {
+		errs = append(errs, "install.sh: "+strings.TrimSpace(res.Stdout+" "+res.Stderr))
 	}
-	if res.ExitCode != 0 {
-		// Last resort: try uploading local binary anyway (may fail on arch mismatch).
-		if upErr := w.uploadLocalBinary(exec); upErr != nil {
-			return fmt.Errorf("install failed (%s); upload fallback: %w", strings.TrimSpace(res.Stdout+" "+res.Stderr), upErr)
-		}
-	}
-	return nil
+
+	return fmt.Errorf("could not install xmanager on remote (%s)", strings.Join(errs, "; "))
 }
 
-func (w *WebPanel) uploadLocalBinary(exec *ssh.Executor) error {
-	exe, err := os.Executable()
+func mustExecutable() string {
+	exe, _ := os.Executable()
+	return exe
+}
+
+func (w *WebPanel) crossBuildAndUpload(remote *ssh.Executor) error {
+	goBin, err := execcmd.LookPath("go")
 	if err != nil {
-		return fmt.Errorf("locating local binary: %w", err)
-	}
-	data, err := os.ReadFile(exe)
-	if err != nil {
-		return fmt.Errorf("reading local binary: %w", err)
+		return fmt.Errorf("go not found on local machine")
 	}
 
-	tmp := installDir + "/xmanager.new"
-	// Write via base64 to avoid needing SFTP in Enable signature (works over exec).
-	// For large binaries this is heavy — use SFTP when pool provides it via helper.
-	_ = data
-	_ = tmp
+	modRoot, err := findModuleRoot()
+	if err != nil {
+		return err
+	}
 
-	// Prefer chunked SFTP if the executor's client is available.
-	client := exec.UnderlyingClient()
+	arch := normalizeArch(remote.RunQuiet("uname -m"))
+	if arch != "amd64" && arch != "arm64" {
+		return fmt.Errorf("unsupported remote arch %q", arch)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "xmanager-linux-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	out := filepath.Join(tmpDir, "xmanager")
+	cmd := execcmd.Command(goBin, "build", "-o", out, "./cmd/xmanager")
+	cmd.Dir = modRoot
+	cmd.Env = append(os.Environ(),
+		"GOOS=linux",
+		"GOARCH="+arch,
+		"CGO_ENABLED=0",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build linux/%s: %w (%s)", arch, err, strings.TrimSpace(string(output)))
+	}
+
+	return w.uploadFile(remote, out)
+}
+
+func findModuleRoot() (string, error) {
+	// Prefer directory of the running binary's build (repo checkout).
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Dir(exe), filepath.Join(filepath.Dir(exe), ".."), filepath.Join(filepath.Dir(exe), "../.."))
+	}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, wd)
+	}
+	// Common local path when developing
+	home, _ := os.UserHomeDir()
+	candidates = append(candidates,
+		filepath.Join(home, "Code/shared/BuildRoom/xmanager"),
+		filepath.Join(home, "src/xmanager"),
+	)
+
+	for _, c := range candidates {
+		root := findGoModUp(c)
+		if root != "" {
+			return root, nil
+		}
+	}
+
+	// go list -m -f '{{.Dir}}'
+	cmd := execcmd.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/lyracorp/xmanager")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		dir := strings.TrimSpace(string(out))
+		if dir != "" && dir != "github.com/lyracorp/xmanager" {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				return dir, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("xmanager module root not found (run from the repo or keep the checkout)")
+}
+
+func findGoModUp(start string) string {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < 8; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			// sanity: must be this module
+			data, _ := os.ReadFile(filepath.Join(dir, "go.mod"))
+			if strings.Contains(string(data), "github.com/lyracorp/xmanager") {
+				return dir
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+func (w *WebPanel) uploadFile(remote *ssh.Executor, localPath string) error {
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("reading binary: %w", err)
+	}
+	client := remote.UnderlyingClient()
 	if client == nil {
 		return fmt.Errorf("no SSH client for binary upload")
 	}
@@ -239,10 +337,11 @@ func (w *WebPanel) uploadLocalBinary(exec *ssh.Executor) error {
 	if err := sftp.MkdirAll(installDir); err != nil {
 		return err
 	}
+	tmp := fmt.Sprintf("%s/xmanager.%d", installDir, time.Now().UnixNano())
 	if err := sftp.WriteFile(tmp, data, 0755); err != nil {
 		return fmt.Errorf("uploading binary: %w", err)
 	}
-	res, err := exec.Run(fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
+	res, err := remote.Run(fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
 	if err != nil {
 		return err
 	}
@@ -253,54 +352,13 @@ func (w *WebPanel) uploadLocalBinary(exec *ssh.Executor) error {
 }
 
 func (w *WebPanel) enableDocker(exec *ssh.Executor, port string) error {
-	if _, err := exec.Run("mkdir -p " + installDir); err != nil {
-		return err
-	}
-
-	configYAML := fmt.Sprintf(`web:
-  enabled: true
-  host: "0.0.0.0"
-  port: %s
-ui:
-  theme: dark
-`, port)
-	cmd := fmt.Sprintf("cat > %s/config.yaml << 'XEOF'\n%sXEOF", installDir, configYAML)
-	if _, err := exec.Run(cmd); err != nil {
-		return fmt.Errorf("writing config: %w", err)
-	}
-
-	compose := fmt.Sprintf(`services:
-  xmanager-web:
-    image: ghcr.io/lyracorp/xmanager:latest
-    container_name: xmanager-web
-    restart: unless-stopped
-    command: ["web"]
-    ports:
-      - "%s:8080"
-    volumes:
-      - %s/config.yaml:/root/.config/xmanager/config.yaml:ro
-      - xmanager_web_data:/var/lib/xmanager
-      - /root/.ssh:/root/.ssh:ro
-    environment:
-      - HOME=/root
-volumes:
-  xmanager_web_data:
-`, port, installDir)
-
-	if err := w.WriteCompose(exec, installDir, compose); err != nil {
-		return fmt.Errorf("webpanel docker enable: %w", err)
-	}
-	return nil
+	return fmt.Errorf("docker method unavailable: ghcr.io/lyracorp/xmanager image is not published; use binary install (default)")
 }
 
 func (w *WebPanel) Disable(exec *ssh.Executor) error {
-	// Stop systemd if present
 	_, _ = exec.Run("systemctl disable --now xmanager-web 2>/dev/null || true")
 	_, _ = exec.Run("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true")
-
-	// Stop docker if present
 	_ = w.ComposeDown(exec, installDir)
 	_, _ = exec.Run("docker rm -f xmanager-web 2>/dev/null || true")
-
 	return w.SaveInstance(w.serverID, ServiceType, "stopped", "")
 }
