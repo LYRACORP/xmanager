@@ -6,23 +6,41 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/services/gitea"
+	"github.com/lyracorp/xmanager/internal/services/kafka"
+	"github.com/lyracorp/xmanager/internal/services/mailinbox"
+	"github.com/lyracorp/xmanager/internal/services/mattermost"
+	"github.com/lyracorp/xmanager/internal/services/netdata"
+	"github.com/lyracorp/xmanager/internal/services/powerdns"
+	"github.com/lyracorp/xmanager/internal/services/rabbitmq"
+	"github.com/lyracorp/xmanager/internal/services/registry"
+	"github.com/lyracorp/xmanager/internal/services/rustfs"
+	"github.com/lyracorp/xmanager/internal/services/sentry"
+	"github.com/lyracorp/xmanager/internal/services/umami"
+	"github.com/lyracorp/xmanager/internal/services/webpanel"
+	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
+	svcs "github.com/lyracorp/xmanager/internal/services"
 )
 
-// optionalServices lists all toggleable optional service types.
 var optionalServices = []string{
+	"webpanel",
 	"registry", "gitea", "rustfs", "rabbitmq", "kafka",
 	"mattermost", "sentry", "netdata", "umami", "powerdns",
 	"mailinbox",
 }
 
 type instancesLoadedMsg struct{ instances []storage.ServiceInstance }
-type toggleResultMsg struct{ serviceType string; enabled bool }
+type toggleResultMsg struct {
+	serviceType string
+	enabled     bool
+	status      string
+	err         error
+}
 
-// Model shows optional services for the current server and lets the user toggle them.
 type Model struct {
 	ctx       *shared.AppContext
 	instances []storage.ServiceInstance
@@ -30,6 +48,7 @@ type Model struct {
 	message   string
 	width     int
 	height    int
+	busy      bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -81,7 +100,7 @@ func (m *Model) rebuildTable() {
 	cols := []table.Column{
 		{Title: "Enabled", Width: 8},
 		{Title: "Service", Width: 18},
-		{Title: "Status", Width: 10},
+		{Title: "Status", Width: 24},
 		{Title: "Notes", Width: 0},
 	}
 	rows := make([]table.Row, len(m.instances))
@@ -90,7 +109,11 @@ func (m *Model) rebuildTable() {
 		if si.Enabled {
 			enabled = "[✓]"
 		}
-		rows[i] = table.Row{enabled, si.ServiceType, si.Status, ""}
+		note := ""
+		if si.ServiceType == "webpanel" {
+			note = "HTMX panel on :8080"
+		}
+		rows[i] = table.Row{enabled, si.ServiceType, si.Status, note}
 	}
 	m.tbl = m.tbl.SetData(m.width, cols, rows, h)
 	m.tbl = m.tbl.SetFocused(true)
@@ -100,18 +123,29 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
 	case instancesLoadedMsg:
 		m.instances = msg.instances
+		m.busy = false
 		m.rebuildTable()
 		return m, nil
 	case toggleResultMsg:
+		m.busy = false
+		if msg.err != nil {
+			m.message = fmt.Sprintf("%s failed: %v", msg.serviceType, msg.err)
+			return m, m.load()
+		}
 		action := "disabled"
 		if msg.enabled {
 			action = "enabled"
 		}
-		m.message = fmt.Sprintf("%s %s", msg.serviceType, action)
+		m.message = fmt.Sprintf("%s %s (%s)", msg.serviceType, action, msg.status)
 		return m, m.load()
 	case tea.KeyMsg:
+		if m.busy {
+			return m, nil
+		}
 		switch msg.String() {
 		case "enter", " ":
+			m.busy = true
+			m.message = "Working…"
 			return m, m.toggle()
 		case "r":
 			return m, m.load()
@@ -130,23 +164,93 @@ func (m *Model) toggle() tea.Cmd {
 		return nil
 	}
 	si := m.instances[idx]
-	newEnabled := !si.Enabled
+	enable := !si.Enabled
+	serverID := m.ctx.ServerID
+	svcType := si.ServiceType
+
 	return func() tea.Msg {
-		if si.ID == 0 {
-			si.Enabled = newEnabled
-			si.Status = "stopped"
-			if newEnabled {
-				si.Status = "running"
-			}
-			m.ctx.DB.Create(&si)
-		} else {
-			status := "stopped"
-			if newEnabled {
-				status = "running"
-			}
-			m.ctx.DB.Model(&si).Updates(map[string]interface{}{"enabled": newEnabled, "status": status})
+		exec, err := m.ensureExec()
+		if err != nil {
+			return toggleResultMsg{serviceType: svcType, err: err}
 		}
-		return toggleResultMsg{serviceType: si.ServiceType, enabled: newEnabled}
+		svc := lookupService(svcType, m.ctx, serverID)
+		if svc == nil {
+			return toggleResultMsg{serviceType: svcType, err: fmt.Errorf("unknown service %s", svcType)}
+		}
+		if enable {
+			cfg := map[string]string{"port": "8080"}
+			if err := svc.Enable(exec, cfg); err != nil {
+				return toggleResultMsg{serviceType: svcType, err: err}
+			}
+			return toggleResultMsg{serviceType: svcType, enabled: true, status: svc.Status(exec)}
+		}
+		if err := svc.Disable(exec); err != nil {
+			return toggleResultMsg{serviceType: svcType, err: err}
+		}
+		return toggleResultMsg{serviceType: svcType, enabled: false, status: "stopped"}
+	}
+}
+
+func (m *Model) ensureExec() (*ssh.Executor, error) {
+	if exec, ok := m.ctx.Pool.GetExecutor(m.ctx.ServerID); ok {
+		return exec, nil
+	}
+	var srv storage.Server
+	if err := m.ctx.DB.First(&srv, m.ctx.ServerID).Error; err != nil {
+		return nil, err
+	}
+	_, err := m.ctx.Pool.Connect(srv.ID, ssh.ClientConfig{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.User,
+		KeyPath:  srv.SSHKeyPath,
+		Password: srv.Password,
+		JumpHost: srv.JumpHost,
+	})
+	if err != nil {
+		return nil, err
+	}
+	exec, ok := m.ctx.Pool.GetExecutor(srv.ID)
+	if !ok {
+		return nil, fmt.Errorf("executor unavailable")
+	}
+	return exec, nil
+}
+
+func lookupService(svcType string, ctx *shared.AppContext, serverID uint) svcs.Service {
+	db := ctx.DB
+	switch svcType {
+	case "webpanel":
+		wp := webpanel.New(db, serverID)
+		var srv storage.Server
+		if ctx.DB.First(&srv, serverID).Error == nil {
+			wp.SetHost(srv.Host)
+		}
+		return wp
+	case "gitea":
+		return gitea.New(db, serverID)
+	case "kafka":
+		return kafka.New(db, serverID)
+	case "mattermost":
+		return mattermost.New(db, serverID)
+	case "rabbitmq":
+		return rabbitmq.New(db, serverID)
+	case "registry":
+		return registry.New(db, serverID)
+	case "rustfs":
+		return rustfs.New(db, serverID)
+	case "sentry":
+		return sentry.New(db, serverID)
+	case "netdata":
+		return netdata.New(db, serverID)
+	case "umami":
+		return umami.New(db, serverID)
+	case "powerdns":
+		return powerdns.New(db, serverID)
+	case "mailinbox":
+		return mailinbox.New(db, serverID)
+	default:
+		return nil
 	}
 }
 

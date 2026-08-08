@@ -101,7 +101,7 @@ func (a *App) contentHeight() int {
 func (a *App) globalBindings() []components.KeyBinding {
 	return []components.KeyBinding{
 		{Key: "?", Desc: "help"},
-		{Key: "ctrl+s", Desc: "fleet"},
+		{Key: "ctrl+f", Desc: "fleet"},
 		{Key: "ctrl+a", Desc: "AI chat"},
 		{Key: "esc", Desc: "back"},
 	}
@@ -174,7 +174,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.helpOverlay.Width = a.width
 			a.helpOverlay.Height = a.height
 			return a, nil
-		case "ctrl+s":
+		case "ctrl+f":
 			return a, a.replaceNavigate(shared.ScreenFleetOverview, nil)
 		case "ctrl+a":
 			return a, a.replaceNavigate(shared.ScreenChat, nil)

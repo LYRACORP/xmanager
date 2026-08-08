@@ -39,9 +39,20 @@ xmanager web          # HTMX web panel (auth on first visit)
 xmanager mcp          # MCP stdio server for AI agents
 ```
 
-Keyboard (global): `Ctrl+S` fleet · `Ctrl+A` AI chat · `?` help · `Esc` back
+Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `?` help · `Esc` back
+
+Fleet Overview: `Enter` connect · `w` install/uninstall web panel on selected server · `a` add · `d` delete
 
 From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o` cron · `t` scripts · `y` uptime · `v` services · `z` recon · `n` database
+
+### Fleet Overview vs server Dashboard
+
+| | **Fleet Overview** (home) | **Dashboard** (per server) |
+|--|---------------------------|----------------------------|
+| What | All servers on one screen | One connected server in depth |
+| Metrics | CPU/RAM/disk cards for every host | Live gauges, processes, files, services for that host |
+| How to open | Start of app, or `Ctrl+F` | `Enter` on a fleet card |
+| Typical use | Pick a server, see who’s up, install web panel (`w`) | Manage Docker/PM2/logs/projects on that box |
 
 ## Configuration
 

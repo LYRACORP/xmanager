@@ -2,10 +2,13 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lyracorp/xmanager/internal/services/webpanel"
+	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -37,10 +40,16 @@ type alertsLoadedMsg struct {
 	alerts []storage.ErrorEvent
 }
 
+type webPanelDashMsg struct {
+	installed bool
+	url       string
+	err       error
+}
+
 type Model struct {
-	ctx   *shared.AppContext
-	tab   dashTab
-	width int
+	ctx    *shared.AppContext
+	tab    dashTab
+	width  int
 	height int
 
 	// overview
@@ -58,19 +67,25 @@ type Model struct {
 	svcTable      components.ListTable
 
 	// files
-	curPath       string
-	dirEntries    []dirEntry
-	dirState      loadState
-	dirErr        string
-	dirTable      components.ListTable
-	dirLoaded     bool
-	previewOpen   bool
+	curPath        string
+	dirEntries     []dirEntry
+	dirState       loadState
+	dirErr         string
+	dirTable       components.ListTable
+	dirLoaded      bool
+	previewOpen    bool
 	previewOverlay bool
-	previewPath   string
-	previewBody   string
-	previewScroll components.ScrollView
-	pathInput     textinput.Model
-	pathInputMode bool
+	previewPath    string
+	previewBody    string
+	previewScroll  components.ScrollView
+	pathInput      textinput.Model
+	pathInputMode  bool
+
+	// web panel
+	webInstalled bool
+	webConfirm   int // 0 none, 1 install, 2 uninstall
+	webBusy      bool
+	statusMsg    string
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -80,9 +95,9 @@ func New(ctx *shared.AppContext) *Model {
 	ti.Width = 40
 
 	m := &Model{
-		ctx:     ctx,
-		tab:     tabOverview,
-		curPath: "/",
+		ctx:       ctx,
+		tab:       tabOverview,
+		curPath:   "/",
 		pathInput: ti,
 	}
 	return m
@@ -117,12 +132,25 @@ func (m *Model) Init() tea.Cmd {
 	m.metricsState = stateLoading
 	m.servicesState = stateLoading
 	m.alertsState = stateLoading
+	m.refreshWebInstalled()
 	return tea.Batch(
 		m.loadAlerts(),
 		m.loadMetrics(),
 		m.loadServices(),
 		m.scheduleTick(),
 	)
+}
+
+func (m *Model) refreshWebInstalled() {
+	m.webInstalled = false
+	if m.ctx.DB == nil || m.ctx.ServerID == 0 {
+		return
+	}
+	var n int64
+	m.ctx.DB.Model(&storage.ServiceInstance{}).
+		Where("server_id = ? AND service_type = ? AND enabled = ?", m.ctx.ServerID, webpanel.ServiceType, true).
+		Count(&n)
+	m.webInstalled = n > 0
 }
 
 func (m *Model) scheduleTick() tea.Cmd {
@@ -217,6 +245,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		if m.pathInputMode {
 			return m.updatePathInput(msg)
 		}
+		if m.webConfirm != 0 {
+			return m.updateWebConfirm(msg)
+		}
+		if m.webBusy {
+			return m, nil
+		}
 		if m.previewOpen && m.previewOverlay {
 			if msg.String() == "esc" {
 				m.previewOpen = false
@@ -229,6 +263,21 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		if nav, ok := m.handleKeys(msg); ok {
 			return m, nav
 		}
+
+	case webPanelDashMsg:
+		m.webBusy = false
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Web panel failed: %v", msg.err)
+			return m, nil
+		}
+		m.webInstalled = msg.installed
+		if msg.installed {
+			m.statusMsg = fmt.Sprintf("Web panel installed — %s", msg.url)
+		} else {
+			m.statusMsg = "Web panel uninstalled"
+		}
+		m.refreshWebInstalled()
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -378,6 +427,16 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenServices, ServerID: m.ctx.ServerID}
 		}, true
+	case "w":
+		m.refreshWebInstalled()
+		if m.webInstalled {
+			m.webConfirm = 2
+			m.statusMsg = "Uninstall web panel from this server? (y/n)"
+		} else {
+			m.webConfirm = 1
+			m.statusMsg = "Install web panel on this server (:8080)? (y/n)"
+		}
+		return nil, true
 	case "z":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenRecon, ServerID: m.ctx.ServerID}
@@ -388,6 +447,74 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}, true
 	}
 	return nil, false
+}
+
+func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		install := m.webConfirm == 1
+		m.webConfirm = 0
+		m.webBusy = true
+		if install {
+			m.statusMsg = "Installing web panel…"
+		} else {
+			m.statusMsg = "Uninstalling web panel…"
+		}
+		return m, m.runWebPanel(install)
+	case "n", "N", "esc":
+		m.webConfirm = 0
+		m.statusMsg = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) runWebPanel(install bool) tea.Cmd {
+	serverID := m.ctx.ServerID
+	return func() tea.Msg {
+		var srv storage.Server
+		if err := m.ctx.DB.First(&srv, serverID).Error; err != nil {
+			return webPanelDashMsg{err: err}
+		}
+		exec, err := m.ensureExec(srv)
+		if err != nil {
+			return webPanelDashMsg{err: err}
+		}
+		svc := webpanel.New(m.ctx.DB, serverID)
+		svc.SetHost(srv.Host)
+		if install {
+			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
+				return webPanelDashMsg{err: err}
+			}
+			return webPanelDashMsg{installed: true, url: fmt.Sprintf("http://%s:8080", srv.Host)}
+		}
+		if err := svc.Disable(exec); err != nil {
+			return webPanelDashMsg{err: err}
+		}
+		return webPanelDashMsg{installed: false}
+	}
+}
+
+func (m *Model) ensureExec(srv storage.Server) (*ssh.Executor, error) {
+	if exec, ok := m.ctx.Pool.GetExecutor(srv.ID); ok {
+		return exec, nil
+	}
+	_, err := m.ctx.Pool.Connect(srv.ID, ssh.ClientConfig{
+		Host:     srv.Host,
+		Port:     srv.Port,
+		User:     srv.User,
+		KeyPath:  srv.SSHKeyPath,
+		Password: srv.Password,
+		JumpHost: srv.JumpHost,
+	})
+	if err != nil {
+		return nil, err
+	}
+	exec, ok := m.ctx.Pool.GetExecutor(srv.ID)
+	if !ok {
+		return nil, fmt.Errorf("executor unavailable")
+	}
+	return exec, nil
 }
 
 func (m *Model) handleSvcEnter() tea.Cmd {
@@ -449,11 +576,18 @@ func (m *Model) previewHeight() int {
 }
 
 func (m *Model) KeyBindings() []components.KeyBinding {
+	if m.webConfirm != 0 {
+		return []components.KeyBinding{
+			{Key: "y", Desc: "confirm"},
+			{Key: "n/esc", Desc: "cancel"},
+		}
+	}
 	switch m.tab {
 	case tabServices:
 		return []components.KeyBinding{
 			{Key: "a", Desc: "filter"},
 			{Key: "enter", Desc: "open"},
+			{Key: "w", Desc: "web panel"},
 			{Key: "r", Desc: "refresh"},
 			{Key: "1/2/3", Desc: "tabs"},
 			{Key: "b", Desc: "back"},
@@ -463,12 +597,14 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "enter", Desc: "open"},
 			{Key: "-", Desc: "up dir"},
 			{Key: "g", Desc: "go path"},
+			{Key: "w", Desc: "web panel"},
 			{Key: ".", Desc: "refresh"},
 			{Key: "b", Desc: "back"},
 		}
 	default:
 		return []components.KeyBinding{
 			{Key: "r", Desc: "refresh"},
+			{Key: "w", Desc: "web panel"},
 			{Key: "d/p/l", Desc: "docker/pm2/logs"},
 			{Key: "j/o/t", Desc: "projects/cron/scripts"},
 			{Key: "y/v/z", Desc: "uptime/services/recon"},
@@ -479,7 +615,11 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) OnNavigate(_ map[string]interface{}) {}
+func (m *Model) OnNavigate(_ map[string]interface{}) {
+	m.refreshWebInstalled()
+	m.webConfirm = 0
+	m.statusMsg = ""
+}
 
 func (m *Model) View() string {
 	return renderDashboard(m)

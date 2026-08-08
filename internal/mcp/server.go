@@ -27,6 +27,7 @@ import (
 	rustfssvc "github.com/lyracorp/xmanager/internal/services/rustfs"
 	sentrysvc "github.com/lyracorp/xmanager/internal/services/sentry"
 	umamisvc "github.com/lyracorp/xmanager/internal/services/umami"
+	webpanelsvc "github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/uptime"
@@ -631,6 +632,13 @@ func lookupService(serviceType string, db *gorm.DB, serverID uint) togglable {
 		return mailinboxsvc.New(db, serverID)
 	case "k8s", "kubernetes":
 		return k8ssvc.New(db, serverID)
+	case "webpanel", "web":
+		wp := webpanelsvc.New(db, serverID)
+		var srv storage.Server
+		if db.First(&srv, serverID).Error == nil {
+			wp.SetHost(srv.Host)
+		}
+		return wp
 	default:
 		return nil
 	}

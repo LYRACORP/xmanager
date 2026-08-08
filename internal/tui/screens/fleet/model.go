@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
@@ -22,6 +23,8 @@ const (
 	modeGrid mode = iota
 	modeAdd
 	modeConfirmDelete
+	modeConfirmWebInstall
+	modeConfirmWebUninstall
 )
 
 type formField int
@@ -40,6 +43,7 @@ const (
 type serversLoadedMsg struct {
 	servers   []storage.Server
 	snapshots map[uint]storage.ServerMetricSnapshot
+	webPanels map[uint]bool
 }
 
 type connectResultMsg struct {
@@ -48,31 +52,41 @@ type connectResultMsg struct {
 	err      error
 }
 
-// Model is the FleetOverview home screen.
+type webPanelResultMsg struct {
+	serverID  uint
+	installed bool
+	url       string
+	err       error
+}
+
 type Model struct {
-	ctx      *shared.AppContext
-	servers  []storage.Server
-	snaps    map[uint]storage.ServerMetricSnapshot
-	cursor   int
-	mode     mode
-	form     [fieldCount]textinput.Model
-	formIdx  int
-	deleteID uint
-	message  string
-	width    int
-	height   int
+	ctx       *shared.AppContext
+	servers   []storage.Server
+	snaps     map[uint]storage.ServerMetricSnapshot
+	webPanels map[uint]bool
+	cursor    int
+	mode      mode
+	form      [fieldCount]textinput.Model
+	formIdx   int
+	deleteID  uint
+	message   string
+	width     int
+	height    int
+	busy      bool
 }
 
 func New(ctx *shared.AppContext) *Model {
-	m := &Model{ctx: ctx, snaps: make(map[uint]storage.ServerMetricSnapshot)}
+	m := &Model{
+		ctx:       ctx,
+		snaps:     make(map[uint]storage.ServerMetricSnapshot),
+		webPanels: make(map[uint]bool),
+	}
 	m.initForm()
 	return m
 }
 
-func (m *Model) Name() string { return "Fleet Overview" }
-
+func (m *Model) Name() string     { return "Fleet Overview" }
 func (m *Model) SetSize(w, h int) { m.width = w; m.height = h }
-
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
@@ -84,14 +98,15 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "enter", Desc: "save"},
 			{Key: "esc", Desc: "cancel"},
 		}
-	case modeConfirmDelete:
+	case modeConfirmDelete, modeConfirmWebInstall, modeConfirmWebUninstall:
 		return []components.KeyBinding{
-			{Key: "y", Desc: "confirm delete"},
+			{Key: "y", Desc: "confirm"},
 			{Key: "n/esc", Desc: "cancel"},
 		}
 	default:
 		return []components.KeyBinding{
 			{Key: "enter", Desc: "connect"},
+			{Key: "w", Desc: "web panel"},
 			{Key: "a", Desc: "add"},
 			{Key: "d", Desc: "delete"},
 			{Key: "r", Desc: "refresh"},
@@ -100,16 +115,20 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) Init() tea.Cmd {
-	return m.load()
-}
+func (m *Model) Init() tea.Cmd { return m.load() }
 
 func (m *Model) load() tea.Cmd {
 	return func() tea.Msg {
 		var servers []storage.Server
 		m.ctx.DB.Order("name asc").Find(&servers)
 		snaps, _ := poller.LatestSnapshots(m.ctx.DB)
-		return serversLoadedMsg{servers: servers, snapshots: snaps}
+		web := make(map[uint]bool)
+		var instances []storage.ServiceInstance
+		m.ctx.DB.Where("service_type = ? AND enabled = ?", webpanel.ServiceType, true).Find(&instances)
+		for _, si := range instances {
+			web[si.ServerID] = true
+		}
+		return serversLoadedMsg{servers: servers, snapshots: snaps, webPanels: web}
 	}
 }
 
@@ -120,9 +139,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		if msg.snapshots != nil {
 			m.snaps = msg.snapshots
 		}
+		if msg.webPanels != nil {
+			m.webPanels = msg.webPanels
+		}
 		if m.cursor >= len(m.servers) && len(m.servers) > 0 {
 			m.cursor = len(m.servers) - 1
 		}
+		m.busy = false
 		return m, nil
 
 	case poller.MetricsUpdatedMsg:
@@ -137,9 +160,27 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			}
 		}
 		m.message = fmt.Sprintf("Connection failed: %v", msg.err)
+		m.busy = false
 		return m, nil
 
+	case webPanelResultMsg:
+		m.busy = false
+		if msg.err != nil {
+			m.message = fmt.Sprintf("Web panel failed: %v", msg.err)
+			return m, nil
+		}
+		m.webPanels[msg.serverID] = msg.installed
+		if msg.installed {
+			m.message = fmt.Sprintf("Web panel installed — %s", msg.url)
+		} else {
+			m.message = "Web panel uninstalled"
+		}
+		return m, m.load()
+
 	case tea.KeyMsg:
+		if m.busy {
+			return m, nil
+		}
 		switch m.mode {
 		case modeGrid:
 			return m.updateGrid(msg)
@@ -147,6 +188,8 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateForm(msg)
 		case modeConfirmDelete:
 			return m.updateDelete(msg)
+		case modeConfirmWebInstall, modeConfirmWebUninstall:
+			return m.updateWebConfirm(msg)
 		}
 	}
 	return m, nil
@@ -178,7 +221,20 @@ func (m *Model) updateGrid(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		}
 		s := m.servers[m.cursor]
 		m.message = "Connecting…"
+		m.busy = true
 		return m, m.connect(s)
+	case "w":
+		if count == 0 {
+			return m, nil
+		}
+		s := m.servers[m.cursor]
+		if m.webPanels[s.ID] {
+			m.mode = modeConfirmWebUninstall
+		} else {
+			m.mode = modeConfirmWebInstall
+		}
+		m.message = ""
+		return m, nil
 	case "a":
 		m.mode = modeAdd
 		m.initForm()
@@ -197,6 +253,77 @@ func (m *Model) updateGrid(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		return m, m.load()
 	}
 	return m, nil
+}
+
+func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if m.cursor < 0 || m.cursor >= len(m.servers) {
+			m.mode = modeGrid
+			return m, nil
+		}
+		s := m.servers[m.cursor]
+		install := m.mode == modeConfirmWebInstall
+		m.mode = modeGrid
+		m.busy = true
+		if install {
+			m.message = fmt.Sprintf("Installing web panel on %s…", s.Name)
+		} else {
+			m.message = fmt.Sprintf("Uninstalling web panel from %s…", s.Name)
+		}
+		return m, m.toggleWebPanel(s, install)
+	case "n", "N", "esc":
+		m.mode = modeGrid
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) toggleWebPanel(s storage.Server, install bool) tea.Cmd {
+	return func() tea.Msg {
+		exec, err := m.ensureExec(s)
+		if err != nil {
+			return webPanelResultMsg{serverID: s.ID, err: err}
+		}
+		svc := webpanel.New(m.ctx.DB, s.ID)
+		svc.SetHost(s.Host)
+		if install {
+			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
+				return webPanelResultMsg{serverID: s.ID, err: err}
+			}
+			return webPanelResultMsg{
+				serverID:  s.ID,
+				installed: true,
+				url:       fmt.Sprintf("http://%s:8080", s.Host),
+			}
+		}
+		if err := svc.Disable(exec); err != nil {
+			return webPanelResultMsg{serverID: s.ID, err: err}
+		}
+		return webPanelResultMsg{serverID: s.ID, installed: false}
+	}
+}
+
+func (m *Model) ensureExec(s storage.Server) (*ssh.Executor, error) {
+	if exec, ok := m.ctx.Pool.GetExecutor(s.ID); ok {
+		return exec, nil
+	}
+	_, err := m.ctx.Pool.Connect(s.ID, ssh.ClientConfig{
+		Host:     s.Host,
+		Port:     s.Port,
+		User:     s.User,
+		KeyPath:  s.SSHKeyPath,
+		Password: s.Password,
+		JumpHost: s.JumpHost,
+	})
+	if err != nil {
+		return nil, err
+	}
+	exec, ok := m.ctx.Pool.GetExecutor(s.ID)
+	if !ok {
+		return nil, fmt.Errorf("executor unavailable after connect")
+	}
+	return exec, nil
 }
 
 func (m *Model) updateForm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
@@ -294,11 +421,15 @@ func (m *Model) saveServer() tea.Cmd {
 		var servers []storage.Server
 		m.ctx.DB.Order("name asc").Find(&servers)
 		snaps, _ := poller.LatestSnapshots(m.ctx.DB)
-		return serversLoadedMsg{servers: servers, snapshots: snaps}
+		web := make(map[uint]bool)
+		var instances []storage.ServiceInstance
+		m.ctx.DB.Where("service_type = ? AND enabled = ?", webpanel.ServiceType, true).Find(&instances)
+		for _, si := range instances {
+			web[si.ServerID] = true
+		}
+		return serversLoadedMsg{servers: servers, snapshots: snaps, webPanels: web}
 	}
 }
-
-// --- View ---
 
 func (m *Model) columns() int {
 	if m.width >= 100 {
@@ -317,9 +448,31 @@ func (m *Model) View() string {
 			"",
 			" "+theme.WarningText().Render("Delete this server? (y/n)"),
 		)
+	case modeConfirmWebInstall:
+		name := m.selectedName()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.viewGrid(),
+			"",
+			" "+theme.WarningText().Render(fmt.Sprintf("Install XManager web panel on %s? (y/n)", name)),
+			" "+theme.MutedText().Render("Deploys binary/systemd (or Docker) on :8080"),
+		)
+	case modeConfirmWebUninstall:
+		name := m.selectedName()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.viewGrid(),
+			"",
+			" "+theme.WarningText().Render(fmt.Sprintf("Uninstall web panel from %s? (y/n)", name)),
+		)
 	default:
 		return m.viewGrid()
 	}
+}
+
+func (m *Model) selectedName() string {
+	if m.cursor >= 0 && m.cursor < len(m.servers) {
+		return m.servers[m.cursor].Name
+	}
+	return "server"
 }
 
 func (m *Model) viewGrid() string {
@@ -365,6 +518,10 @@ func (m *Model) renderCard(s storage.Server, selected bool, width int) string {
 
 	nameLine := lipgloss.NewStyle().Bold(true).Foreground(theme.Current.Text).
 		Render(s.Name) + "  " + badge + " " + theme.MutedText().Render(badgeLabel)
+
+	if m.webPanels[s.ID] {
+		nameLine += "  " + theme.SuccessBadge().Render(" web ")
+	}
 
 	hostLine := theme.MutedText().Render(fmt.Sprintf("%s:%d  user:%s", s.Host, s.Port, s.User))
 

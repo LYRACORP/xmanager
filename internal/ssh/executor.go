@@ -98,6 +98,13 @@ func (e *Executor) RunQuiet(cmd string) string {
 	return result.Stdout
 }
 
+func (e *Executor) UnderlyingClient() *Client {
+	if e == nil {
+		return nil
+	}
+	return e.client
+}
+
 func (e *Executor) RunAll(cmds []string) (map[string]*ExecResult, error) {
 	results := make(map[string]*ExecResult, len(cmds))
 	for _, cmd := range cmds {
