@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
@@ -19,6 +20,8 @@ type handler struct {
 	tmpl     *template.Template
 	sess     *sessionStore
 	staticFS fs.FS
+	nodeMode bool
+	node     *nodemetrics.Collector
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -30,15 +33,20 @@ type serverCardData struct {
 
 // pageData is the common template context passed to all pages.
 type pageData struct {
-	Title      string
-	Flash      string
-	Session    *session
+	Title       string
+	Flash       string
+	Session     *session
+	NodeMode    bool
 	ServerCards []serverCardData
 	ServerCard  serverCardData
-	Projects   []storage.Project
-	AllServers []storage.Server
-	Monitors   []storage.UptimeMonitor
-	Config     interface{}
+	Projects    []storage.Project
+	AllServers  []storage.Server
+	Monitors    []storage.UptimeMonitor
+	Config      interface{}
+	Node        nodemetrics.Snapshot
+	NetRx       string
+	NetTx       string
+	UptimeHuman string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -50,6 +58,13 @@ func (h *handler) register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /setup", h.getSetup)
 	mux.HandleFunc("POST /setup", h.postSetup)
+
+	if h.nodeMode {
+		mux.HandleFunc("GET /{$}", h.requireAuth(h.getNodeHome))
+		mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
+		mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+		return
+	}
 
 	mux.HandleFunc("GET /{$}", h.requireAuth(h.getFleet))
 	mux.HandleFunc("GET /api/servers/{id}/metrics", h.requireAuth(h.getServerMetrics))
@@ -82,7 +97,7 @@ func (h *handler) getLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	h.render(w, "login", pageData{Title: "Login"})
+	h.render(w, "login", pageData{Title: "Login", NodeMode: h.nodeMode})
 }
 
 func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +110,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 
 	u, err := auth.Authenticate(h.opts.DB, username, password)
 	if err != nil {
-		h.render(w, "login", pageData{Title: "Login", Flash: "Invalid username or password."})
+		h.render(w, "login", pageData{Title: "Login", NodeMode: h.nodeMode, Flash: "Invalid username or password."})
 		return
 	}
 
@@ -118,7 +133,7 @@ func (h *handler) getSetup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	h.render(w, "setup", pageData{Title: "Setup"})
+	h.render(w, "setup", pageData{Title: "Setup", NodeMode: h.nodeMode})
 }
 
 func (h *handler) postSetup(w http.ResponseWriter, r *http.Request) {
@@ -134,17 +149,46 @@ func (h *handler) postSetup(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	if username == "" || password == "" {
-		h.render(w, "setup", pageData{Title: "Setup", Flash: "Username and password are required."})
+		h.render(w, "setup", pageData{Title: "Setup", NodeMode: h.nodeMode, Flash: "Username and password are required."})
 		return
 	}
 	if err := auth.CreateUser(h.opts.DB, username, password, "admin"); err != nil {
-		h.render(w, "setup", pageData{Title: "Setup", Flash: "Failed to create user: " + err.Error()})
+		h.render(w, "setup", pageData{Title: "Setup", NodeMode: h.nodeMode, Flash: "Failed to create user: " + err.Error()})
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 // --- Fleet handlers ---
+
+func (h *handler) nodePage(sess *session, title string) pageData {
+	snap := nodemetrics.Snapshot{}
+	if h.node != nil {
+		snap = h.node.Latest()
+	}
+	return pageData{
+		Title:       title,
+		Session:     sess,
+		NodeMode:    true,
+		Node:        snap,
+		NetRx:       nodemetrics.FormatBytes(snap.NetRxBytes),
+		NetTx:       nodemetrics.FormatBytes(snap.NetTxBytes),
+		UptimeHuman: nodemetrics.FormatUptime(snap.UptimeSec),
+	}
+}
+
+func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	h.render(w, "node_dashboard", h.nodePage(sess, "This Server"))
+}
+
+func (h *handler) getNodeMetricsFragment(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "node_metrics", h.nodePage(sess, "This Server")); err != nil {
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
 
 func (h *handler) getFleet(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
@@ -157,6 +201,7 @@ func (h *handler) getFleet(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "fleet", pageData{
 		Title:       "Fleet Overview",
 		Session:     sess,
+		NodeMode:    false,
 		ServerCards: cards,
 	})
 }
@@ -314,9 +359,10 @@ func (h *handler) postUptime(w http.ResponseWriter, r *http.Request) {
 func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	h.render(w, "settings", pageData{
-		Title:   "Settings",
-		Session: sess,
-		Config:  h.opts.Config,
+		Title:    "Settings",
+		Session:  sess,
+		NodeMode: h.nodeMode,
+		Config:   h.opts.Config,
 	})
 }
 

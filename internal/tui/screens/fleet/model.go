@@ -466,8 +466,8 @@ func (m *Model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left,
 			m.viewGrid(),
 			"",
-			" "+theme.WarningText().Render(fmt.Sprintf("Install XManager web panel on %s? (y/n)", name)),
-			" "+theme.MutedText().Render("Deploys binary/systemd (or Docker) on :8080"),
+			" "+theme.WarningText().Render(fmt.Sprintf("Install node web panel on %s? (y/n)", name)),
+			" "+theme.MutedText().Render("Metrics for this host only at :8080 (not a multi-server fleet)"),
 		)
 	case modeConfirmWebUninstall:
 		name := m.selectedName()

@@ -4,7 +4,11 @@
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
       <h1 class="text-3xl font-bold text-indigo-400">⚡ XManager</h1>
+      {{if .NodeMode}}
+      <p class="text-gray-500 mt-1 text-sm">Sign in to this server's metrics panel</p>
+      {{else}}
       <p class="text-gray-500 mt-1 text-sm">Sign in to your control panel</p>
+      {{end}}
     </div>
     <div class="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
       {{if .Flash}}

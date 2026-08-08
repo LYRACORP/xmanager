@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"gorm.io/gorm"
@@ -40,7 +41,12 @@ func Run(opts Options) error {
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
-	tmpl, err := template.ParseFS(assets, "templates/*.html")
+	funcMap := template.FuncMap{
+		"formatBytes":  nodemetrics.FormatBytes,
+		"formatUptime": nodemetrics.FormatUptime,
+	}
+
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return fmt.Errorf("parsing templates: %w", err)
 	}
@@ -55,11 +61,19 @@ func Run(opts Options) error {
 		tmpl:     tmpl,
 		sess:     newSessionStore(),
 		staticFS: staticFS,
+		nodeMode: opts.Config.Web.IsNode(),
+	}
+
+	if h.nodeMode {
+		h.node = nodemetrics.NewCollector(5 * time.Second)
+		h.node.Start()
+		defer h.node.Stop()
 	}
 
 	mux := http.NewServeMux()
 	h.register(mux)
 
+	fmt.Printf("XManager web listening on http://%s (role=%s)\n", addr, opts.Config.Web.Role)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      mux,

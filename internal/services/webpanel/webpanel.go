@@ -120,6 +120,7 @@ func (w *WebPanel) enableBinary(exec *ssh.Executor, port string) error {
   enabled: true
   host: "0.0.0.0"
   port: %s
+  role: node
 ui:
   theme: dark
   refresh_rate: 5

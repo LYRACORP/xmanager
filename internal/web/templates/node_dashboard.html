@@ -1,0 +1,111 @@
+{{define "node_dashboard"}}
+{{template "head" .}}
+{{template "nav" .}}
+<main class="p-6 max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100">{{.Node.Hostname}}</h1>
+      <p class="text-gray-500 text-sm mt-0.5">This host only — live metrics (not a multi-server fleet)</p>
+    </div>
+    <span class="text-xs text-gray-500">refreshes every 5s</span>
+  </div>
+
+  <div id="node-metrics"
+       hx-get="/api/node/metrics"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML">
+    {{template "node_metrics" .}}
+  </div>
+</main>
+{{template "foot" .}}
+{{end}}
+
+{{define "node_metrics"}}
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <div class="text-xs text-gray-500 uppercase mb-2">CPU</div>
+      <div class="text-2xl font-mono font-bold text-indigo-300">{{printf "%.1f" .Node.CPUPct}}%</div>
+      <div class="mt-3 bg-gray-800 rounded-full h-2">
+        <div class="h-2 rounded-full bg-indigo-500" style="width: {{printf "%.0f" .Node.CPUPct}}%"></div>
+      </div>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <div class="text-xs text-gray-500 uppercase mb-2">RAM</div>
+      <div class="text-2xl font-mono font-bold text-sky-300">{{printf "%.1f" .Node.RAMPct}}%</div>
+      <div class="text-xs text-gray-500 mt-1 font-mono">{{printf "%.0f" .Node.RAMUsedMB}} / {{printf "%.0f" .Node.RAMTotalMB}} MB</div>
+      <div class="mt-2 bg-gray-800 rounded-full h-2">
+        <div class="h-2 rounded-full bg-sky-500" style="width: {{printf "%.0f" .Node.RAMPct}}%"></div>
+      </div>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <div class="text-xs text-gray-500 uppercase mb-2">Disk /</div>
+      <div class="text-2xl font-mono font-bold text-emerald-300">{{printf "%.1f" .Node.DiskPct}}%</div>
+      <div class="text-xs text-gray-500 mt-1 font-mono">{{printf "%.1f" .Node.DiskUsedGB}} / {{printf "%.1f" .Node.DiskTotalGB}} GB</div>
+      <div class="mt-2 bg-gray-800 rounded-full h-2">
+        <div class="h-2 rounded-full bg-emerald-500" style="width: {{printf "%.0f" .Node.DiskPct}}%"></div>
+      </div>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <div class="text-xs text-gray-500 uppercase mb-2">Load / Uptime</div>
+      <div class="text-lg font-mono text-gray-200">{{printf "%.2f" .Node.Load1}} / {{printf "%.2f" .Node.Load5}} / {{printf "%.2f" .Node.Load15}}</div>
+      <div class="text-xs text-gray-500 mt-2">uptime {{.UptimeHuman}} · {{.Node.Cores}} cores</div>
+      <div class="text-xs text-gray-600 mt-1 font-mono">{{.Node.Kernel}}</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Network</h2>
+      <p class="text-sm text-gray-300 font-mono">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</p>
+      <p class="text-sm text-gray-500 mt-2">RX {{.NetRx}} · TX {{.NetTx}}</p>
+      <p class="text-xs text-gray-600 mt-3">sampled {{.Node.SampledAt.Format "15:04:05"}}</p>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Containers ({{.Node.ContainerCount}})</h2>
+      {{if .Node.Containers}}
+      <div class="overflow-x-auto max-h-64 overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="text-gray-500 text-left">
+            <tr><th class="pb-2">Name</th><th class="pb-2">Status</th><th class="pb-2">Image</th></tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            {{range .Node.Containers}}
+            <tr>
+              <td class="py-1.5 font-mono text-indigo-300">{{.Name}}</td>
+              <td class="py-1.5 text-gray-400">{{.Status}}</td>
+              <td class="py-1.5 text-gray-500 truncate max-w-[12rem]">{{.Image}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <p class="text-gray-600 text-sm">No running containers (or Docker unavailable)</p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Listening ports</h2>
+    {{if .Node.Ports}}
+    <div class="overflow-x-auto max-h-72 overflow-y-auto">
+      <table class="w-full text-sm font-mono">
+        <thead class="text-gray-500 text-left">
+          <tr><th class="pb-2">Proto</th><th class="pb-2">Address</th><th class="pb-2">Process</th></tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          {{range .Node.Ports}}
+          <tr>
+            <td class="py-1 text-gray-400">{{.Proto}}</td>
+            <td class="py-1 text-gray-200">{{.Address}}</td>
+            <td class="py-1 text-gray-500 truncate max-w-md">{{.Process}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-gray-600 text-sm">No port data</p>
+    {{end}}
+  </div>
+{{end}}

@@ -12,7 +12,7 @@
 
 - **Fleet Overview** — all servers on one home screen (TUI + web) with live CPU / RAM / disk / network / container metrics
 - **SSH-only** — no daemons installed on managed servers; optional pure SSH polling
-- **Optional HTMX web panel** — disabled by default (`xmanager web` or `web.enabled: true`)
+- **Optional HTMX web panel** — laptop **control** fleet UI (`xmanager web`); per-server **node** panel via `w` (that host’s metrics only)
 - **PaaS projects** — image, compose, Dockerfile, git, one-click apps, archive, functions, and more
 - **Scripts & cron** — run bash/python/node on one / many / all servers; manage remote cron jobs
 - **Databases** — MySQL, MariaDB, PostgreSQL, MongoDB, ClickHouse, Redis + backups
@@ -41,9 +41,18 @@ xmanager mcp          # MCP stdio server for AI agents
 
 Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `?` help · `Esc` back
 
-Fleet Overview: `Enter` connect · `w` install/uninstall web panel on selected server · `a` add · `d` delete
+Fleet Overview: `Enter` connect · `w` install/uninstall **node** web panel on selected server · `a` add · `d` delete
 
-From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o` cron · `t` scripts · `y` uptime · `v` services · `z` recon · `n` database
+From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o` cron · `t` scripts · `y` uptime · `v` services · `z` recon · `n` database · `w` node web panel
+
+### Control web vs node web panel
+
+| | **Control** (`xmanager web` on your laptop) | **Node** (`w` install on a managed server) |
+|--|---------------------------------------------|--------------------------------------------|
+| Role | Multi-server fleet UI | Dashboard for **that server only** |
+| Config | `web.role: control` (default) | `web.role: node` (written on install) |
+| Home page | All servers / projects | CPU, RAM, disk, net, containers, ports |
+| URL | e.g. `http://127.0.0.1:8080` | e.g. `http://<server-ip>:8080` |
 
 ### Fleet Overview vs server Dashboard
 

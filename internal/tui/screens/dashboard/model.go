@@ -431,10 +431,10 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		m.refreshWebInstalled()
 		if m.webInstalled {
 			m.webConfirm = 2
-			m.statusMsg = "Uninstall web panel from this server? (y/n)"
+			m.statusMsg = "Uninstall node web panel from this server? (y/n)"
 		} else {
 			m.webConfirm = 1
-			m.statusMsg = "Install web panel on this server (:8080)? (y/n)"
+			m.statusMsg = "Install node web panel (this host metrics only, :8080)? (y/n)"
 		}
 		return nil, true
 	case "z":

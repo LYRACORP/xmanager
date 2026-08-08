@@ -111,7 +111,7 @@ func (m *Model) rebuildTable() {
 		}
 		note := ""
 		if si.ServiceType == "webpanel" {
-			note = "HTMX panel on :8080"
+			note = "node metrics UI on :8080"
 		}
 		rows[i] = table.Row{enabled, si.ServiceType, si.Status, note}
 	}
