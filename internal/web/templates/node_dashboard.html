@@ -86,19 +86,66 @@
   </div>
 
   <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
-    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Listening ports</h2>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Listening ports</h2>
+      <form class="flex flex-wrap items-center gap-2"
+            hx-post="/api/node/ports/open"
+            hx-target="#node-metrics"
+            hx-swap="innerHTML">
+        <input type="text" name="ports" required placeholder="80, 443, 3000"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 font-mono
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40 sm:w-48"
+               title="Comma-separated ports to allow in the firewall">
+        <select name="proto"
+                class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-300">
+          <option value="tcp">tcp</option>
+          <option value="udp">udp</option>
+        </select>
+        <button type="submit"
+                class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition-colors font-semibold">
+          Open port(s)
+        </button>
+      </form>
+    </div>
+    <p class="text-xs text-gray-600 mb-3">Open/close uses the host firewall (ufw or iptables). Closing blocks inbound access; the process may still listen locally. SSH and this panel’s port cannot be closed.</p>
+    {{if .Flash}}
+    <p class="text-sm text-amber-300/90 mb-3 bg-amber-950/40 border border-amber-900/50 rounded-lg px-3 py-2">{{.Flash}}</p>
+    {{end}}
     {{if .Node.Ports}}
     <div class="overflow-x-auto max-h-72 overflow-y-auto">
       <table class="w-full text-sm font-mono">
         <thead class="text-gray-500 text-left">
-          <tr><th class="pb-2">Proto</th><th class="pb-2">Address</th><th class="pb-2">Process</th></tr>
+          <tr>
+            <th class="pb-2">Proto</th>
+            <th class="pb-2">Address</th>
+            <th class="pb-2">Process</th>
+            <th class="pb-2 text-right">Firewall</th>
+          </tr>
         </thead>
         <tbody class="divide-y divide-gray-800">
           {{range .Node.Ports}}
           <tr>
-            <td class="py-1 text-gray-400">{{.Proto}}</td>
-            <td class="py-1 text-gray-200">{{.Address}}</td>
-            <td class="py-1 text-gray-500 truncate max-w-md">{{.Process}}</td>
+            <td class="py-1.5 text-gray-400">{{.Proto}}</td>
+            <td class="py-1.5 text-gray-200">{{.Address}}</td>
+            <td class="py-1.5 text-gray-500 truncate max-w-md">{{.Process}}</td>
+            <td class="py-1.5 text-right">
+              {{if .CanClose}}
+              <form class="inline"
+                    hx-post="/api/node/ports/close"
+                    hx-target="#node-metrics"
+                    hx-swap="innerHTML"
+                    hx-confirm="Block inbound port {{.Port}} in the firewall?">
+                <input type="hidden" name="port" value="{{.Port}}">
+                <input type="hidden" name="proto" value="tcp">
+                <button type="submit"
+                        class="text-xs text-red-400 hover:text-red-300 border border-red-900/60 hover:border-red-700 px-2 py-0.5 rounded transition-colors">
+                  Close
+                </button>
+              </form>
+              {{else}}
+              <span class="text-xs text-gray-600">protected</span>
+              {{end}}
+            </td>
           </tr>
           {{end}}
         </tbody>

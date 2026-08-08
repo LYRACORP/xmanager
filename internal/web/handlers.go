@@ -7,9 +7,11 @@ import (
 	"io/fs"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -62,6 +64,8 @@ func (h *handler) register(mux *http.ServeMux) {
 	if h.nodeMode {
 		mux.HandleFunc("GET /{$}", h.requireAuth(h.getNodeHome))
 		mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
+		mux.HandleFunc("POST /api/node/ports/open", h.requireAuth(h.postNodePortsOpen))
+		mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
 		mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
 		return
 	}
@@ -166,6 +170,14 @@ func (h *handler) nodePage(sess *session, title string) pageData {
 	if h.node != nil {
 		snap = h.node.Latest()
 	}
+	panelPort := h.opts.Config.Web.Port
+	if panelPort == 0 {
+		panelPort = 8080
+	}
+	for i := range snap.Ports {
+		p := &snap.Ports[i]
+		p.CanClose = p.Port > 0 && p.Port != 22 && p.Port != panelPort
+	}
 	return pageData{
 		Title:       title,
 		Session:     sess,
@@ -177,6 +189,15 @@ func (h *handler) nodePage(sess *session, title string) pageData {
 	}
 }
 
+func (h *handler) renderNodeMetrics(w http.ResponseWriter, sess *session, flash string) {
+	data := h.nodePage(sess, "This Server")
+	data.Flash = flash
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "node_metrics", data); err != nil {
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	h.render(w, "node_dashboard", h.nodePage(sess, "This Server"))
@@ -184,10 +205,62 @@ func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getNodeMetricsFragment(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "node_metrics", h.nodePage(sess, "This Server")); err != nil {
-		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+	h.renderNodeMetrics(w, sess, "")
+}
+
+func (h *handler) panelProtectedPorts() map[int]string {
+	port := h.opts.Config.Web.Port
+	if port == 0 {
+		port = 8080
 	}
+	return map[int]string{port: "web panel"}
+}
+
+func (h *handler) postNodePortsClose(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	if err := r.ParseForm(); err != nil {
+		h.renderNodeMetrics(w, sess, "Bad request.")
+		return
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
+	if err != nil || port < 1 {
+		h.renderNodeMetrics(w, sess, "Invalid port.")
+		return
+	}
+	proto := r.FormValue("proto")
+	if err := hostfirewall.Deny(port, proto, h.panelProtectedPorts()); err != nil {
+		h.renderNodeMetrics(w, sess, "Close failed: "+err.Error())
+		return
+	}
+	if h.node != nil {
+		h.node.Refresh()
+	}
+	h.renderNodeMetrics(w, sess, fmt.Sprintf("Closed inbound port %d (firewall). Process may still listen locally.", port))
+}
+
+func (h *handler) postNodePortsOpen(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	if err := r.ParseForm(); err != nil {
+		h.renderNodeMetrics(w, sess, "Bad request.")
+		return
+	}
+	ports, proto, err := hostfirewall.ParsePortsList(r.FormValue("ports"))
+	if err != nil {
+		h.renderNodeMetrics(w, sess, "Open failed: "+err.Error())
+		return
+	}
+	if err := hostfirewall.Allow(ports, proto); err != nil {
+		h.renderNodeMetrics(w, sess, "Open failed: "+err.Error())
+		return
+	}
+	if h.node != nil {
+		h.node.Refresh()
+	}
+	parts := make([]string, len(ports))
+	for i, p := range ports {
+		parts[i] = strconv.Itoa(p)
+	}
+	h.renderNodeMetrics(w, sess, fmt.Sprintf("Opened inbound port(s) %s/%s in firewall.", strings.Join(parts, ", "), proto))
 }
 
 func (h *handler) getFleet(w http.ResponseWriter, r *http.Request) {

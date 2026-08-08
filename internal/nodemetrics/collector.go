@@ -14,28 +14,28 @@ import (
 
 // Snapshot is a point-in-time view of the local host.
 type Snapshot struct {
-	Hostname       string    `json:"hostname"`
-	SampledAt      time.Time `json:"sampled_at"`
-	CPUPct         float64   `json:"cpu_pct"`
-	RAMPct         float64   `json:"ram_pct"`
-	RAMUsedMB      float64   `json:"ram_used_mb"`
-	RAMTotalMB     float64   `json:"ram_total_mb"`
-	DiskPct        float64   `json:"disk_pct"`
-	DiskUsedGB     float64   `json:"disk_used_gb"`
-	DiskTotalGB    float64   `json:"disk_total_gb"`
-	Load1          float64   `json:"load1"`
-	Load5          float64   `json:"load5"`
-	Load15         float64   `json:"load15"`
-	Cores          int       `json:"cores"`
-	Kernel         string    `json:"kernel"`
-	UptimeSec      int64     `json:"uptime_sec"`
-	NetIface       string    `json:"net_iface"`
-	NetRxBytes     uint64    `json:"net_rx_bytes"`
-	NetTxBytes     uint64    `json:"net_tx_bytes"`
-	ContainerCount int       `json:"container_count"`
+	Hostname       string      `json:"hostname"`
+	SampledAt      time.Time   `json:"sampled_at"`
+	CPUPct         float64     `json:"cpu_pct"`
+	RAMPct         float64     `json:"ram_pct"`
+	RAMUsedMB      float64     `json:"ram_used_mb"`
+	RAMTotalMB     float64     `json:"ram_total_mb"`
+	DiskPct        float64     `json:"disk_pct"`
+	DiskUsedGB     float64     `json:"disk_used_gb"`
+	DiskTotalGB    float64     `json:"disk_total_gb"`
+	Load1          float64     `json:"load1"`
+	Load5          float64     `json:"load5"`
+	Load15         float64     `json:"load15"`
+	Cores          int         `json:"cores"`
+	Kernel         string      `json:"kernel"`
+	UptimeSec      int64       `json:"uptime_sec"`
+	NetIface       string      `json:"net_iface"`
+	NetRxBytes     uint64      `json:"net_rx_bytes"`
+	NetTxBytes     uint64      `json:"net_tx_bytes"`
+	ContainerCount int         `json:"container_count"`
 	Containers     []Container `json:"containers"`
 	Ports          []Port      `json:"ports"`
-	Error          string    `json:"error,omitempty"`
+	Error          string      `json:"error,omitempty"`
 }
 
 type Container struct {
@@ -47,9 +47,11 @@ type Container struct {
 }
 
 type Port struct {
-	Proto   string `json:"proto"`
-	Address string `json:"address"`
-	Process string `json:"process"`
+	Proto    string `json:"proto"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+	Process  string `json:"process"`
+	CanClose bool   `json:"can_close"`
 }
 
 // Collector samples local metrics on an interval.
@@ -95,6 +97,11 @@ func (c *Collector) Latest() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.latest
+}
+
+// Refresh forces an immediate sample (e.g. after firewall changes).
+func (c *Collector) Refresh() {
+	c.refresh()
 }
 
 func (c *Collector) refresh() {
@@ -336,7 +343,8 @@ func samplePorts() []Port {
 		if len(fields) < 4 {
 			continue
 		}
-		p := Port{Proto: fields[0], Address: fields[3]}
+		p := Port{Proto: "tcp", Address: fields[3]}
+		p.Port = parseListenPort(fields[3])
 		if len(fields) >= 6 {
 			p.Process = fields[len(fields)-1]
 		}
@@ -346,6 +354,18 @@ func samplePorts() []Port {
 		}
 	}
 	return ports
+}
+
+// parseListenPort extracts the port from an ss local address (e.g. 0.0.0.0:8080, *:22, [::]:443).
+func parseListenPort(addr string) int {
+	addr = strings.TrimSpace(addr)
+	if i := strings.LastIndex(addr, ":"); i >= 0 && i+1 < len(addr) {
+		n, err := strconv.Atoi(addr[i+1:])
+		if err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 func FormatBytes(b uint64) string {
