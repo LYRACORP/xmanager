@@ -3,7 +3,7 @@
 {{template "nav" .}}
 <main class="p-6 max-w-6xl mx-auto">
   <h1 class="text-2xl font-bold mb-2">Services</h1>
-  <p class="text-gray-500 text-sm mb-6">Optional self-hosted stacks on this host (disabled by default)</p>
+  <p class="text-gray-500 text-sm mb-6">Optional stacks on this host. Registry, Gitea, RustFS, PowerDNS, and Mailinbox are enabled by default on node install (unless you disable them).</p>
   {{if .Flash}}<p class="text-amber-300 mb-4 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
   <div class="grid md:grid-cols-2 gap-4">
@@ -13,6 +13,9 @@
         <div>
           <div class="flex items-center gap-2 flex-wrap">
             <h2 class="font-semibold text-gray-100 capitalize">{{.Name}}</h2>
+            {{if .Default}}
+            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-indigo-900/50 text-indigo-300 border border-indigo-800/50">default</span>
+            {{end}}
             {{if .Enabled}}
             <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">enabled</span>
             {{if .Running}}

@@ -456,6 +456,7 @@ type nodeServiceView struct {
 	Enabled bool
 	Running bool
 	Status  string
+	Default bool // enabled by default on node install
 }
 
 func (h *handler) lookupNodeService(name string) svcs.Service {
@@ -510,6 +511,7 @@ func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
 			Enabled: enabled,
 			Running: running,
 			Status:  status,
+			Default: isDefaultNodeService(n),
 		})
 	}
 	data := h.basePage(sess, "Services")

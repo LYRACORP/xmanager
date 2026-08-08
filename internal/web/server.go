@@ -72,6 +72,7 @@ func Run(opts Options) error {
 		h.node = nodemetrics.NewCollector(5 * time.Second)
 		h.node.Start()
 		defer h.node.Stop()
+		h.ensureDefaultNodeServices()
 	}
 
 	mux := http.NewServeMux()
