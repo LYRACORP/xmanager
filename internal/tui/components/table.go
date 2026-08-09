@@ -117,10 +117,8 @@ func (t ListTable) Update(msg tea.Msg) (ListTable, tea.Cmd) {
 
 func (t ListTable) View() string {
 	if t.empty {
-		return theme.PanelStyle().
-			Width(layout.PanelWidth(t.width)).
-			Height(t.height).
-			Render(lipgloss.PlaceHorizontal(t.width, lipgloss.Center, theme.EmptyStateText()))
+		w := layout.ContentWidth(t.width)
+		return lipgloss.PlaceHorizontal(w, lipgloss.Center, theme.EmptyStateText())
 	}
 	return t.inner.View()
 }

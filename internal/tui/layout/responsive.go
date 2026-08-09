@@ -11,8 +11,8 @@ const (
 )
 
 const (
-	narrowMax  = 79
-	mediumMax  = 119
+	narrowMax = 79
+	mediumMax = 119
 )
 
 func Breakpoint(width int) int {
@@ -36,9 +36,13 @@ func Clamp(min, val, max int) int {
 	return val
 }
 
+// SplitHorizontal splits width into left/right. When stacking, both get full width.
 func SplitHorizontal(width, gap, leftPct, minLeft, minRight int) (leftW, rightW int, stack bool) {
+	if width < 1 {
+		return 1, 1, true
+	}
 	if width < minLeft+minRight+gap {
-		return width - 2, width - 2, true
+		return width, width, true
 	}
 	leftW = (width * leftPct) / 100
 	if leftW < minLeft {
@@ -49,8 +53,11 @@ func SplitHorizontal(width, gap, leftPct, minLeft, minRight int) (leftW, rightW 
 		rightW = minRight
 		leftW = width - rightW - gap
 		if leftW < minLeft {
-			leftW = minLeft
+			return width, width, true
 		}
+	}
+	if leftW+gap+rightW > width {
+		return width, width, true
 	}
 	return leftW, rightW, false
 }
@@ -59,12 +66,16 @@ func TableHeight(totalHeight, reserved, floor int) int {
 	return BodyHeight(totalHeight, reserved, floor)
 }
 
+// GaugeWidth returns total columns available per gauge (label + bar + pct).
 func GaugeWidth(totalWidth, count, gap, minEach int) int {
 	if count < 1 {
 		count = 1
 	}
 	gaps := (count - 1) * gap
-	available := totalWidth - gaps - 4
+	available := totalWidth - gaps
+	if available < minEach {
+		return minEach
+	}
 	w := available / count
 	if w < minEach {
 		return minEach
@@ -122,4 +133,10 @@ func InputWidth(parentWidth int) int {
 
 func PanelWidth(parentWidth int) int {
 	return Clamp(20, parentWidth-2, parentWidth)
+}
+
+// ContentWidth is the usable width inside a ScreenFrame panel (border + padding).
+func ContentWidth(termWidth int) int {
+	// PanelStyle: 2 border cols + 2*PadMD (4) horizontal padding ≈ 6.
+	return Clamp(16, termWidth-8, termWidth)
 }

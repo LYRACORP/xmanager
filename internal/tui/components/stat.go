@@ -9,6 +9,7 @@ import (
 
 // StatChip renders a compact label + value chip for dashboard metrics.
 func StatChip(label, value string) string {
+	value = Truncate(value, 28)
 	lbl := lipgloss.NewStyle().
 		Foreground(theme.Current.Muted).
 		Render(label + " ")
@@ -16,9 +17,7 @@ func StatChip(label, value string) string {
 		Foreground(theme.Current.Text).
 		Bold(true).
 		Render(value)
-	return theme.PanelStyle().
-		Padding(0, 1).
-		Render(lbl + val)
+	return theme.ChipStyle().Render(lbl + val)
 }
 
 // StatRow joins chips horizontally with spacing.
@@ -31,6 +30,41 @@ func StatRow(chips ...string) string {
 		out += " " + chips[i]
 	}
 	return out
+}
+
+// StatRowWrap joins chips, wrapping to the next line when width is exceeded.
+func StatRowWrap(width int, chips ...string) string {
+	if len(chips) == 0 {
+		return ""
+	}
+	if width < 8 {
+		return StatRow(chips...)
+	}
+	var lines []string
+	var line string
+	for _, chip := range chips {
+		candidate := chip
+		if line != "" {
+			candidate = line + " " + chip
+		}
+		if lipgloss.Width(candidate) <= width {
+			line = candidate
+			continue
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+		if lipgloss.Width(chip) > width {
+			lines = append(lines, FitWidth(chip, width))
+			line = ""
+			continue
+		}
+		line = chip
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 // HumanBytes formats byte counts for network/disk display.

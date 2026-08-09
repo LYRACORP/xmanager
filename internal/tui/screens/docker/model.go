@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -221,23 +220,23 @@ func (m *Model) tabBar() components.TabBar {
 }
 
 func (m *Model) View() string {
-	frame := components.ScreenFrame{
+	inner := layout.ContentWidth(m.width)
+	body := m.tabBar().View() + "\n" + m.table.View()
+	if m.err != "" {
+		body += "\n" + theme.ErrorText().Render(components.Wrap(m.err, inner))
+	} else if m.status != "" {
+		body += "\n" + theme.MutedText().Render(components.Wrap(m.status, inner))
+	}
+	if m.busy {
+		body += "\n" + theme.MutedText().Render("Working…")
+	}
+	return components.ScreenFrame{
 		Title:       "Docker",
 		Subtitle:    "containers · compose · images",
 		Width:       m.width,
-		Body:        m.table.View(),
+		Body:        body,
 		LocalChrome: m.localChrome(),
-	}
-	parts := []string{m.tabBar().View(), frame.View()}
-	if m.err != "" {
-		parts = append(parts, " "+theme.ErrorText().Render(m.err))
-	} else if m.status != "" {
-		parts = append(parts, " "+theme.MutedText().Render(m.status))
-	}
-	if m.busy {
-		parts = append(parts, " "+theme.MutedText().Render("Working…"))
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	}.View()
 }
 
 func (m *Model) nextTab() {

@@ -553,7 +553,7 @@ func (m *Model) highlightLine(s string) string {
 
 func (m *Model) View() string {
 	title := theme.ScreenChrome("Logs", "SSH stream · live tail", m.width)
-	meta := theme.SubtitleStyle().Width(m.width).Render(m.metaLine())
+	meta := theme.SubtitleStyle().Width(m.width).MaxWidth(m.width).Render(components.Truncate(m.metaLine(), m.width-2))
 	header := lipgloss.JoinVertical(lipgloss.Left, title, meta)
 
 	var searchRow string
@@ -566,9 +566,9 @@ func (m *Model) View() string {
 
 	extra := ""
 	if m.searchErr != "" {
-		extra = "\n" + theme.ErrorText().Render("  regex: "+m.searchErr)
+		extra = "\n" + theme.ErrorText().Render("  regex: "+components.Truncate(m.searchErr, m.width-10))
 	} else if m.searchRaw != "" {
-		extra = "\n" + theme.MutedText().Render("  filter: "+m.searchRaw)
+		extra = "\n" + theme.MutedText().Render("  filter: "+components.Truncate(m.searchRaw, m.width-10))
 	}
 
 	if searchRow != "" {

@@ -1,9 +1,11 @@
 package layout
 
 const (
-	HeaderRows = 1
+	// AppHeaderStyle uses a bottom border → 2 visual rows.
+	HeaderRows = 2
 	StatusRows = 1
-	FooterRows = 1
+	// AppFooterStyle uses a top border → 2 visual rows.
+	FooterRows = 2
 )
 
 func ShellRows() int {

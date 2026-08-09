@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
 
@@ -29,7 +32,13 @@ func renderDashboard(m *Model) string {
 		if m.webBusy {
 			style = theme.MutedText()
 		}
-		body = lipgloss.JoinVertical(lipgloss.Left, body, "", " "+style.Render(m.statusMsg))
+		inner := layout.ContentWidth(m.width)
+		wrapped := components.Wrap(m.statusMsg, inner)
+		var styled []string
+		for _, line := range strings.Split(wrapped, "\n") {
+			styled = append(styled, " "+style.Render(line))
+		}
+		body = lipgloss.JoinVertical(lipgloss.Left, append([]string{body, ""}, styled...)...)
 	}
 
 	sub := "live metrics · services · files"
@@ -52,5 +61,5 @@ func loadingText(msg string) string {
 }
 
 func errorText(msg string) string {
-	return theme.ErrorText().Render("  " + msg)
+	return theme.ErrorText().Render("  " + components.Truncate(msg, 80))
 }

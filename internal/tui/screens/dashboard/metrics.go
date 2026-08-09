@@ -266,15 +266,18 @@ func (m *Model) renderOverview() string {
 		return theme.MutedText().Render("  Loading metrics…")
 	}
 	if m.metricsState == stateError {
-		return theme.ErrorText().Render("  " + m.metricsErr)
+		return theme.ErrorText().Render("  " + components.Truncate(m.metricsErr, layout.ContentWidth(m.width)))
 	}
 
+	inner := layout.ContentWidth(m.width)
 	bp := layout.Breakpoint(m.width)
 	gaugeCount := 5
 	if bp == layout.BreakpointNarrow {
-		gaugeCount = 2
+		gaugeCount = 1
+	} else if bp == layout.BreakpointMedium {
+		gaugeCount = 3
 	}
-	gw := layout.GaugeWidth(m.width, gaugeCount, 2, 14)
+	gw := layout.GaugeWidth(inner, gaugeCount, 1, 12)
 
 	gCPU := components.NewGauge("CPU", m.metrics.cpuUsage)
 	gCPU.Width = gw
@@ -295,54 +298,66 @@ func (m *Model) renderOverview() string {
 	gNET.ShowPct = false
 
 	var gauges string
-	if bp == layout.BreakpointNarrow {
+	switch {
+	case bp == layout.BreakpointNarrow:
 		gauges = lipgloss.JoinVertical(lipgloss.Left,
 			gCPU.View(), gRAM.View(), gSWP.View(), gDSK.View(), gNET.View(),
 		)
-	} else {
+	case bp == layout.BreakpointMedium:
+		gauges = lipgloss.JoinVertical(lipgloss.Left,
+			lipgloss.JoinHorizontal(lipgloss.Top, gCPU.View(), " ", gRAM.View(), " ", gSWP.View()),
+			lipgloss.JoinHorizontal(lipgloss.Top, gDSK.View(), " ", gNET.View()),
+		)
+	default:
 		gauges = lipgloss.JoinHorizontal(lipgloss.Top,
 			gCPU.View(), " ", gRAM.View(), " ", gSWP.View(), " ", gDSK.View(), " ", gNET.View(),
 		)
 	}
 
-	detail := theme.MutedText().Render(fmtMemDetail(m.metrics))
+	detailPlain := fmtMemDetail(m.metrics)
 	if m.metrics.worstPct > 0 {
-		detail += "  " + theme.MutedText().Render(
-			"worst "+m.metrics.worstMount+" "+strconv.Itoa(m.metrics.worstPct)+"%",
-		)
+		detailPlain += "  worst " + components.Truncate(m.metrics.worstMount, 16) + " " + strconv.Itoa(m.metrics.worstPct) + "%"
 	}
 	if m.metrics.netIface != "" {
-		detail += "  " + theme.MutedText().Render(
-			m.metrics.netIface+" ↓"+components.HumanBytes(m.metrics.netRx)+" ↑"+components.HumanBytes(m.metrics.netTx),
-		)
+		detailPlain += "  " + m.metrics.netIface + " ↓" + components.HumanBytes(m.metrics.netRx) + " ↑" + components.HumanBytes(m.metrics.netTx)
 	}
+	detail := theme.MutedText().Render(components.Wrap(detailPlain, inner))
 
-	chips := components.StatRow(
+	var chipList []string
+	if m.metrics.hostname != "" {
+		chipList = append(chipList, components.StatChip("host", m.metrics.hostname))
+	}
+	chipList = append(chipList,
 		components.StatChip("load", loadLabel(m.metrics)),
 		components.StatChip("cores", strconv.Itoa(m.metrics.cores)),
 		components.StatChip("mounts", strconv.Itoa(m.metrics.mountCount)),
 	)
-	if m.metrics.hostname != "" {
-		chips = components.StatChip("host", m.metrics.hostname) + " " + chips
-	}
 	if m.metrics.uptime != "" {
-		chips += " " + components.StatChip("up", m.metrics.uptime)
+		chipList = append(chipList, components.StatChip("up", m.metrics.uptime))
 	}
 	if m.metrics.kernel != "" {
-		chips += " " + components.StatChip("krn", m.metrics.kernel)
+		chipList = append(chipList, components.StatChip("krn", m.metrics.kernel))
+	}
+	chips := components.StatRowWrap(inner, chipList...)
+
+	leftW, rightW, stack := splitPanels(inner, 2, 48, 24, 22)
+	alertsContent := m.renderAlerts(leftW)
+	sysContent := theme.SubtitleStyle().Render("System") + "\n" + chips
+	if !stack {
+		sysContent = theme.SubtitleStyle().Render("System") + "\n" + components.StatRowWrap(rightW, chipList...)
 	}
 
-	leftW, rightW, stack := splitPanels(m.width, 1, 50, 28, 24)
-	alertsContent := m.renderAlerts()
-	sysContent := theme.SubtitleStyle().Render("System") + "\n" + chips
-
 	var main string
-	alertsPanel := theme.PanelStyle().Width(leftW).Render(alertsContent)
-	sysPanel := theme.PanelStyle().Width(rightW).Render(sysContent)
 	if stack {
-		main = lipgloss.JoinVertical(lipgloss.Left, alertsPanel, sysPanel)
+		main = lipgloss.JoinVertical(lipgloss.Left,
+			alertsContent,
+			"",
+			sysContent,
+		)
 	} else {
-		main = lipgloss.JoinHorizontal(lipgloss.Top, alertsPanel, " ", sysPanel)
+		left := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(alertsContent)
+		right := lipgloss.NewStyle().Width(rightW).MaxWidth(rightW).Render(sysContent)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, gauges, detail, "", main)
@@ -362,18 +377,25 @@ func loadLabel(d metricsData) string {
 	return d.load1 + "/" + d.load5 + "/" + d.load15
 }
 
-func (m *Model) renderAlerts() string {
+func (m *Model) renderAlerts(width int) string {
+	if width < 12 {
+		width = 12
+	}
 	if m.alertsState == stateLoading && len(m.alerts) == 0 {
-		return theme.MutedText().Render("  Loading alerts…")
+		return theme.SubtitleStyle().Render("Recent alerts") + "\n" + theme.MutedText().Render("  Loading alerts…")
 	}
 	if len(m.alerts) == 0 {
 		return theme.SubtitleStyle().Render("Recent alerts") + "\n" + theme.EmptyStateText()
 	}
 	var b strings.Builder
 	b.WriteString(theme.SubtitleStyle().Render("Recent alerts") + "\n")
+	msgW := width - 4
+	if msgW < 8 {
+		msgW = 8
+	}
 	for _, a := range m.alerts {
 		sev := strings.ToLower(a.Severity)
-		line := a.Service + " · " + truncateStr(a.Message, 48)
+		line := components.Truncate(a.Service+" · "+a.Message, msgW)
 		switch sev {
 		case "critical":
 			b.WriteString(theme.ErrorText().Render("▸ "+line) + "\n")
@@ -387,14 +409,7 @@ func (m *Model) renderAlerts() string {
 }
 
 func truncateStr(s string, max int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= max {
-		return s
-	}
-	if max <= 3 {
-		return s[:max]
-	}
-	return s[:max-3] + "..."
+	return components.Truncate(s, max)
 }
 
 func splitPanels(width, gap, leftPct, minLeft, minRight int) (int, int, bool) {

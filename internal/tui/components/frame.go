@@ -16,7 +16,11 @@ type ScreenFrame struct {
 
 func (f ScreenFrame) View() string {
 	title := theme.ScreenChrome(f.Title, f.Subtitle, f.Width)
-	panel := theme.PanelStyle().Width(layout.PanelWidth(f.Width)).Render(f.Body)
+	pw := layout.PanelWidth(f.Width)
+	panel := theme.PanelStyle().
+		Width(pw).
+		MaxWidth(pw).
+		Render(f.Body)
 	return lipgloss.JoinVertical(lipgloss.Left, title, panel)
 }
 
@@ -25,7 +29,8 @@ func (f ScreenFrame) BodyHeight(contentHeight, floor int) int {
 }
 
 func FrameChromeRows(hasSubtitle bool) int {
-	rows := 2 // title + panel border
+	// title (+ subtitle) + panel top/bottom borders
+	rows := 1 + 2
 	if hasSubtitle {
 		rows++
 	}

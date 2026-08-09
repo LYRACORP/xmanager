@@ -4,14 +4,13 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
 
 type Gauge struct {
 	Label   string
 	Value   float64 // 0.0 to 1.0
-	Width   int
+	Width   int     // total columns for label + bar + pct
 	ShowPct bool
 }
 
@@ -31,11 +30,22 @@ func (g Gauge) View() string {
 	if g.Value > 1 {
 		g.Value = 1
 	}
-
-	barWidth := g.Width - 2
-	if barWidth < 4 {
-		barWidth = 4
+	if g.Width < 10 {
+		g.Width = 10
 	}
+
+	labelW := 4
+	pctW := 0
+	if g.ShowPct {
+		pctW = 5 // " 100%"
+	}
+	// label + space + "[" + bar + "]" + optional pct
+	overhead := labelW + 1 + 2 + pctW
+	barWidth := g.Width - overhead
+	if barWidth < 3 {
+		barWidth = 3
+	}
+
 	filled := int(float64(barWidth) * g.Value)
 	if filled > barWidth {
 		filled = barWidth
@@ -58,14 +68,10 @@ func (g Gauge) View() string {
 
 	bar := "[" + fillStyle.Render(repeat(fillChar, filled)) + emptyStyle.Render(repeat(emptyChar, barWidth-filled)) + "]"
 
-	labelW := 6
-	if layout.Breakpoint(g.Width) == layout.BreakpointNarrow {
-		labelW = 4
-	}
 	label := lipgloss.NewStyle().
 		Foreground(theme.Current.Text).
 		Width(labelW).
-		Render(g.Label)
+		Render(Truncate(g.Label, labelW))
 
 	pct := ""
 	if g.ShowPct {
@@ -76,6 +82,9 @@ func (g Gauge) View() string {
 }
 
 func repeat(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
 	result := ""
 	for i := 0; i < n; i++ {
 		result += s

@@ -21,21 +21,47 @@ func NewTabBar(tabs []TabItem, active int) TabBar {
 }
 
 func (t TabBar) View() string {
-	var parts []string
+	inner := t.Width - theme.PadSM
+	if inner < 8 {
+		inner = 8
+	}
+
+	var rendered []string
+	used := 0
 	for _, tab := range t.Tabs {
-		label := tab.Label
+		var part string
 		if tab.ID == t.Active {
-			parts = append(parts, lipgloss.NewStyle().
+			part = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(theme.Current.Accent).
-				Render(label))
+				Render(tab.Label)
 		} else {
-			parts = append(parts, theme.MutedText().Render(label))
+			part = theme.MutedText().Render(tab.Label)
 		}
+		w := lipgloss.Width(part)
+		sep := 0
+		if len(rendered) > 0 {
+			sep = 2
+		}
+		if t.Width > 0 && used+sep+w > inner {
+			if len(rendered) == 0 {
+				rendered = append(rendered, theme.MutedText().Render(Truncate(tab.Label, inner)))
+			}
+			break
+		}
+		rendered = append(rendered, part)
+		used += sep + w
 	}
-	line := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+
+	line := ""
+	for i, part := range rendered {
+		if i > 0 {
+			line += "  "
+		}
+		line += part
+	}
 	if t.Width > 0 {
-		line = lipgloss.NewStyle().Width(t.Width).PaddingLeft(theme.PadSM).Render(line)
+		line = lipgloss.NewStyle().Width(t.Width).MaxWidth(t.Width).PaddingLeft(theme.PadSM).Render(line)
 	}
 	return line
 }

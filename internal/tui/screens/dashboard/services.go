@@ -168,25 +168,38 @@ func (m *Model) svcLocalChrome() int {
 
 func (m *Model) rebuildSvcTable() {
 	filtered := m.filteredServices()
-	cols := layout.AdaptiveColumns(m.width, []table.Column{
+	inner := layout.ContentWidth(m.width)
+	cols := layout.AdaptiveColumns(inner, []table.Column{
 		{Title: " ", Width: 3},
 		{Title: "Type", Width: 8},
 		{Title: "Name", Width: 22},
 		{Title: "Status", Width: 14},
 		{Title: "Detail", Width: 0},
 	})
+	detailW := 24
+	fixed := 0
+	for _, c := range cols {
+		if c.Title != "Detail" {
+			fixed += c.Width
+		} else if c.Width > 0 {
+			detailW = c.Width
+		}
+	}
+	if detailW == 24 && inner > fixed+4 {
+		detailW = inner - fixed - 4
+	}
 	rows := make([]table.Row, len(filtered))
 	for i, s := range filtered {
 		rows[i] = table.Row{
 			theme.StatusDot(s.active),
 			s.kind,
-			s.name,
-			truncateStr(s.status, 14),
-			truncateStr(s.detail, 40),
+			components.Truncate(s.name, 22),
+			components.Truncate(s.status, 14),
+			components.Truncate(s.detail, detailW),
 		}
 	}
 	h := layout.BodyHeight(m.height, m.svcLocalChrome(), 5)
-	m.svcTable = m.svcTable.SetData(m.width, cols, rows, h)
+	m.svcTable = m.svcTable.SetData(inner, cols, rows, h)
 }
 
 func (m *Model) renderServices() string {
@@ -195,7 +208,8 @@ func (m *Model) renderServices() string {
 		return filterLabel + "\n" + loadingText("Loading services…")
 	}
 	if m.servicesState == stateError {
-		return filterLabel + "\n" + errorText(m.servicesErr)
+		inner := layout.ContentWidth(m.width)
+		return filterLabel + "\n" + theme.ErrorText().Render(components.Wrap(m.servicesErr, inner))
 	}
 	return filterLabel + "\n" + m.svcTable.View()
 }

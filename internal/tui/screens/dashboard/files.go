@@ -242,25 +242,25 @@ func (m *Model) renderFiles() string {
 		listContent = m.dirTable.View()
 	}
 
+	inner := layout.ContentWidth(m.width)
 	if m.previewOpen && !m.previewOverlay {
-		leftW, rightW, stack := splitPanels(m.width, 1, 50, 28, 24)
-		listPanel := theme.PanelStyle().Width(leftW).Render(listContent)
-		previewTitle := theme.SubtitleStyle().Render(m.previewPath)
-		previewBody := theme.ViewportStyle().Width(rightW - 2).Render(m.previewScroll.View())
-		previewPanel := theme.PanelStyle().Width(rightW).Render(previewTitle + "\n" + previewBody)
+		leftW, rightW, stack := splitPanels(inner, 2, 50, 28, 24)
+		listPanel := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(listContent)
+		previewTitle := theme.SubtitleStyle().Render(components.Truncate(m.previewPath, rightW))
+		previewBody := m.previewScroll.View()
+		previewPanel := lipgloss.NewStyle().Width(rightW).MaxWidth(rightW).Render(previewTitle + "\n" + previewBody)
 		if stack {
 			return breadcrumb + "\n" + lipgloss.JoinVertical(lipgloss.Left, listPanel, previewPanel)
 		}
-		return breadcrumb + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, listPanel, " ", previewPanel)
+		return breadcrumb + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, listPanel, "  ", previewPanel)
 	}
 
-	body := theme.PanelStyle().Width(layout.PanelWidth(m.width)).Render(listContent)
-	out := breadcrumb + "\n" + body
+	out := breadcrumb + "\n" + listContent
 
 	if m.previewOpen && m.previewOverlay {
-		overlay := theme.ActivePanelStyle().Width(m.width - 2).Render(
-			theme.SubtitleStyle().Render(m.previewPath) + "\n" +
-				theme.ViewportStyle().Width(m.width - 6).Render(m.previewScroll.View()) + "\n" +
+		overlay := theme.ActivePanelStyle().Width(inner).MaxWidth(inner).Render(
+			theme.SubtitleStyle().Render(components.Truncate(m.previewPath, inner-4)) + "\n" +
+				m.previewScroll.View() + "\n" +
 				theme.MutedText().Render("  Esc close preview"),
 		)
 		out += "\n" + overlay
@@ -269,17 +269,7 @@ func (m *Model) renderFiles() string {
 }
 
 func renderBreadcrumb(curPath string, width int) string {
-	label := theme.SubtitleStyle().Render("Path: ") + theme.MutedText().Render(truncateBreadcrumb(curPath, width-10))
+	max := layout.ContentWidth(width) - 6
+	label := theme.SubtitleStyle().Render("Path: ") + theme.MutedText().Render(components.TruncateMiddle(curPath, max))
 	return label
-}
-
-func truncateBreadcrumb(p string, max int) string {
-	if len(p) <= max {
-		return p
-	}
-	if max <= 8 {
-		return "…" + p[len(p)-max+1:]
-	}
-	keep := (max - 3) / 2
-	return p[:keep] + "…" + p[len(p)-keep:]
 }

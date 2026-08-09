@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -115,6 +116,14 @@ func PanelStyle() lipgloss.Style {
 		Padding(PadXS, PadMD)
 }
 
+// ChipStyle is a borderless inline chip (avoids nested box-drawing inside panels).
+func ChipStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(Current.Text).
+		Background(Current.Surface).
+		Padding(0, 1)
+}
+
 func ActivePanelStyle() lipgloss.Style {
 	return PanelStyle().
 		BorderForeground(Current.Accent)
@@ -125,6 +134,7 @@ func AppHeaderStyle(width int) lipgloss.Style {
 		Background(Current.Surface).
 		Foreground(Current.Text).
 		Width(width).
+		MaxWidth(width).
 		Padding(PadXS, PadMD).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderBottom(true).
@@ -135,6 +145,7 @@ func AppFooterStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Background(Current.Background).
 		Width(width).
+		MaxWidth(width).
 		Padding(PadXS, PadMD).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderTop(true).
@@ -156,13 +167,31 @@ func Divider(width int) string {
 }
 
 func ScreenChrome(title, subtitle string, width int) string {
-	header := HeaderStyle().Render(title)
+	max := width - 2
+	if max < 8 {
+		max = 8
+	}
+	header := HeaderStyle().Render(truncateRunes(title, max))
 	var parts []string
 	parts = append(parts, header)
 	if subtitle != "" {
-		parts = append(parts, SubtitleStyle().PaddingLeft(PadSM).Render(subtitle))
+		parts = append(parts, SubtitleStyle().PaddingLeft(PadSM).Render(truncateRunes(subtitle, max)))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func truncateRunes(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(s) <= max {
+		return s
+	}
+	if max <= 1 {
+		return "…"
+	}
+	return runewidth.Truncate(s, max-1, "") + "…"
 }
 
 func SelectedRowStyle() lipgloss.Style {

@@ -231,7 +231,7 @@ func (a *App) View() string {
 	footerView := helpBar.View()
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, status, content, footerView)
-	base := theme.BackgroundStyle(a.width).Render(inner)
+	base := theme.BackgroundStyle(a.width).MaxWidth(a.width).MaxHeight(a.height).Render(inner)
 
 	if a.showHelp {
 		overlay := a.helpOverlay.View()
