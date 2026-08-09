@@ -81,6 +81,13 @@ type pageData struct {
 	MailAPIMode       string
 	PowerDNSReady     bool
 	MailAPIReady      bool
+	// Home summary (node panel)
+	StatProjects   int
+	StatContainers int
+	StatDomains    int
+	StatMailboxes  int
+	StatDatabases  int
+	WelcomeName    string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -228,7 +235,23 @@ func (h *handler) renderNodeMetrics(w http.ResponseWriter, sess *session, flash 
 
 func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
-	h.render(w, "node_dashboard", h.nodePage(sess, "This Server"))
+	data := h.nodePage(sess, "Home")
+	data.ActiveNav = "home"
+	if sess != nil {
+		data.WelcomeName = sess.Username
+	}
+	sid := h.localServerID()
+	var n int64
+	h.opts.DB.Model(&storage.Project{}).Where("server_id = ?", sid).Count(&n)
+	data.StatProjects = int(n)
+	h.opts.DB.Model(&storage.ConnectedDomain{}).Where("server_id = ?", sid).Count(&n)
+	data.StatDomains = int(n)
+	h.opts.DB.Model(&storage.Mailbox{}).Where("server_id = ?", sid).Count(&n)
+	data.StatMailboxes = int(n)
+	h.opts.DB.Model(&storage.ProjectDatabase{}).Where("server_id = ?", sid).Count(&n)
+	data.StatDatabases = int(n)
+	data.StatContainers = data.Node.ContainerCount
+	h.render(w, "node_dashboard", data)
 }
 
 func (h *handler) getNodeMetricsFragment(w http.ResponseWriter, r *http.Request) {
@@ -460,10 +483,11 @@ func (h *handler) postUptime(w http.ResponseWriter, r *http.Request) {
 func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	h.render(w, "settings", pageData{
-		Title:    "Settings",
-		Session:  sess,
-		NodeMode: h.nodeMode,
-		Config:   h.opts.Config,
+		Title:     "Settings",
+		Session:   sess,
+		NodeMode:  h.nodeMode,
+		ActiveNav: "settings",
+		Config:    h.opts.Config,
 	})
 }
 

@@ -1,85 +1,99 @@
 {{define "node_databases"}}
 {{template "head" .}}
 {{template "nav" .}}
-<main class="p-6 max-w-6xl mx-auto">
-  <h1 class="text-2xl font-bold mb-2">Databases</h1>
-  <p class="text-gray-500 text-sm mb-6">Manage engines on this host · create DBs/users · backup · link to projects</p>
-  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
+<div class="xm-page space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">Databases</h1>
+      <p class="text-panel-muted text-sm mt-1">Create databases, users, backups · link to projects</p>
+    </div>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
-  <div class="grid md:grid-cols-3 gap-4 mb-8">
-    <form method="post" action="/databases" class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
-      <h3 class="text-sm text-gray-400 font-semibold">Create database</h3>
-      <select name="db_type" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
+  <div class="grid md:grid-cols-3 gap-4">
+    <form method="post" action="/databases" class="xm-card p-4 space-y-2">
+      <h3 class="text-sm text-gray-300 font-semibold">Create database</h3>
+      <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
         <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option><option>clickhouse</option><option>redis</option>
       </select>
-      <input name="name" required placeholder="db name" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-      <button class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded">Create</button>
+      <input name="name" required placeholder="db name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+      <button class="xm-btn xm-btn-primary text-xs">+ Create database</button>
     </form>
-    <form method="post" action="/databases/user" class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
-      <h3 class="text-sm text-gray-400 font-semibold">Create user</h3>
-      <select name="db_type" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
+    <form method="post" action="/databases/user" class="xm-card p-4 space-y-2">
+      <h3 class="text-sm text-gray-300 font-semibold">Create user</h3>
+      <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
         <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option>
       </select>
-      <input name="username" required placeholder="username" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-      <input name="password" type="password" required placeholder="password" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-      <input name="databases" placeholder="db names (comma)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-      <button class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded">Create user</button>
+      <input name="username" required placeholder="username" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+      <input name="password" type="password" required placeholder="password" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+      <input name="databases" placeholder="db names (comma)" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+      <button class="xm-btn xm-btn-ghost text-xs w-full justify-center">Create user</button>
     </form>
-    <form method="post" action="/databases/backup" class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
-      <h3 class="text-sm text-gray-400 font-semibold">Backup</h3>
-      <select name="db_type" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
+    <form method="post" action="/databases/backup" class="xm-card p-4 space-y-2">
+      <h3 class="text-sm text-gray-300 font-semibold">Backup</h3>
+      <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
         <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option>
       </select>
-      <input name="name" required placeholder="database name" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-      <button class="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded">Backup to /opt/xmanager/backups</button>
+      <input name="name" required placeholder="database name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+      <button class="xm-btn xm-btn-ghost text-xs w-full justify-center">Backup to /opt/xmanager/backups</button>
     </form>
   </div>
 
-  <form method="post" action="/databases/link" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-8 flex flex-wrap gap-2 items-end">
+  <form method="post" action="/databases/link" class="xm-card p-4 flex flex-wrap gap-2 items-end">
     <div>
-      <label class="text-xs text-gray-500">Link DB → project</label>
-      <select name="project_id" class="block bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-        {{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      <label class="text-xs text-panel-muted">Link DB → project</label>
+      <select name="project_id" class="block bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+        {{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{else}}<option value="0">— no projects —</option>{{end}}
       </select>
     </div>
-    <select name="db_type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
+    <select name="db_type" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
       <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option><option>redis</option>
     </select>
-    <input name="db_name" placeholder="db name" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-    <input name="username" placeholder="username" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm">
-    <button class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded">Link</button>
+    <input name="db_name" placeholder="db name" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+    <input name="username" placeholder="username" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
+    <button class="xm-btn xm-btn-ghost text-xs">Link</button>
   </form>
 
+  {{if .NodeDBs}}
   {{range .NodeDBs}}
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
-    <h2 class="text-sm font-semibold text-indigo-300 uppercase mb-3">{{.Type}}</h2>
+  <div class="xm-card p-5">
+    <h2 class="text-sm font-semibold text-accent uppercase mb-3">{{.Type}}</h2>
     <div class="grid md:grid-cols-2 gap-4 text-sm">
       <div>
-        <h3 class="text-xs text-gray-500 mb-2">Databases</h3>
+        <h3 class="text-xs text-panel-muted mb-2">Databases</h3>
         <ul class="space-y-1 font-mono text-gray-300">
-          {{range .Databases}}<li>{{.Name}} {{if .Size}}<span class="text-gray-600">({{.Size}})</span>{{end}}</li>{{else}}<li class="text-gray-600">none</li>{{end}}
+          {{range .Databases}}<li>{{.Name}} {{if .Size}}<span class="text-zinc-600">({{.Size}})</span>{{end}}</li>{{else}}<li class="text-panel-muted">none</li>{{end}}
         </ul>
       </div>
       <div>
-        <h3 class="text-xs text-gray-500 mb-2">Users</h3>
+        <h3 class="text-xs text-panel-muted mb-2">Users</h3>
         <ul class="space-y-1 font-mono text-gray-300">
-          {{range .Users}}<li>{{.Name}}</li>{{else}}<li class="text-gray-600">none listed</li>{{end}}
+          {{range .Users}}<li>{{.Name}}</li>{{else}}<li class="text-panel-muted">none listed</li>{{end}}
         </ul>
       </div>
     </div>
   </div>
+  {{end}}
   {{else}}
-  <p class="text-gray-600 mb-4">No database clients detected on this host</p>
+  <div class="xm-card">
+    <div class="xm-empty">
+      <div class="xm-empty-ico">⧉</div>
+      <h3>You have not created any databases yet</h3>
+      <p>Use Create database above once postgres/mysql/redis is available on this host.</p>
+    </div>
+  </div>
   {{end}}
 
   {{if .ProjectDBs}}
-  <h2 class="text-sm font-semibold text-gray-400 uppercase mb-2">Project links</h2>
-  <ul class="text-sm text-gray-300 space-y-1">
-    {{range .ProjectDBs}}
-    <li class="font-mono text-xs">project #{{.ProjectID}} → {{.DBType}}/{{.DBName}} ({{.Username}})</li>
-    {{end}}
-  </ul>
+  <div class="xm-card p-5">
+    <h2 class="text-sm font-semibold text-panel-muted uppercase mb-3">Project links</h2>
+    <ul class="text-sm space-y-1">
+      {{range .ProjectDBs}}
+      <li class="font-mono text-xs text-gray-300">project #{{.ProjectID}} → {{.DBType}}/{{.DBName}} ({{.Username}})</li>
+      {{end}}
+    </ul>
+  </div>
   {{end}}
-</main>
+</div>
 {{template "foot" .}}
 {{end}}

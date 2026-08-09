@@ -1,40 +1,106 @@
 {{define "head"}}<!DOCTYPE html>
-<html lang="en" class="bg-gray-950">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{.Title}} — XManager</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            panel: { DEFAULT: '#141416', raised: '#1c1c1f', border: '#2a2a2e', muted: '#8b8b93' },
+            accent: { DEFAULT: '#6ee7b7', dim: '#34d399' }
+          }
+        }
+      }
+    }
+  </script>
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+<body class="h-full bg-[#0c0c0e] text-gray-100 antialiased">
 {{end}}
 
 {{define "nav"}}
-<nav class="bg-gray-900 border-b border-gray-800 px-4 py-3 sticky top-0 z-10">
+{{if .NodeMode}}
+<div class="xm-app">
+  <aside class="xm-sidebar">
+    <div class="xm-brand">
+      <div class="xm-brand-mark">X</div>
+      <div>
+        <div class="xm-brand-title">XManager</div>
+        <div class="xm-brand-sub">Server panel</div>
+      </div>
+    </div>
+
+    <div class="xm-nav-section">Workspace</div>
+    <a href="/" class="xm-nav-link {{if eq .ActiveNav "home"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">⌂</span> Home
+    </a>
+    <a href="/projects" class="xm-nav-link {{if eq .ActiveNav "projects"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">▣</span> Projects
+    </a>
+    <a href="/docker" class="xm-nav-link {{if eq .ActiveNav "docker"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">⬡</span> Docker
+    </a>
+    <a href="/cron" class="xm-nav-link {{if eq .ActiveNav "cron"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">◷</span> Schedules
+    </a>
+
+    <div class="xm-nav-section">Data &amp; network</div>
+    <a href="/databases" class="xm-nav-link {{if eq .ActiveNav "databases"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">⧉</span> Databases
+    </a>
+    <a href="/domains" class="xm-nav-link {{if eq .ActiveNav "domains"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">◎</span> Domains
+    </a>
+    <a href="/services" class="xm-nav-link {{if eq .ActiveNav "services"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">⚙</span> Services
+    </a>
+
+    <div class="xm-nav-section">System</div>
+    <a href="/alerts" class="xm-nav-link {{if eq .ActiveNav "alerts"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">◉</span> Alerts
+    </a>
+    <a href="/settings" class="xm-nav-link {{if eq .ActiveNav "settings"}}xm-nav-active{{end}}">
+      <span class="xm-nav-ico">☰</span> Settings
+    </a>
+
+    <div class="xm-sidebar-foot">
+      <div class="xm-user">
+        <div class="xm-avatar">{{if .Session}}{{slice .Session.Username 0 1}}{{else}}?{{end}}</div>
+        <div class="min-w-0">
+          <div class="truncate text-sm text-gray-200">{{if .Session}}{{.Session.Username}}{{else}}guest{{end}}</div>
+          <div class="text-[11px] text-panel-muted">node panel</div>
+        </div>
+      </div>
+      <form action="/logout" method="post">
+        <button type="submit" class="xm-logout">Sign out</button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="xm-main">
+    <header class="xm-topbar">
+      <div class="xm-crumb">{{.Title}}</div>
+      <div class="flex items-center gap-2">
+        <span class="xm-pill xm-pill-ok">node</span>
+      </div>
+    </header>
+    <div class="xm-content">
+{{else}}
+<nav class="bg-[#141416] border-b border-[#2a2a2e] px-4 py-3 sticky top-0 z-10">
   <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-    <a href="/" class="text-xl font-bold text-indigo-400 tracking-tight">⚡ XManager</a>
-    <div class="flex flex-wrap gap-3 text-sm font-medium">
-      {{if .NodeMode}}
-      <a href="/" class="{{if eq .ActiveNav ""}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Overview</a>
-      <a href="/docker" class="{{if eq .ActiveNav "docker"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Docker</a>
-      <a href="/cron" class="{{if eq .ActiveNav "cron"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Cron</a>
-      <a href="/projects" class="{{if eq .ActiveNav "projects"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Projects</a>
-      <a href="/databases" class="{{if eq .ActiveNav "databases"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Databases</a>
-      <a href="/services" class="{{if eq .ActiveNav "services"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Services</a>
-      <a href="/domains" class="{{if eq .ActiveNav "domains"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Domains</a>
-      <a href="/alerts" class="{{if eq .ActiveNav "alerts"}}text-indigo-300{{else}}text-gray-300 hover:text-indigo-300{{end}} transition-colors">Alerts</a>
-      <a href="/settings" class="text-gray-300 hover:text-indigo-300 transition-colors">Settings</a>
-      {{else}}
-      <a href="/" class="text-gray-300 hover:text-indigo-300 transition-colors">Fleet</a>
-      <a href="/projects" class="text-gray-300 hover:text-indigo-300 transition-colors">Projects</a>
-      <a href="/uptime" class="text-gray-300 hover:text-indigo-300 transition-colors">Uptime</a>
-      <a href="/settings" class="text-gray-300 hover:text-indigo-300 transition-colors">Settings</a>
-      {{end}}
+    <a href="/" class="text-xl font-bold tracking-tight text-accent">XManager</a>
+    <div class="flex flex-wrap gap-4 text-sm font-medium">
+      <a href="/" class="text-gray-300 hover:text-white transition-colors">Fleet</a>
+      <a href="/projects" class="text-gray-300 hover:text-white transition-colors">Projects</a>
+      <a href="/uptime" class="text-gray-300 hover:text-white transition-colors">Uptime</a>
+      <a href="/settings" class="text-gray-300 hover:text-white transition-colors">Settings</a>
     </div>
     <div class="flex items-center gap-4 text-sm text-gray-400">
-      {{if .NodeMode}}<span class="text-xs px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-800">node</span>{{end}}
       {{if .Session}}<span class="text-gray-300">{{.Session.Username}}</span>{{end}}
       <form action="/logout" method="post" class="inline">
         <button type="submit" class="text-red-400 hover:text-red-300 transition-colors">Logout</button>
@@ -43,8 +109,14 @@
   </div>
 </nav>
 {{end}}
+{{end}}
 
 {{define "foot"}}
+{{if and .NodeMode .Session}}
+    </div>
+  </div>
+</div>
+{{end}}
 </body>
 </html>
 {{end}}
