@@ -69,6 +69,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /domains", h.requireAuth(h.getNodeDomains))
 	mux.HandleFunc("POST /domains", h.requireAuth(h.postNodeDomains))
+	mux.HandleFunc("POST /domains/connect", h.requireAuth(h.postNodeDomainConnect))
 	mux.HandleFunc("POST /domains/mailbox", h.requireAuth(h.postNodeMailbox))
 	mux.HandleFunc("POST /domains/mailbox/{id}/delete", h.requireAuth(h.postNodeMailboxDelete))
 
@@ -323,19 +324,16 @@ func (h *handler) postNodeProjectDomain(w http.ResponseWriter, r *http.Request) 
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	domain := strings.TrimSpace(r.FormValue("domain"))
 	upstream := strings.TrimSpace(r.FormValue("upstream"))
-	if upstream == "" {
-		upstream = "http://127.0.0.1:8080"
+	_, err := h.connectDomain(domainConnectOpts{
+		Domain:    domain,
+		Upstream:  upstream,
+		ProjectID: uint(id),
+	})
+	flash := ""
+	if err != nil {
+		flash = "?flash=" + urlQueryEscape(err.Error())
 	}
-	if domain != "" {
-		_ = h.opts.DB.Create(&storage.ProjectDomain{ProjectID: uint(id), Domain: domain, SSL: true}).Error
-		_ = h.opts.DB.Model(&storage.Project{}).Where("id = ?", id).Update("domain", domain)
-		if m := proxy.NewManager(proxy.Nginx, h.localExec()); m != nil {
-			if nm, ok := m.(*proxy.NginxManager); ok {
-				_ = nm.AddVHost(domain, upstream)
-			}
-		}
-	}
-	http.Redirect(w, r, "/projects", http.StatusSeeOther)
+	http.Redirect(w, r, "/projects"+flash, http.StatusSeeOther)
 }
 
 func (h *handler) postNodeWebhook(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +536,20 @@ func (h *handler) postNodeServiceEnable(w http.ResponseWriter, r *http.Request) 
 			cfg["nginx_pass"] = "xmanager"
 		}
 	}
+	if name == "mailinbox" {
+		for _, k := range []string{"mode", "api_base", "admin_user", "admin_password", "hostname", "https_port"} {
+			if v := strings.TrimSpace(r.FormValue(k)); v != "" {
+				cfg[k] = v
+			}
+		}
+	}
+	if name == "powerdns" {
+		for _, k := range []string{"api_key", "api_port", "dns_port"} {
+			if v := strings.TrimSpace(r.FormValue(k)); v != "" {
+				cfg[k] = v
+			}
+		}
+	}
 	if svc == nil {
 		http.Redirect(w, r, "/services?flash=unknown+service", http.StatusSeeOther)
 		return
@@ -576,26 +588,40 @@ func (h *handler) postNodeRustfsBucket(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/services", http.StatusSeeOther)
 }
 
-// --- Domains & mailboxes ---
+// --- Domains & mailboxes (PowerDNS + mail APIs) ---
 
 func (h *handler) getNodeDomains(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
+	sid := h.localServerID()
 	var domains []storage.ProjectDomain
 	h.opts.DB.Order("domain asc").Find(&domains)
+	var connected []storage.ConnectedDomain
+	h.opts.DB.Where("server_id = ?", sid).Order("domain asc").Find(&connected)
 	var mailboxes []storage.Mailbox
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Find(&mailboxes)
+	h.opts.DB.Where("server_id = ?", sid).Order("address asc").Find(&mailboxes)
 	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Find(&projects)
+	h.opts.DB.Where("server_id = ?", sid).Find(&projects)
 	var vhosts []proxy.VHost
 	if m := proxy.NewManager(proxy.Nginx, h.localExec()); m != nil {
 		vhosts, _ = m.ListVHosts()
 	}
+	mailCfg := mailinbox.LoadConfig(h.opts.DB, sid)
+	pdnsOK := powerdns.NewClient(powerdns.LoadConfig(h.opts.DB, sid)).Ping() == nil
+	mailOK := mailinbox.NewClient(mailCfg).Ping() == nil
+
 	data := h.basePage(sess, "Domains")
 	data.ActiveNav = "domains"
 	data.ProjectDomains = domains
+	data.ConnectedDomains = connected
 	data.Mailboxes = mailboxes
 	data.Projects = projects
 	data.VHosts = vhosts
+	data.MailAPIMode = mailCfg.Mode
+	data.PowerDNSReady = pdnsOK
+	data.MailAPIReady = mailOK
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
 	h.render(w, "node_domains", data)
 }
 
@@ -604,47 +630,77 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 	domain := strings.TrimSpace(r.FormValue("domain"))
 	upstream := strings.TrimSpace(r.FormValue("upstream"))
 	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
-	if upstream == "" {
-		upstream = "http://127.0.0.1:8080"
+	dbType := strings.TrimSpace(r.FormValue("db_type"))
+	dbName := strings.TrimSpace(r.FormValue("db_name"))
+	publicIP := strings.TrimSpace(r.FormValue("public_ip"))
+
+	cd, err := h.connectDomain(domainConnectOpts{
+		Domain:    domain,
+		Upstream:  upstream,
+		ProjectID: uint(pid),
+		DBType:    dbType,
+		DBName:    dbName,
+		PublicIP:  publicIP,
+	})
+	flash := "Domain connected"
+	if cd != nil && cd.DNSReady {
+		flash += " · DNS zone ready"
 	}
-	if domain != "" {
-		if pid > 0 {
-			_ = h.opts.DB.Create(&storage.ProjectDomain{ProjectID: uint(pid), Domain: domain, SSL: true}).Error
-			_ = h.opts.DB.Model(&storage.Project{}).Where("id = ?", pid).Update("domain", domain)
-		}
-		if m := proxy.NewManager(proxy.Nginx, h.localExec()); m != nil {
-			if nm, ok := m.(*proxy.NginxManager); ok {
-				_ = nm.AddVHost(domain, upstream)
-			}
-		}
+	if cd != nil && cd.MailReady {
+		flash += " · mail domain ready"
 	}
-	http.Redirect(w, r, "/domains", http.StatusSeeOther)
+	if err != nil {
+		flash = "Domain saved with warnings: " + err.Error()
+	}
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDomainConnect(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := strings.TrimSpace(r.FormValue("domain"))
+	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
+	dbType := strings.TrimSpace(r.FormValue("db_type"))
+	dbName := strings.TrimSpace(r.FormValue("db_name"))
+	_, err := h.connectDomain(domainConnectOpts{
+		Domain:    domain,
+		ProjectID: uint(pid),
+		DBType:    dbType,
+		DBName:    dbName,
+		Upstream:  strings.TrimSpace(r.FormValue("upstream")),
+		SkipNginx: r.FormValue("skip_nginx") == "1",
+	})
+	flash := "Links updated for " + domain
+	if err != nil {
+		flash = err.Error()
+	}
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeMailbox(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	local := strings.TrimSpace(r.FormValue("local_part"))
 	domain := strings.TrimSpace(r.FormValue("domain"))
-	if local != "" && domain != "" {
-		addr := local + "@" + domain
-		_ = h.opts.DB.Create(&storage.Mailbox{
-			ServerID: h.localServerID(),
-			Domain:   domain,
-			Address:  addr,
-		}).Error
-		// Best-effort mail-in-a-box CLI if present
-		_, _ = h.localExec().Run(fmt.Sprintf(
-			`which mailboxes >/dev/null 2>&1 && echo '%s' | mailboxes add %s 2>/dev/null || true`,
-			r.FormValue("password"), addr,
-		))
+	password := r.FormValue("password")
+	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
+	_, err := h.createMailboxAPI(local, domain, password, uint(pid))
+	flash := "Mailbox created via mail API"
+	if err != nil {
+		flash = "Mailbox failed: " + err.Error()
 	}
-	http.Redirect(w, r, "/domains", http.StatusSeeOther)
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeMailboxDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	h.opts.DB.Delete(&storage.Mailbox{}, id)
-	http.Redirect(w, r, "/domains", http.StatusSeeOther)
+	flash := "Mailbox deleted"
+	if err := h.deleteMailboxAPI(uint(id)); err != nil {
+		flash = err.Error()
+	}
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func urlQueryEscape(s string) string {
+	return url.QueryEscape(s)
 }
 
 // --- Alerts ---

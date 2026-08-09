@@ -249,7 +249,23 @@ type DatabaseUser struct {
 	Host      string `gorm:"default:%" json:"host"`
 }
 
-// Mailbox is an email address on a connected domain (mail-in-a-box / similar).
+// ConnectedDomain is a first-class domain hub on a node (DNS + mail + project + DB links).
+type ConnectedDomain struct {
+	gorm.Model
+	ServerID   uint   `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"server_id"`
+	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Domain     string `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"domain"`
+	ProjectID  *uint  `gorm:"index" json:"project_id,omitempty"`
+	Upstream   string `json:"upstream"`
+	PublicIP   string `json:"public_ip"`
+	DBType     string `json:"db_type"`
+	DBName     string `json:"db_name"`
+	DNSReady   bool   `gorm:"default:false" json:"dns_ready"`
+	MailReady  bool   `gorm:"default:false" json:"mail_ready"`
+	LastError  string `gorm:"type:text" json:"last_error"`
+}
+
+// Mailbox is an email address on a connected domain (Stalwart / Mail-in-a-Box API).
 type Mailbox struct {
 	gorm.Model
 	ServerID  uint   `gorm:"index;not null" json:"server_id"`

@@ -32,7 +32,10 @@
           <p class="text-xs text-gray-600 mt-2">Self-hosted error tracking (Sentry SDK compatible) on <span class="font-mono text-gray-400">:8000</span> — default login <span class="font-mono">admin</span> · <a class="text-indigo-400" href="https://www.bugsink.com/" target="_blank" rel="noopener">bugsink.com</a></p>
           {{end}}
           {{if eq .Name "mailinbox"}}
-          <p class="text-xs text-gray-600 mt-2">Admin UI on host port <span class="font-mono text-gray-400">8085</span> (not 8080 — reserved for this panel). SMTP may use 2525 if :25 is unavailable.</p>
+          <p class="text-xs text-gray-600 mt-2">Stalwart admin on <span class="font-mono text-gray-400">:8085</span>, or set mode=<span class="font-mono">mailinabox</span> to use a Mail-in-a-Box <span class="font-mono">/admin</span> API. Domains panel creates mailboxes via API.</p>
+          {{end}}
+          {{if eq .Name "powerdns"}}
+          <p class="text-xs text-gray-600 mt-2">Authoritative DNS API on <span class="font-mono text-gray-400">:8081</span>. Domains panel creates zones + A/MX records automatically.</p>
           {{end}}
           {{if eq .Name "netdata"}}
           <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
@@ -51,6 +54,18 @@
             {{if eq .Name "netdata"}}
             <input name="nginx_user" placeholder="basic auth user" value="admin" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             <input name="nginx_pass" placeholder="basic auth pass" type="password" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            {{end}}
+            {{if eq .Name "mailinbox"}}
+            <select name="mode" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+              <option value="stalwart">stalwart (docker)</option>
+              <option value="mailinabox">mail-in-a-box API</option>
+            </select>
+            <input name="api_base" placeholder="api base (MiaB: https://box/admin)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            <input name="admin_user" placeholder="admin user / email" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            <input name="admin_password" type="password" placeholder="admin password" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            {{end}}
+            {{if eq .Name "powerdns"}}
+            <input name="api_key" placeholder="API key (auto if empty)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             {{end}}
             <button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded">Enable</button>
           </form>

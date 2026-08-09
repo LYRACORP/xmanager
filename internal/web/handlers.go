@@ -73,10 +73,14 @@ type pageData struct {
 	NodeDBs        []nodeDBView
 	ProjectDBs     []storage.ProjectDatabase
 	NodeServices   []nodeServiceView
-	ProjectDomains []storage.ProjectDomain
-	Mailboxes      []storage.Mailbox
-	VHosts         []proxy.VHost
-	AlertChannels  []storage.AlertChannel
+	ProjectDomains    []storage.ProjectDomain
+	ConnectedDomains  []storage.ConnectedDomain
+	Mailboxes         []storage.Mailbox
+	VHosts            []proxy.VHost
+	AlertChannels     []storage.AlertChannel
+	MailAPIMode       string
+	PowerDNSReady     bool
+	MailAPIReady      bool
 }
 
 func (h *handler) register(mux *http.ServeMux) {

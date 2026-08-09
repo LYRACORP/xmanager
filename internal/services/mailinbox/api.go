@@ -1,0 +1,342 @@
+package mailinbox
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+const (
+	ModeStalwart = "stalwart"
+	ModeMiaB     = "mailinabox"
+)
+
+// Config is persisted in ServiceInstance.ConfigJSON.
+type Config struct {
+	SMTPPort      string `json:"smtp_port"`
+	IMAPPort      string `json:"imap_port"`
+	HTTPSPort     string `json:"https_port"`
+	Hostname      string `json:"hostname"`
+	AdminUser     string `json:"admin_user"`
+	AdminPassword string `json:"admin_password"`
+	APIBase       string `json:"api_base"` // e.g. http://127.0.0.1:8085 or https://box/admin
+	Mode          string `json:"mode"`     // stalwart | mailinabox
+}
+
+func DefaultConfig() Config {
+	pass := randomHex(12)
+	return Config{
+		SMTPPort:      "25",
+		IMAPPort:      "143",
+		HTTPSPort:     "8085",
+		Hostname:      "mail.example.com",
+		AdminUser:     "admin",
+		AdminPassword: pass,
+		Mode:          ModeStalwart,
+	}
+}
+
+func ParseConfig(raw string) Config {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" || strings.Contains(raw, `"user_disabled":true`) {
+		return DefaultConfig()
+	}
+	cfg := Config{}
+	_ = json.Unmarshal([]byte(raw), &cfg)
+	if cfg.SMTPPort == "" {
+		cfg.SMTPPort = "25"
+	}
+	if cfg.IMAPPort == "" {
+		cfg.IMAPPort = "143"
+	}
+	if cfg.HTTPSPort == "" {
+		cfg.HTTPSPort = "8085"
+	}
+	if cfg.Hostname == "" {
+		cfg.Hostname = "mail.example.com"
+	}
+	if cfg.AdminUser == "" {
+		cfg.AdminUser = "admin"
+	}
+	// Do not invent a password here — Enable() generates and persists one.
+	if cfg.Mode == "" {
+		cfg.Mode = ModeStalwart
+	}
+	return cfg
+}
+
+func (c Config) JSON() string {
+	b, _ := json.Marshal(c)
+	return string(b)
+}
+
+func (c Config) BaseURL() string {
+	if c.APIBase != "" {
+		return strings.TrimRight(c.APIBase, "/")
+	}
+	if c.Mode == ModeMiaB {
+		return "https://127.0.0.1/admin"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%s", c.HTTPSPort)
+}
+
+func LoadConfig(db *gorm.DB, serverID uint) Config {
+	if db == nil {
+		return DefaultConfig()
+	}
+	var inst struct {
+		ConfigJSON string
+	}
+	err := db.Table("service_instances").
+		Select("config_json").
+		Where("server_id = ? AND service_type = ?", serverID, serviceType).
+		First(&inst).Error
+	if err != nil {
+		return DefaultConfig()
+	}
+	return ParseConfig(inst.ConfigJSON)
+}
+
+// Client provisions domains/mailboxes via Stalwart or Mail-in-a-Box APIs.
+type Client struct {
+	Cfg  Config
+	HTTP *http.Client
+}
+
+func NewClient(cfg Config) *Client {
+	return &Client{
+		Cfg: cfg,
+		HTTP: &http.Client{
+			Timeout: 20 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local/self-signed mail admin
+			},
+		},
+	}
+}
+
+func (c *Client) authHeader() string {
+	token := base64.StdEncoding.EncodeToString([]byte(c.Cfg.AdminUser + ":" + c.Cfg.AdminPassword))
+	return "Basic " + token
+}
+
+func (c *Client) doJSON(method, path string, body any) ([]byte, int, error) {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, 0, err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.Cfg.BaseURL()+path, rdr)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", c.authHeader())
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 400 {
+		return data, res.StatusCode, fmt.Errorf("mail %s %s: %s (%s)", method, path, res.Status, truncate(string(data), 200))
+	}
+	return data, res.StatusCode, nil
+}
+
+func (c *Client) doForm(method, path string, form url.Values) ([]byte, int, error) {
+	req, err := http.NewRequest(method, c.Cfg.BaseURL()+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", c.authHeader())
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/html")
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 400 {
+		return data, res.StatusCode, fmt.Errorf("mail %s %s: %s (%s)", method, path, res.Status, truncate(string(data), 200))
+	}
+	return data, res.StatusCode, nil
+}
+
+// EnsureDomain registers a mail domain (Stalwart principal or MiaB zone via first mailbox domain).
+func (c *Client) EnsureDomain(domain string) error {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return fmt.Errorf("empty domain")
+	}
+	if c.Cfg.Mode == ModeMiaB {
+		// MiaB creates domains implicitly when adding users; no-op.
+		return nil
+	}
+	payload := map[string]any{
+		"type":                "domain",
+		"name":                domain,
+		"quota":               0,
+		"secrets":             []string{},
+		"emails":              []string{},
+		"urls":                []string{},
+		"memberOf":            []string{},
+		"roles":               []string{},
+		"lists":               []string{},
+		"members":             []string{},
+		"enabledPermissions":  []string{},
+		"disabledPermissions": []string{},
+		"externalMembers":     []string{},
+	}
+	_, code, err := c.doJSON("POST", "/api/principal", payload)
+	if err != nil {
+		// try deploy endpoint (Thunderbird client)
+		_, _, err2 := c.doJSON("POST", "/api/principal/deploy", payload)
+		if err2 == nil {
+			return nil
+		}
+		if code == http.StatusConflict || strings.Contains(strings.ToLower(err.Error()), "already") {
+			return nil
+		}
+		return fmt.Errorf("%v; deploy: %w", err, err2)
+	}
+	return nil
+}
+
+// CreateMailbox provisions local@domain with password.
+func (c *Client) CreateMailbox(local, domain, password string) error {
+	local = strings.ToLower(strings.TrimSpace(local))
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if local == "" || domain == "" {
+		return fmt.Errorf("local part and domain required")
+	}
+	if password == "" {
+		return fmt.Errorf("password required")
+	}
+	addr := local + "@" + domain
+
+	if c.Cfg.Mode == ModeMiaB {
+		form := url.Values{}
+		form.Set("email", addr)
+		form.Set("password", password)
+		form.Set("privileges", "")
+		_, _, err := c.doForm("POST", "/mail/users/add", form)
+		return err
+	}
+
+	if err := c.EnsureDomain(domain); err != nil {
+		// continue — domain may already exist under a different error shape
+		_ = err
+	}
+	payload := map[string]any{
+		"type":                "individual",
+		"name":                local,
+		"secrets":             []string{password},
+		"emails":              []string{addr},
+		"urls":                []string{},
+		"memberOf":            []string{},
+		"roles":               []string{"user"},
+		"lists":               []string{},
+		"members":             []string{},
+		"enabledPermissions":  []string{},
+		"disabledPermissions": []string{},
+		"externalMembers":     []string{},
+		"quota":               0,
+	}
+	_, code, err := c.doJSON("POST", "/api/principal", payload)
+	if err != nil {
+		_, _, err2 := c.doJSON("POST", "/api/principal/deploy", payload)
+		if err2 == nil {
+			return nil
+		}
+		if code == http.StatusConflict || strings.Contains(strings.ToLower(err.Error()), "already") {
+			return nil
+		}
+		return fmt.Errorf("%v; deploy: %w", err, err2)
+	}
+	return nil
+}
+
+// DeleteMailbox removes a mailbox/user.
+func (c *Client) DeleteMailbox(address string) error {
+	address = strings.ToLower(strings.TrimSpace(address))
+	if address == "" {
+		return fmt.Errorf("empty address")
+	}
+	if c.Cfg.Mode == ModeMiaB {
+		form := url.Values{}
+		form.Set("email", address)
+		_, _, err := c.doForm("POST", "/mail/users/remove", form)
+		return err
+	}
+	local := address
+	if i := strings.Index(address, "@"); i >= 0 {
+		local = address[:i]
+	}
+	_, _, err := c.doJSON("DELETE", "/api/principal/"+url.PathEscape(local), nil)
+	return err
+}
+
+// Ping checks admin API reachability (best-effort).
+func (c *Client) Ping() error {
+	path := "/api/principal?types=domain&page=0&limit=1"
+	if c.Cfg.Mode == ModeMiaB {
+		path = "/mail/users?format=json"
+	}
+	req, err := http.NewRequest("GET", c.Cfg.BaseURL()+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", c.authHeader())
+	req.Header.Set("Accept", "application/json")
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		return fmt.Errorf("mail ping: %s", res.Status)
+	}
+	return nil
+}
+
+func truncate(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))[:min(n*2, 24)]
+	}
+	return hex.EncodeToString(b)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

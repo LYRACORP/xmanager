@@ -27,21 +27,45 @@ func (p *PowerDNS) IsEnabled(exec *ssh.Executor) bool {
 }
 
 func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
-	dnsPort := cfg["dns_port"]
-	if dnsPort == "" {
-		dnsPort = "53"
+	existing := LoadConfig(p.DB, p.serverID)
+	c := existing
+	if cfg != nil {
+		if v := cfg["dns_port"]; v != "" {
+			c.DNSPort = v
+		}
+		if v := cfg["api_port"]; v != "" {
+			c.APIPort = v
+		}
+		if v := cfg["api_key"]; v != "" {
+			c.APIKey = v
+		}
+		if v := cfg["db_password"]; v != "" {
+			c.DBPassword = v
+		}
+		if v := cfg["base_url"]; v != "" {
+			c.BaseURL = v
+		}
 	}
-	apiPort := cfg["api_port"]
-	if apiPort == "" {
-		apiPort = "8081"
+	if c.APIKey == "" || c.APIKey == "changeme" {
+		// Prefer a stable random key; keep existing non-default keys across re-enable.
+		if existing.APIKey != "" && existing.APIKey != "changeme" {
+			c.APIKey = existing.APIKey
+		} else {
+			c.APIKey = randomHex(16)
+		}
 	}
-	apiKey := cfg["api_key"]
-	if apiKey == "" {
-		apiKey = "changeme"
+	if c.DBPassword == "" || c.DBPassword == "pdnspassword" {
+		if existing.DBPassword != "" && existing.DBPassword != "pdnspassword" {
+			c.DBPassword = existing.DBPassword
+		} else {
+			c.DBPassword = randomHex(12)
+		}
 	}
-	dbPass := cfg["db_password"]
-	if dbPass == "" {
-		dbPass = "pdnspassword"
+	if c.DNSPort == "" {
+		c.DNSPort = "53"
+	}
+	if c.APIPort == "" {
+		c.APIPort = "8081"
 	}
 
 	compose := fmt.Sprintf(`services:
@@ -78,13 +102,12 @@ func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
       - "%s:8081"
 volumes:
   pdns_db:
-`, dbPass, dbPass, apiKey, dbPass, dnsPort, dnsPort, apiPort)
+`, c.DBPassword, c.DBPassword, c.APIKey, c.DBPassword, c.DNSPort, c.DNSPort, c.APIPort)
 
 	if err := p.WriteCompose(exec, dir, compose); err != nil {
 		return fmt.Errorf("powerdns enable: %w", err)
 	}
-	return p.SaveInstance(p.serverID, serviceType, "running",
-		fmt.Sprintf(`{"dns_port":"%s","api_port":"%s"}`, dnsPort, apiPort))
+	return p.SaveInstance(p.serverID, serviceType, "running", c.JSON())
 }
 
 func (p *PowerDNS) Disable(exec *ssh.Executor) error {
@@ -97,4 +120,9 @@ func (p *PowerDNS) Disable(exec *ssh.Executor) error {
 
 func (p *PowerDNS) Status(exec *ssh.Executor) string {
 	return services.ContainerStatus(exec, "pdns")
+}
+
+// API returns a configured HTTP client for this server's PowerDNS instance.
+func (p *PowerDNS) API() *Client {
+	return NewClient(LoadConfig(p.DB, p.serverID))
 }
