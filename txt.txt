@@ -50,3 +50,7 @@ project types :
 user can connect domains to projects,databases,mailboxes,etc...
 user can create database and db users and connect them to projects or connect to it from his local machine . 
 user can create mailboxes/addresses for connected domains . 
+
+
+
+should we merge portainer and other ones ? 
