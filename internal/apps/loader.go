@@ -39,6 +39,7 @@ type Summary struct {
 	DisplayName string
 	Description string
 	IsOfficial  bool
+	LogoURL     string
 }
 
 // raw YAML shape matching CapRover one-click-app format (v4)
@@ -57,12 +58,13 @@ type rawApp struct {
 	} `yaml:"caproverOneClickApp"`
 }
 
-// Loader finds and parses one-click app YAML files.
+// Loader finds and parses one-click app YAML/JSON definitions.
 type Loader struct {
-	dirs []string
+	dirs   []string
+	remote *CatalogClient
 }
 
-// DefaultDirs are the standard CapRover one-click search paths (relative to cwd).
+// DefaultDirs are CapRover one-click search paths relative to the process cwd.
 func DefaultDirs() []string {
 	return []string{
 		"apps",
@@ -71,47 +73,94 @@ func DefaultDirs() []string {
 }
 
 // NewLoader returns a Loader that searches dirs in order (first match wins).
+// Pass no dirs to use DefaultDirs plus the CapRover CDN fallback.
 func NewLoader(dirs ...string) *Loader {
 	if len(dirs) == 0 {
-		dirs = DefaultDirs()
+		return DefaultLoader()
 	}
-	return &Loader{dirs: dirs}
+	return &Loader{dirs: dirs, remote: nil}
 }
 
-// DefaultLoader uses DefaultDirs.
+// DefaultLoader searches local CapRover paths, then https://oneclickapps.caprover.com/v4.
+// Node panels run from /root with no checkout — remote catalog is required there.
 func DefaultLoader() *Loader {
-	return NewLoader(DefaultDirs()...)
+	return &Loader{
+		dirs:   append(DefaultDirs(), moduleRelativeDirs()...),
+		remote: defaultCatalogClient(),
+	}
+}
+
+// WithRemote sets or clears the HTTP catalog (nil disables network fallback).
+func (l *Loader) WithRemote(c *CatalogClient) *Loader {
+	l.remote = c
+	return l
+}
+
+func moduleRelativeDirs() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		out = append(out, dir)
+	}
+	roots := []string{}
+	if wd, err := os.Getwd(); err == nil {
+		roots = append(roots, wd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Dir(exe), filepath.Join(filepath.Dir(exe), ".."))
+	}
+	home, _ := os.UserHomeDir()
+	roots = append(roots,
+		filepath.Join(home, "Code/shared/BuildRoom/xmanager"),
+		filepath.Join(home, "src/xmanager"),
+	)
+	rel := []string{
+		"apps/caprover",
+		"apps",
+	}
+	for _, root := range roots {
+		for _, r := range rel {
+			p := filepath.Join(root, r)
+			if st, err := os.Stat(p); err == nil && st.IsDir() {
+				add(p)
+			}
+		}
+	}
+	return out
 }
 
 // List returns the IDs (filename without .yml) of all available one-click apps.
 func (l *Loader) List() ([]string, error) {
-	seen := make(map[string]bool)
-	var ids []string
-	for _, dir := range l.dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
-				continue
-			}
-			id := strings.TrimSuffix(e.Name(), ".yml")
-			if !seen[id] {
-				seen[id] = true
-				ids = append(ids, id)
-			}
-		}
+	ids, err := l.listLocalIDs()
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(ids)
+	if len(ids) == 0 && l.remote != nil {
+		sums, err := l.remote.ListSummaries()
+		if err != nil {
+			return nil, err
+		}
+		ids = make([]string, 0, len(sums))
+		for _, s := range sums {
+			ids = append(ids, s.ID)
+		}
+		sort.Strings(ids)
+	}
 	return ids, nil
 }
 
 // ListSummaries returns catalog metadata for each template (best-effort parse).
 func (l *Loader) ListSummaries() ([]Summary, error) {
-	ids, err := l.List()
+	ids, err := l.listLocalIDs()
 	if err != nil {
 		return nil, err
+	}
+	if len(ids) == 0 && l.remote != nil {
+		return l.remote.ListSummaries()
 	}
 	out := make([]Summary, 0, len(ids))
 	for _, id := range ids {
@@ -134,6 +183,29 @@ func (l *Loader) ListSummaries() ([]Summary, error) {
 	return out, nil
 }
 
+func (l *Loader) listLocalIDs() ([]string, error) {
+	seen := make(map[string]bool)
+	var ids []string
+	for _, dir := range l.dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+				continue
+			}
+			id := strings.TrimSuffix(e.Name(), ".yml")
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
 // Load parses an app by ID (filename without .yml).
 func (l *Loader) Load(name string) (*App, error) {
 	name = strings.TrimSpace(name)
@@ -145,6 +217,21 @@ func (l *Loader) Load(name string) (*App, error) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
+		}
+		app, err := parseApp(data)
+		if err != nil {
+			return nil, err
+		}
+		app.ID = name
+		if app.DisplayName == "" {
+			app.DisplayName = name
+		}
+		return app, nil
+	}
+	if l.remote != nil {
+		data, err := l.remote.FetchAppJSON(name)
+		if err != nil {
+			return nil, fmt.Errorf("app %q not found locally or remotely: %w", name, err)
 		}
 		app, err := parseApp(data)
 		if err != nil {
