@@ -112,14 +112,49 @@ func (w *WebPanel) hostOr(fallback string) string {
 
 func normalizeArch(a string) string {
 	a = strings.TrimSpace(strings.ToLower(a))
+	if fields := strings.Fields(a); len(fields) > 0 {
+		a = fields[0]
+	} else {
+		return ""
+	}
 	switch a {
 	case "x86_64", "amd64":
 		return "amd64"
 	case "aarch64", "arm64":
 		return "arm64"
 	default:
-		return a
+		return ""
 	}
+}
+
+// detectRemoteArch returns amd64 or arm64. Reconnects first — pooled sessions
+// often die after SFTP, which made uname return "" and blocked cross-build.
+// Defaults to amd64 (typical VPS) when detection fails so Mac→Linux installs still work.
+func (w *WebPanel) detectRemoteArch() string {
+	_ = w.reconnect()
+	try := func(cmd string) string {
+		if w.exec != nil {
+			if a := normalizeArch(w.exec.RunQuiet(cmd)); a != "" {
+				return a
+			}
+		}
+		if out, err := w.systemSSHOutput(cmd); err == nil {
+			if a := normalizeArch(out); a != "" {
+				return a
+			}
+		}
+		return ""
+	}
+	for _, cmd := range []string{
+		"uname -m",
+		"arch 2>/dev/null || true",
+		"dpkg --print-architecture 2>/dev/null || true",
+	} {
+		if a := try(cmd); a != "" {
+			return a
+		}
+	}
+	return "amd64"
 }
 
 func (w *WebPanel) enableBinary(port string, force bool) error {
@@ -348,21 +383,14 @@ func (w *WebPanel) ensureBinary(force bool) error {
 
 	var errs []string
 
+	// Prefer local cross-compile so unreleased fixes (and missing GitHub assets) still install.
 	if err := w.crossBuildAndUpload(); err == nil {
 		return nil
 	} else {
 		errs = append(errs, "cross-build: "+err.Error())
 	}
 
-	remoteArch := ""
-	if w.exec != nil {
-		remoteArch = normalizeArch(w.exec.RunQuiet("uname -m"))
-	}
-	if remoteArch == "" {
-		if out, err := w.systemSSHOutput("uname -m"); err == nil {
-			remoteArch = normalizeArch(out)
-		}
-	}
+	remoteArch := w.detectRemoteArch()
 	if runtime.GOOS == "linux" && remoteArch == runtime.GOARCH {
 		if err := w.uploadFile(mustExecutable()); err == nil {
 			return nil
@@ -371,16 +399,23 @@ func (w *WebPanel) ensureBinary(force bool) error {
 		}
 	}
 
-	install := "curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1"
-	if err := w.run(install); err == nil {
-		if w.exec != nil && w.exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
-			return nil
-		}
-		if out, err2 := w.systemSSHOutput("test -x " + binPath + " && echo yes"); err2 == nil && strings.TrimSpace(out) == "yes" {
-			return nil
+	// Published release installer — only when we cannot build from a checkout.
+	// install.sh often 404s when release assets don't match the expected name.
+	if _, modErr := findModuleRoot(); modErr != nil {
+		install := "curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1"
+		if err := w.run(install); err == nil {
+			if w.exec != nil && w.exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
+				return nil
+			}
+			if out, err2 := w.systemSSHOutput("test -x " + binPath + " && echo yes"); err2 == nil && strings.TrimSpace(out) == "yes" {
+				return nil
+			}
+			errs = append(errs, "install.sh ran but binary missing at "+binPath)
+		} else {
+			errs = append(errs, "install.sh: "+err.Error())
 		}
 	} else {
-		errs = append(errs, "install.sh: "+err.Error())
+		errs = append(errs, "skipped install.sh (building from local checkout; GitHub release tarball may 404)")
 	}
 
 	return fmt.Errorf("could not install xmanager on remote (%s)", strings.Join(errs, "; "))
@@ -425,15 +460,7 @@ func (w *WebPanel) crossBuildAndUpload() error {
 		return err
 	}
 
-	arch := ""
-	if w.exec != nil {
-		arch = normalizeArch(w.exec.RunQuiet("uname -m"))
-	}
-	if arch == "" {
-		if out, err := w.systemSSHOutput("uname -m"); err == nil {
-			arch = normalizeArch(out)
-		}
-	}
+	arch := w.detectRemoteArch()
 	if arch != "amd64" && arch != "arm64" {
 		return fmt.Errorf("unsupported remote arch %q", arch)
 	}
