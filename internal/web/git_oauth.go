@@ -226,12 +226,13 @@ func (h *handler) connectMode(provider string, app gitforge.AppCredentials) stri
 	if app.ClientID == "" {
 		return "need_client"
 	}
-	if provider == gitforge.ProviderGitea {
+	// Redirect flow works over plain HTTP too (GitHub/GitLab allow it).
+	// Prefer it whenever a client secret is available — this is the
+	// standard Vercel-style flow: browser → GitHub → callback → done.
+	if strings.TrimSpace(app.ClientSecret) != "" {
 		return "redirect"
 	}
-	if h.publicURLIsHTTPS() {
-		return "redirect"
-	}
+	// No client secret: fall back to device flow (no redirect URI needed).
 	if gitforge.SupportsDeviceFlow(provider) {
 		return "device"
 	}

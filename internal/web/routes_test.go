@@ -70,20 +70,24 @@ func TestAPIGitReposUnauthorized(t *testing.T) {
 
 func TestConnectMode(t *testing.T) {
 	h := &handler{opts: Options{Config: &config.Config{Web: config.WebConfig{PublicURL: "http://1.2.3.4:8080"}}}}
+
+	// No client secret → device flow for GitHub (works without redirect URI)
 	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x"}) != "device" {
-		t.Fatal("expected device on http public url")
+		t.Fatal("expected device when no client secret")
 	}
-	h.opts.Config.Web.PublicURL = "https://panel.example.com"
-	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x"}) != "redirect" {
-		t.Fatal("expected redirect on https")
+	// Client secret present → redirect flow (Vercel-style), even over plain HTTP
+	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x", ClientSecret: "s"}) != "redirect" {
+		t.Fatal("expected redirect when client secret set")
 	}
-	if h.connectMode("bitbucket", gitforge.AppCredentials{ClientID: "x"}) != "redirect" {
-		t.Fatal("bitbucket https redirect")
+	// Bitbucket with secret → redirect
+	if h.connectMode("bitbucket", gitforge.AppCredentials{ClientID: "x", ClientSecret: "s"}) != "redirect" {
+		t.Fatal("bitbucket with secret should redirect")
 	}
-	h.opts.Config.Web.PublicURL = "http://x"
+	// Bitbucket without secret and no device support → need_https
 	if h.connectMode("bitbucket", gitforge.AppCredentials{ClientID: "x"}) != "need_https" {
-		t.Fatal("bitbucket needs https")
+		t.Fatal("bitbucket without secret needs https")
 	}
+	// No client id → need_client
 	if h.connectMode("github", gitforge.AppCredentials{}) != "need_client" {
 		t.Fatal("need client")
 	}

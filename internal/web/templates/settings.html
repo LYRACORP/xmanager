@@ -61,26 +61,37 @@
       </div>
 
       <details class="pt-2 border-t border-zinc-800">
-        <summary class="text-xs text-panel-muted cursor-pointer py-2">Advanced: custom OAuth apps &amp; public URL</summary>
-        <form method="post" action="/settings/git" class="space-y-4 pt-2">
+        <summary class="text-xs text-panel-muted cursor-pointer py-2">Advanced: OAuth apps, callback URL &amp; public URL</summary>
+        <div class="pt-3 pb-2 space-y-4">
+          <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 space-y-1">
+            <p class="text-xs font-semibold text-gray-300">GitHub OAuth App setup — to enable the Vercel-style redirect flow:</p>
+            <ol class="text-xs text-panel-muted list-decimal list-inside space-y-0.5">
+              <li>Open <a href="https://github.com/settings/developers" target="_blank" class="text-indigo-400 underline">github.com/settings/developers</a> → your XManager app</li>
+              <li>Add callback URL: <span class="font-mono text-emerald-300">{{if .PublicURL}}{{.PublicURL}}{{else}}http://YOUR-SERVER-IP:8080{{end}}/oauth/git/github/callback</span></li>
+              <li>Generate a new Client Secret → copy it</li>
+              <li>Paste the secret below and click Save</li>
+            </ol>
+          </div>
+        </div>
+        <form method="post" action="/settings/git" class="space-y-4">
           <div>
             <label class="block text-sm font-semibold mb-1">Public panel URL</label>
-            <input name="public_url" value="{{.PublicURL}}" placeholder="https://panel.example.com" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
-            <p class="text-[10px] text-panel-muted mt-1">Needed for Bitbucket / classic redirect. Env: <span class="font-mono">XMANAGER_GITHUB_OAUTH_CLIENT_ID</span> etc.</p>
+            <input name="public_url" value="{{.PublicURL}}" placeholder="http://169.128.116.2:8080" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
+            <p class="text-[10px] text-panel-muted mt-1">Used as the base for the OAuth callback URL above.</p>
           </div>
           {{range .GitProviders}}
           <div class="border border-zinc-800 rounded-xl p-3 space-y-2">
             <h3 class="text-xs font-semibold text-gray-400">{{.Label}}</h3>
             <div class="grid md:grid-cols-2 gap-2">
               <input name="{{.Provider}}_client_id" value="{{.ClientID}}" placeholder="Client ID" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
-              <input name="{{.Provider}}_client_secret" type="password" placeholder="{{if .HasSecret}}•••••••• (unchanged){{else}}Client secret{{end}}" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+              <input name="{{.Provider}}_client_secret" type="password" placeholder="{{if .HasSecret}}•••••••• (unchanged){{else}}Client secret (required for redirect flow){{end}}" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
               {{if or (eq .Provider "gitea") (eq .Provider "gitlab")}}
               <input name="{{.Provider}}_endpoint" value="{{.Endpoint}}" placeholder="Base URL" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
               {{end}}
             </div>
           </div>
           {{end}}
-          <button type="submit" class="xm-btn xm-btn-primary text-xs">Save advanced</button>
+          <button type="submit" class="xm-btn xm-btn-primary text-xs">Save</button>
         </form>
       </details>
     </div>
