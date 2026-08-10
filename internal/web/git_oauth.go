@@ -97,6 +97,52 @@ func newDeviceStateStore() *deviceStateStore {
 	return &deviceStateStore{data: make(map[string]devicePending)}
 }
 
+// relayPending records a relay OAuth flow in progress, keyed by nonce.
+type relayPending struct {
+	Provider string
+	UserID   uint
+	Next     string
+	Created  time.Time
+}
+
+type relayStateStore struct {
+	mu   sync.Mutex
+	data map[string]relayPending
+}
+
+func newRelayStateStore() *relayStateStore {
+	s := &relayStateStore{data: make(map[string]relayPending)}
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		for range t.C {
+			s.mu.Lock()
+			for k, v := range s.data {
+				if time.Since(v.Created) > 15*time.Minute {
+					delete(s.data, k)
+				}
+			}
+			s.mu.Unlock()
+		}
+	}()
+	return s
+}
+
+func (s *relayStateStore) put(nonce string, p relayPending) {
+	s.mu.Lock()
+	s.data[nonce] = p
+	s.mu.Unlock()
+}
+
+func (s *relayStateStore) take(nonce string) (relayPending, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.data[nonce]
+	if ok {
+		delete(s.data, nonce)
+	}
+	return p, ok
+}
+
 func (s *deviceStateStore) put(id string, p devicePending) {
 	s.mu.Lock()
 	s.data[id] = p
@@ -226,13 +272,18 @@ func (h *handler) connectMode(provider string, app gitforge.AppCredentials) stri
 	if app.ClientID == "" {
 		return "need_client"
 	}
-	// Redirect flow works over plain HTTP too (GitHub/GitLab allow it).
-	// Prefer it whenever a client secret is available — this is the
-	// standard Vercel-style flow: browser → GitHub → callback → done.
+	// Standard redirect flow when a client secret is locally configured.
+	// Works over plain HTTP (GitHub/GitLab allow it).
 	if strings.TrimSpace(app.ClientSecret) != "" {
 		return "redirect"
 	}
-	// No client secret: fall back to device flow (no redirect URI needed).
+	// Auth relay — Lyracorp-hosted, holds the client secret server-side.
+	// Gives Vercel-style browser flow with zero per-installation setup.
+	if relayURL := gitforge.GetRelayURL(); relayURL != "" &&
+		(provider == gitforge.ProviderGitHub || provider == gitforge.ProviderGitLab) {
+		return "relay"
+	}
+	// Device flow fallback (no redirect URI or secret needed).
 	if gitforge.SupportsDeviceFlow(provider) {
 		return "device"
 	}
@@ -418,14 +469,17 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 	mode := h.connectMode(provider, app)
 	switch mode {
 	case "need_client", "need_https":
-		// No OAuth app (or Bitbucket on HTTP): open forge in browser + paste token.
 		h.renderTokenBootstrap(w, r, sess, provider, app.Endpoint, next)
 		return
 	case "device":
 		h.startDeviceConnect(w, r, sess, provider, app, next)
 		return
+	case "relay":
+		h.startRelayConnect(w, r, sess, provider, next)
+		return
 	}
 
+	// Standard redirect flow (client secret present).
 	state := randomToken()
 	if h.oauthStates == nil {
 		h.oauthStates = newOAuthStateStore()
@@ -437,6 +491,97 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
+}
+
+// startRelayConnect redirects the browser to auth.lyracorp.dev which holds
+// the OAuth client secret. The relay completes the exchange and sends the
+// browser back to /oauth/git/{provider}/relay-finish with a one-time token ID.
+func (h *handler) startRelayConnect(w http.ResponseWriter, r *http.Request, sess *session, provider, next string) {
+	nonce := randomToken()
+	if h.relayStates == nil {
+		h.relayStates = newRelayStateStore()
+	}
+	h.relayStates.put(nonce, relayPending{
+		Provider: provider,
+		UserID:   sess.UserID,
+		Next:     next,
+		Created:  time.Now(),
+	})
+	panelURL := h.publicPanelURL(r)
+	q := url.Values{}
+	q.Set("panel_url", panelURL)
+	q.Set("nonce", nonce)
+	q.Set("next", next)
+	relayURL := gitforge.GetRelayURL() + "/connect/" + provider + "?" + q.Encode()
+	http.Redirect(w, r, relayURL, http.StatusSeeOther)
+}
+
+// getOAuthGitRelayFinish is called when the auth relay redirects back after
+// completing the GitHub/GitLab code exchange.
+// GET /oauth/git/{provider}/relay-finish?nonce=...&token_id=...&next=...
+func (h *handler) getOAuthGitRelayFinish(w http.ResponseWriter, r *http.Request) {
+	provider := gitforge.NormalizeProvider(r.PathValue("provider"))
+	nonce := r.URL.Query().Get("nonce")
+	tokenID := r.URL.Query().Get("token_id")
+
+	if provider == "" || nonce == "" || tokenID == "" {
+		http.Error(w, "invalid relay callback parameters", http.StatusBadRequest)
+		return
+	}
+
+	if h.relayStates == nil {
+		http.Redirect(w, r, appendFlash("/projects/new?type=git", "relay session expired"), http.StatusSeeOther)
+		return
+	}
+	pending, ok := h.relayStates.take(nonce)
+	if !ok || pending.Provider != provider {
+		http.Redirect(w, r, appendFlash("/projects/new?type=git", "relay nonce invalid or expired"), http.StatusSeeOther)
+		return
+	}
+	next := safeNextPath(r.URL.Query().Get("next"), pending.Next)
+	if next == "" {
+		next = "/projects/new?type=git&provider=" + provider
+	}
+
+	// Fetch the one-time token from the relay (server-to-server call).
+	pickupURL := gitforge.GetRelayURL() + "/token/" + url.PathEscape(tokenID)
+	relayHTTP := &http.Client{Timeout: 10 * time.Second}
+	resp, err := relayHTTP.Get(pickupURL)
+	if err != nil {
+		http.Redirect(w, r, appendFlash(next, "relay fetch failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Redirect(w, r, appendFlash(next, "relay token not found — please reconnect"), http.StatusSeeOther)
+		return
+	}
+
+	var tok struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+		ExpiresAt    int64  `json:"expires_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil || tok.AccessToken == "" {
+		http.Redirect(w, r, appendFlash(next, "relay returned invalid token"), http.StatusSeeOther)
+		return
+	}
+
+	app, _ := h.appCredentials(provider)
+	ts := &gitforge.TokenSet{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		Scope:        tok.Scope,
+	}
+	if tok.ExpiresAt > 0 {
+		ts.ExpiresIn = int(time.Until(time.Unix(tok.ExpiresAt, 0)).Seconds())
+	}
+	if err := h.persistOAuthTokens(provider, app, ts); err != nil {
+		http.Redirect(w, r, appendFlash(next, "save failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, appendFlash(next, "Connected "+provider), http.StatusSeeOther)
 }
 
 func (h *handler) renderTokenBootstrap(w http.ResponseWriter, r *http.Request, sess *session, provider, endpoint, next string) {

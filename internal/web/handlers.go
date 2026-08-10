@@ -35,6 +35,7 @@ type handler struct {
 	localSrvID  uint
 	oauthStates  *oauthStateStore
 	deviceStates *deviceStateStore
+	relayStates  *relayStateStore
 }
 
 // serverCardData holds display-ready data for a single server card.

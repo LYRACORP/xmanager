@@ -71,19 +71,19 @@ func TestAPIGitReposUnauthorized(t *testing.T) {
 func TestConnectMode(t *testing.T) {
 	h := &handler{opts: Options{Config: &config.Config{Web: config.WebConfig{PublicURL: "http://1.2.3.4:8080"}}}}
 
-	// No client secret → device flow for GitHub (works without redirect URI)
-	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x"}) != "device" {
-		t.Fatal("expected device when no client secret")
+	// GitHub with no client secret → relay (auth.lyracorp.dev handles the secret)
+	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x"}) != "relay" {
+		t.Fatal("expected relay for GitHub when no local client secret")
 	}
-	// Client secret present → redirect flow (Vercel-style), even over plain HTTP
+	// Client secret present → redirect flow takes priority over relay
 	if h.connectMode("github", gitforge.AppCredentials{ClientID: "x", ClientSecret: "s"}) != "redirect" {
-		t.Fatal("expected redirect when client secret set")
+		t.Fatal("expected redirect when client secret set locally")
 	}
 	// Bitbucket with secret → redirect
 	if h.connectMode("bitbucket", gitforge.AppCredentials{ClientID: "x", ClientSecret: "s"}) != "redirect" {
 		t.Fatal("bitbucket with secret should redirect")
 	}
-	// Bitbucket without secret and no device support → need_https
+	// Bitbucket without secret → no relay support → need_https
 	if h.connectMode("bitbucket", gitforge.AppCredentials{ClientID: "x"}) != "need_https" {
 		t.Fatal("bitbucket without secret needs https")
 	}

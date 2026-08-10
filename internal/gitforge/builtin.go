@@ -5,12 +5,23 @@ import (
 	"strings"
 )
 
-// defaultClientIDs are Lyracorp-registered OAuth apps for the device flow.
+// DefaultRelayURL is the Lyracorp-hosted OAuth relay.
+// Every self-hosted XManager panel uses this to get Vercel-style
+// GitHub/GitLab connect without any per-installation setup.
+// Override with env XMANAGER_OAUTH_RELAY_URL (set to "" to disable).
+const DefaultRelayURL = "https://xauth.devcenter.top"
+
+// GetRelayURL returns the active relay URL (env override or default).
+func GetRelayURL() string {
+	if v, ok := os.LookupEnv("XMANAGER_OAUTH_RELAY_URL"); ok {
+		return strings.TrimRight(strings.TrimSpace(v), "/")
+	}
+	return DefaultRelayURL
+}
+
+// defaultClientIDs are Lyracorp-registered OAuth apps for the device flow
+// (used as fallback when relay is unavailable or disabled).
 // Client IDs are public; secrets stay in env / Advanced settings only.
-// Override via env: XMANAGER_GITHUB_OAUTH_CLIENT_ID etc.
-//
-// After registering at https://github.com/settings/applications/new
-// (Enable Device Flow checked), put the Client ID here.
 var defaultClientIDs = map[string]string{
 	ProviderGitHub: "Ov23liFFBIVHJ0NLTNly",
 	// ProviderGitLab: "",
