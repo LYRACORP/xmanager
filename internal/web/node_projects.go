@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lyracorp/xmanager/internal/apps"
+	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
@@ -119,6 +120,7 @@ func (h *handler) getNodeProjectsNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if data.CreateType == "git" || data.CreateType == "clone" {
 		data.GitProviders = h.gitProviderViews()
+		data.SelectedProvider = gitforge.NormalizeProvider(r.URL.Query().Get("provider"))
 	}
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash

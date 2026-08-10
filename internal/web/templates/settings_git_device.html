@@ -19,7 +19,7 @@
     </div>
   </div>
 
-  <a href="/settings" class="text-xs text-panel-muted hover:text-gray-300">← Cancel</a>
+  <a href="{{if .PublicURL}}{{.PublicURL}}{{else}}/projects/new?type=git{{end}}" class="text-xs text-panel-muted hover:text-gray-300">← Cancel</a>
 </div>
 {{template "foot" .}}
 {{end}}

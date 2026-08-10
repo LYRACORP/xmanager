@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ type oauthPending struct {
 	Provider string
 	UserID   uint
 	Created  time.Time
+	Next     string
 }
 
 type oauthStateStore struct {
@@ -83,6 +85,7 @@ type devicePending struct {
 	App        gitforge.AppCredentials
 	Created    time.Time
 	Expires    time.Time
+	Next       string
 }
 
 type deviceStateStore struct {
@@ -377,55 +380,76 @@ func (h *handler) postSettingsGit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Git provider settings saved"), http.StatusSeeOther)
 }
 
+func safeNextPath(raw, fallback string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return fallback
+	}
+	return raw
+}
+
+func appendFlash(path, msg string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "flash=" + urlQueryEscape(msg)
+}
+
+func (h *handler) oauthFailRedirect(w http.ResponseWriter, r *http.Request, msg string) {
+	next := safeNextPath(r.URL.Query().Get("next"), "/projects/new?type=git")
+	http.Redirect(w, r, appendFlash(next, msg), http.StatusSeeOther)
+}
+
 func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	provider := gitforge.NormalizeProvider(r.PathValue("provider"))
+	next := safeNextPath(r.URL.Query().Get("next"), "/projects/new?type=git&provider="+provider)
 	if provider == "" {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("unknown provider"), http.StatusSeeOther)
+		h.oauthFailRedirect(w, r, "unknown provider")
 		return
 	}
 	if provider == gitforge.ProviderGitea {
 		if err := h.ensureGiteaOAuthApp(r); err != nil {
-			http.Redirect(w, r, "/settings?flash="+urlQueryEscape("gitea: "+err.Error()), http.StatusSeeOther)
+			h.oauthFailRedirect(w, r, "gitea: "+err.Error())
 			return
 		}
 	}
 	app, err := h.requireAppCredentials(provider)
 	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		h.oauthFailRedirect(w, r, err.Error())
 		return
 	}
 	mode := h.connectMode(provider, app)
 	switch mode {
 	case "device":
-		h.startDeviceConnect(w, r, sess, provider, app)
+		h.startDeviceConnect(w, r, sess, provider, app, next)
 		return
 	case "need_https":
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(provider+" needs an HTTPS Public panel URL (Advanced), or use GitHub/GitLab device connect"), http.StatusSeeOther)
+		h.oauthFailRedirect(w, r, provider+" needs an HTTPS Public panel URL (Settings → Advanced)")
 		return
 	case "need_client":
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Set OAuth client in Advanced or env XMANAGER_"+strings.ToUpper(provider)+"_OAUTH_CLIENT_ID"), http.StatusSeeOther)
+		h.oauthFailRedirect(w, r, "Set OAuth client: env XMANAGER_"+strings.ToUpper(provider)+"_OAUTH_CLIENT_ID or Settings → Advanced")
 		return
 	}
 
-	// classic redirect
 	state := randomToken()
 	if h.oauthStates == nil {
 		h.oauthStates = newOAuthStateStore()
 	}
-	h.oauthStates.put(state, oauthPending{Provider: provider, UserID: sess.UserID, Created: time.Now()})
+	h.oauthStates.put(state, oauthPending{Provider: provider, UserID: sess.UserID, Created: time.Now(), Next: next})
 	authURL, err := gitforge.AuthorizeURL(provider, app, h.oauthRedirectURI(r, provider), state)
 	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		h.oauthFailRedirect(w, r, err.Error())
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
-func (h *handler) startDeviceConnect(w http.ResponseWriter, r *http.Request, sess *session, provider string, app gitforge.AppCredentials) {
+func (h *handler) startDeviceConnect(w http.ResponseWriter, r *http.Request, sess *session, provider string, app gitforge.AppCredentials, next string) {
 	dc, err := gitforge.RequestDeviceCode(r.Context(), provider, app)
 	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("device start: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(next, "device start: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	id := randomToken()
@@ -444,18 +468,20 @@ func (h *handler) startDeviceConnect(w http.ResponseWriter, r *http.Request, ses
 		App:        app,
 		Created:    time.Now(),
 		Expires:    exp,
+		Next:       next,
 	})
 	verify := dc.VerificationURIComplete
 	if verify == "" {
 		verify = dc.VerificationURI
 	}
 	data := h.basePage(sess, "Connect "+provider)
-	data.ActiveNav = "settings"
+	data.ActiveNav = "projects"
 	data.DeviceID = id
 	data.DeviceUserCode = dc.UserCode
 	data.DeviceVerifyURL = verify
 	data.DeviceProvider = provider
 	data.DeviceInterval = dc.Interval
+	data.PublicURL = next // reuse for cancel link
 	if data.DeviceInterval <= 0 {
 		data.DeviceInterval = 5
 	}
@@ -480,8 +506,9 @@ func (h *handler) getDevicePoll(w http.ResponseWriter, r *http.Request) {
 	}
 	if time.Now().After(pending.Expires) {
 		h.deviceStates.delete(id)
+		retry := "/oauth/git/" + provider + "/connect?next=" + url.QueryEscape(safeNextPath(pending.Next, "/projects/new?type=git&provider="+provider))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<p class="text-amber-300 text-sm">Code expired. <a class="underline" href="/oauth/git/` + provider + `/connect">Try again</a></p>`))
+		_, _ = fmt.Fprintf(w, `<p class="text-amber-300 text-sm">Code expired. <a class="underline" href="%s">Try again</a></p>`, htmlEscape(retry))
 		return
 	}
 	ts, err := gitforge.PollDeviceToken(r.Context(), provider, pending.App, pending.DeviceCode)
@@ -504,7 +531,8 @@ func (h *handler) getDevicePoll(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, `<p class="text-red-300 text-sm">%s</p>`, htmlEscape(err.Error()))
 		return
 	}
-	w.Header().Set("HX-Redirect", "/settings?flash="+urlQueryEscape("Connected "+provider))
+	dest := safeNextPath(pending.Next, "/projects/new?type=git&provider="+provider)
+	w.Header().Set("HX-Redirect", appendFlash(dest, "Connected "+provider))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<p class="text-emerald-400 text-sm">Connected! Redirecting…</p>`))
 }
@@ -549,38 +577,40 @@ func (h *handler) getOAuthGitCallback(w http.ResponseWriter, r *http.Request) {
 	provider := gitforge.NormalizeProvider(r.PathValue("provider"))
 	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
+	fallback := "/projects/new?type=git&provider=" + provider
 	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("oauth: "+errMsg), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(fallback, "oauth: "+errMsg), http.StatusSeeOther)
 		return
 	}
 	if provider == "" || code == "" || state == "" {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("invalid oauth callback"), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(fallback, "invalid oauth callback"), http.StatusSeeOther)
 		return
 	}
 	if h.oauthStates == nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("oauth state expired"), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(fallback, "oauth state expired"), http.StatusSeeOther)
 		return
 	}
 	pending, ok := h.oauthStates.take(state)
 	if !ok || pending.Provider != provider {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("oauth state mismatch"), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(fallback, "oauth state mismatch"), http.StatusSeeOther)
 		return
 	}
+	next := safeNextPath(pending.Next, fallback)
 	app, err := h.requireAppCredentials(provider)
 	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(next, err.Error()), http.StatusSeeOther)
 		return
 	}
 	ts, err := gitforge.ExchangeCode(r.Context(), provider, app, h.oauthRedirectURI(r, provider), code)
 	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("token exchange: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(next, "token exchange: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	if err := h.persistOAuthTokens(provider, app, ts); err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, appendFlash(next, err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Connected "+provider), http.StatusSeeOther)
+	http.Redirect(w, r, appendFlash(next, "Connected "+provider), http.StatusSeeOther)
 }
 
 func (h *handler) postOAuthGitDisconnect(w http.ResponseWriter, r *http.Request) {

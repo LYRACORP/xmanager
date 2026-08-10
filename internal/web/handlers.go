@@ -105,11 +105,12 @@ type pageData struct {
 	TemplateApp        *apps.App
 	TemplateQuery      string
 	// Git OAuth / repo picker
-	GitProviders []gitProviderView
-	GitRepos    []gitforge.Repo
-	GitProvider  string
-	GitCredID    uint
-	PublicURL    string
+	GitProviders     []gitProviderView
+	GitRepos        []gitforge.Repo
+	GitProvider      string
+	GitCredID        uint
+	SelectedProvider string
+	PublicURL        string
 	// Device flow UI
 	DeviceID        string
 	DeviceUserCode  string

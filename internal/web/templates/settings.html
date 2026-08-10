@@ -35,7 +35,7 @@
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Git providers</h2>
-        <p class="text-xs text-panel-muted mt-1">Connect in the browser. GitHub/GitLab use a device code on HTTP panels; Bitbucket needs HTTPS public URL. Set <span class="font-mono">XMANAGER_GITHUB_OAUTH_CLIENT_ID</span> (and siblings) or use Advanced.</p>
+        <p class="text-xs text-panel-muted mt-1">Connect accounts when creating a git project. Disconnect here if needed.</p>
       </div>
 
       <div class="space-y-3">
@@ -45,18 +45,11 @@
             <div class="font-semibold text-sm">{{.Label}}</div>
             {{if .Connected}}
             <div class="text-xs text-emerald-400 mt-0.5">Connected as {{.AccountLogin}}</div>
-            {{else if eq .ConnectMode "need_client"}}
-            <div class="text-xs text-amber-400 mt-0.5">Needs OAuth client ID (env or Advanced)</div>
-            {{else if eq .ConnectMode "need_https"}}
-            <div class="text-xs text-amber-400 mt-0.5">Needs HTTPS Public panel URL</div>
-            {{else if eq .ConnectMode "device"}}
-            <div class="text-xs text-panel-muted mt-0.5">Opens forge device login in your browser</div>
             {{else}}
-            <div class="text-xs text-panel-muted mt-0.5">Redirects to forge login</div>
+            <div class="text-xs text-panel-muted mt-0.5">Not connected — use Connect on New project → Git</div>
             {{end}}
           </div>
           <div class="flex flex-wrap gap-2">
-            <a href="/oauth/git/{{.Provider}}/connect" class="xm-btn xm-btn-primary text-xs">{{if .Connected}}Reconnect{{else}}Connect{{end}}</a>
             {{if .Connected}}
             <form method="post" action="/settings/git/{{.Provider}}/disconnect" class="inline">
               <button type="submit" class="xm-btn xm-btn-ghost text-xs">Disconnect</button>
@@ -73,7 +66,7 @@
           <div>
             <label class="block text-sm font-semibold mb-1">Public panel URL</label>
             <input name="public_url" value="{{.PublicURL}}" placeholder="https://panel.example.com" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
-            <p class="text-[10px] text-panel-muted mt-1">Required for Bitbucket / classic redirect. Callback: <span class="font-mono">…/oauth/git/&lt;provider&gt;/callback</span></p>
+            <p class="text-[10px] text-panel-muted mt-1">Needed for Bitbucket / classic redirect. Env: <span class="font-mono">XMANAGER_GITHUB_OAUTH_CLIENT_ID</span> etc.</p>
           </div>
           {{range .GitProviders}}
           <div class="border border-zinc-800 rounded-xl p-3 space-y-2">
