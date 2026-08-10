@@ -229,7 +229,7 @@ func (h *handler) getNodeProjectTemplate(w http.ResponseWriter, r *http.Request)
 	id := r.PathValue("id")
 	app, err := h.appsLoader().Load(id)
 	if err != nil {
-		http.Redirect(w, r, "/projects/templates?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/oneclick?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	data := h.basePage(sess, "Install "+app.DisplayName)
@@ -262,7 +262,7 @@ func (h *handler) postNodeProjectTemplate(w http.ResponseWriter, r *http.Request
 	}
 	compose, err := h.appsLoader().Render(id, values)
 	if err != nil {
-		http.Redirect(w, r, "/projects/templates/"+url.PathEscape(id)+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/oneclick/"+url.PathEscape(id)+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	// Inject app name into common CapRover placeholders
@@ -284,7 +284,7 @@ func (h *handler) postNodeProjectTemplate(w http.ResponseWriter, r *http.Request
 		WebhookSecret: secret,
 	}
 	if err := h.opts.DB.Create(&p).Error; err != nil {
-		http.Redirect(w, r, "/projects/templates/"+url.PathEscape(id)+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/oneclick/"+url.PathEscape(id)+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	if p.Domain != "" {

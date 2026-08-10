@@ -177,11 +177,24 @@ WantedBy=multi-user.target
 
 	// Fresh connection again — restart can race with MaxSessions / stale TCP.
 	_ = w.reconnect()
-	start := "systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && systemctl is-active xmanager-web"
+	// Wait for the process to stay up (crash-loop Restart=on-failure can briefly look active).
+	start := `systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && sleep 2 && systemctl is-active xmanager-web`
 	if err := w.run(start); err != nil {
 		// Last resort: system OpenSSH (independent of the Go pool).
 		if err2 := w.runSystemSSH(start); err2 != nil {
-			return fmt.Errorf("starting xmanager-web: %v (ssh fallback: %w)", err, err2)
+			logs := ""
+			if w.exec != nil {
+				logs = w.exec.RunQuiet("journalctl -u xmanager-web -n 40 --no-pager 2>/dev/null || true")
+			}
+			return fmt.Errorf("starting xmanager-web: %v (ssh fallback: %w)\n%s", err, err2, logs)
+		}
+	}
+	// Confirm listener actually binds (is-active alone is not enough after a panic).
+	_ = w.reconnect()
+	listenCheck := fmt.Sprintf(`for i in 1 2 3 4 5; do ss -ltn 2>/dev/null | grep -q ':%s ' && exit 0; sleep 1; done; journalctl -u xmanager-web -n 40 --no-pager; exit 1`, port)
+	if err := w.run(listenCheck); err != nil {
+		if err2 := w.runSystemSSH(listenCheck); err2 != nil {
+			return fmt.Errorf("xmanager-web not listening on :%s: %v (ssh fallback: %w)", port, err, err2)
 		}
 	}
 

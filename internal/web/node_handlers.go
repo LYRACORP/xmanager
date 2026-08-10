@@ -53,9 +53,11 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /projects", h.requireAuth(h.getNodeProjects))
 	mux.HandleFunc("GET /projects/new", h.requireAuth(h.getNodeProjectsNew))
 	mux.HandleFunc("POST /projects", h.requireAuth(h.postNodeProjects))
-	mux.HandleFunc("GET /projects/templates", h.requireAuth(h.getNodeProjectTemplates))
-	mux.HandleFunc("GET /projects/templates/{id}", h.requireAuth(h.getNodeProjectTemplate))
-	mux.HandleFunc("POST /projects/templates/{id}", h.requireAuth(h.postNodeProjectTemplate))
+	// Catalog is outside /projects/{id}/… — ServeMux rejects overlapping wildcards
+	// (e.g. /projects/oneclick/{id} vs /projects/{id}/deploy).
+	mux.HandleFunc("GET /oneclick", h.requireAuth(h.getNodeProjectTemplates))
+	mux.HandleFunc("GET /oneclick/{id}", h.requireAuth(h.getNodeProjectTemplate))
+	mux.HandleFunc("POST /oneclick/{id}", h.requireAuth(h.postNodeProjectTemplate))
 	mux.HandleFunc("GET /projects/{id}", h.requireAuth(h.getNodeProjectDetail))
 	mux.HandleFunc("POST /projects/{id}/deploy", h.requireAuth(h.postNodeProjectDeploy))
 	mux.HandleFunc("POST /projects/{id}/stop", h.requireAuth(h.postNodeProjectStop))
