@@ -539,7 +539,11 @@ func apiGet(ctx context.Context, rawURL, token, provider string, dest interface{
 	req.Header.Set("User-Agent", "xmanager-gitforge/1.0")
 	switch NormalizeProvider(provider) {
 	case ProviderBitbucket:
-		req.Header.Set("Authorization", "Bearer "+token)
+		if i := strings.IndexByte(token, ':'); i > 0 {
+			req.SetBasicAuth(token[:i], token[i+1:])
+		} else {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	default:
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

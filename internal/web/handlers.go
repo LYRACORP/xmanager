@@ -117,6 +117,11 @@ type pageData struct {
 	DeviceVerifyURL string
 	DeviceProvider  string
 	DeviceInterval  int
+	// Token bootstrap (no OAuth client configured)
+	BootstrapProvider string
+	BootstrapTokenURL string
+	BootstrapHint     string
+	BootstrapNext     string
 }
 
 func (h *handler) register(mux *http.ServeMux) {

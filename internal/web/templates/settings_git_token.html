@@ -1,0 +1,45 @@
+{{define "settings_git_token"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-lg space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight">Connect {{.BootstrapProvider}}</h1>
+    <p class="text-panel-muted text-sm mt-1">{{.BootstrapHint}}</p>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <div class="xm-card p-6 space-y-4">
+    <a href="{{.BootstrapTokenURL}}" target="_blank" rel="noopener" id="git-open-forge"
+       class="xm-btn xm-btn-primary w-full text-center justify-center">
+      1. Open {{.BootstrapProvider}} in browser
+    </a>
+    <p class="text-xs text-panel-muted text-center">Create the token, copy it, then paste here.</p>
+
+    <form method="post" action="/oauth/git/{{.BootstrapProvider}}/token" class="space-y-3">
+      <input type="hidden" name="next" value="{{.BootstrapNext}}">
+      {{if eq .BootstrapProvider "bitbucket"}}
+      <div>
+        <label class="block text-sm font-semibold mb-1">Bitbucket username</label>
+        <input name="username" required placeholder="your-username" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+      </div>
+      {{end}}
+      <div>
+        <label class="block text-sm font-semibold mb-1">Access token</label>
+        <input name="token" type="password" required autocomplete="off" placeholder="paste token" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+      </div>
+      <button type="submit" class="xm-btn xm-btn-primary w-full">2. Connect</button>
+    </form>
+  </div>
+
+  <a href="{{.BootstrapNext}}" class="text-xs text-panel-muted hover:text-gray-300">← Cancel</a>
+</div>
+<script>
+  (function () {
+    var a = document.getElementById('git-open-forge');
+    if (a && a.href) {
+      try { window.open(a.href, '_blank', 'noopener'); } catch (e) {}
+    }
+  })();
+</script>
+{{template "foot" .}}
+{{end}}

@@ -410,26 +410,18 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if provider == gitforge.ProviderGitea {
-		if err := h.ensureGiteaOAuthApp(r); err != nil {
-			h.oauthFailRedirect(w, r, "gitea: "+err.Error())
-			return
-		}
+		// Best-effort local OAuth app; if it fails we still offer token bootstrap.
+		_ = h.ensureGiteaOAuthApp(r)
 	}
-	app, err := h.requireAppCredentials(provider)
-	if err != nil {
-		h.oauthFailRedirect(w, r, err.Error())
-		return
-	}
+	app, _ := h.appCredentials(provider)
 	mode := h.connectMode(provider, app)
 	switch mode {
+	case "need_client", "need_https":
+		// No OAuth app (or Bitbucket on HTTP): open forge in browser + paste token.
+		h.renderTokenBootstrap(w, r, sess, provider, app.Endpoint, next)
+		return
 	case "device":
 		h.startDeviceConnect(w, r, sess, provider, app, next)
-		return
-	case "need_https":
-		h.oauthFailRedirect(w, r, provider+" needs an HTTPS Public panel URL (Settings → Advanced)")
-		return
-	case "need_client":
-		h.oauthFailRedirect(w, r, "Set OAuth client: env XMANAGER_"+strings.ToUpper(provider)+"_OAUTH_CLIENT_ID or Settings → Advanced")
 		return
 	}
 
@@ -444,6 +436,73 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
+}
+
+func (h *handler) renderTokenBootstrap(w http.ResponseWriter, r *http.Request, sess *session, provider, endpoint, next string) {
+	data := h.basePage(sess, "Connect "+provider)
+	data.ActiveNav = "projects"
+	data.BootstrapProvider = provider
+	data.BootstrapTokenURL = gitforge.TokenCreateURL(provider, endpoint)
+	data.BootstrapHint = gitforge.TokenHint(provider)
+	data.BootstrapNext = next
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
+	h.render(w, "settings_git_token", data)
+}
+
+func (h *handler) postOAuthGitToken(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	provider := gitforge.NormalizeProvider(r.PathValue("provider"))
+	next := safeNextPath(r.FormValue("next"), "/projects/new?type=git&provider="+provider)
+	token := strings.TrimSpace(r.FormValue("token"))
+	username := strings.TrimSpace(r.FormValue("username"))
+	if provider == "" || token == "" {
+		http.Redirect(w, r, appendFlash("/oauth/git/"+provider+"/connect?next="+url.QueryEscape(next), "token required"), http.StatusSeeOther)
+		return
+	}
+	// Bitbucket app passwords often need username:token basic auth; store as token, username separate.
+	access := token
+	if provider == gitforge.ProviderBitbucket && username != "" && !strings.Contains(token, ":") {
+		access = username + ":" + token
+	}
+	app, _ := h.appCredentials(provider)
+	endpoint := app.Endpoint
+	if provider == gitforge.ProviderGitea && endpoint == "" {
+		endpoint = h.defaultGiteaEndpoint()
+	}
+	acct, err := gitforge.FetchAccount(r.Context(), provider, endpoint, access)
+	if err != nil {
+		// Bitbucket bearer may fail for app passwords — try as-is message
+		http.Redirect(w, r, "/oauth/git/"+provider+"/connect?next="+url.QueryEscape(next)+"&flash="+urlQueryEscape("invalid token: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	enc, err := config.Encrypt(access)
+	if err != nil {
+		http.Redirect(w, r, appendFlash(next, err.Error()), http.StatusSeeOther)
+		return
+	}
+	cred := storage.GitCredential{
+		Provider:       provider,
+		Username:       acct.Login,
+		AccountLogin:   acct.Login,
+		TokenEncrypted: enc,
+		Endpoint:       endpoint,
+		Scopes:         "token",
+	}
+	if username != "" && cred.Username == "" {
+		cred.Username = username
+		cred.AccountLogin = username
+	}
+	var existing storage.GitCredential
+	if err := h.opts.DB.Where("provider = ?", provider).Order("id desc").First(&existing).Error; err == nil {
+		cred.ID = existing.ID
+		cred.CreatedAt = existing.CreatedAt
+		_ = h.opts.DB.Save(&cred).Error
+	} else {
+		_ = h.opts.DB.Create(&cred).Error
+	}
+	http.Redirect(w, r, appendFlash(next, "Connected "+provider+" as "+cred.AccountLogin), http.StatusSeeOther)
 }
 
 func (h *handler) startDeviceConnect(w http.ResponseWriter, r *http.Request, sess *session, provider string, app gitforge.AppCredentials, next string) {
