@@ -105,34 +105,44 @@
         </select>
       </div>
 
-      <div id="git-connect-panel" class="xm-card p-4 {{if not .SelectedProvider}}hidden{{end}}">
-        <div id="git-connect-need" class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p class="text-sm font-medium text-gray-100">Connect <span id="git-connect-label">provider</span> with OAuth</p>
-            <p class="text-xs text-panel-muted mt-0.5">Authorize in your browser, then pick a repository here.</p>
-          </div>
-          <a id="git-connect-btn" href="#" class="xm-btn xm-btn-primary text-sm shrink-0">Connect</a>
-        </div>
-        <div id="git-connect-ok" class="hidden text-sm text-emerald-400">
-          Connected as <span id="git-connect-login"></span>
-        </div>
+      <!-- Connect CTA — shown when not yet connected -->
+      <div id="git-connect-panel" class="xm-card p-8 text-center space-y-4 {{if not .SelectedProvider}}hidden{{end}}">
+        <p class="text-base font-semibold text-gray-100">Connect <span id="git-connect-label">provider</span></p>
+        <p class="text-sm text-panel-muted max-w-sm mx-auto">Authorize in your browser, then pick a repository.</p>
+        <button id="git-connect-btn" type="button" onclick="xmStartDeviceConnect()"
+          class="xm-btn xm-btn-primary inline-flex text-sm">Connect</button>
       </div>
 
+      <!-- Inline device flow — shown while waiting for approval -->
+      <div id="git-device-panel" class="xm-card p-6 text-center space-y-4 hidden">
+        <p class="text-xs text-panel-muted uppercase tracking-wide">Enter this code at <span id="git-device-host" class="font-semibold text-gray-300">github.com/login/device</span></p>
+        <p id="git-device-code" class="text-3xl font-mono font-bold tracking-widest text-emerald-300"></p>
+        <p class="text-sm text-panel-muted">GitHub was opened in a new tab. Approve, then come back here.</p>
+        <p id="git-device-status" class="text-sm text-panel-muted">Waiting for approval…</p>
+        <button type="button" onclick="xmCancelDevice()"
+          class="text-xs text-panel-muted hover:text-gray-300 underline">Cancel</button>
+      </div>
+
+      <!-- Repo list — shown when connected -->
       <div id="git-repos-wrap" class="space-y-3 {{if not .SelectedProvider}}hidden{{end}}">
-        <div>
-          <label class="block text-sm font-semibold mb-2">Search repos</label>
-          <input name="q" id="git-repo-q" placeholder="Filter…"
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm"
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 min-w-0 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-4 h-4 text-zinc-400 shrink-0">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            <span class="text-sm font-semibold text-gray-100 truncate" id="git-account-name"></span>
+          </div>
+          <input name="q" id="git-repo-q" placeholder="Search…"
+            class="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm"
             hx-get="/api/git/repos"
             hx-trigger="keyup changed delay:300ms"
             hx-target="#git-repo-list"
             hx-include="#git-provider">
+          <button type="button" id="git-reconnect-btn" onclick="xmStartDeviceConnect()"
+            class="text-xs text-panel-muted hover:text-gray-300 underline shrink-0">Reconnect</button>
         </div>
-        <div>
-          <label class="block text-sm font-semibold mb-2">Repository</label>
-          <div id="git-repo-list" class="xm-card p-2 min-h-[4rem]">
-            <p class="text-sm text-panel-muted p-2">Connect a provider to load repos.</p>
-          </div>
+        <div id="git-repo-list" class="xm-card p-1 min-h-[4rem]">
+          <p class="text-sm text-panel-muted p-4 text-center">Loading repos…</p>
         </div>
       </div>
       {{end}}
@@ -147,57 +157,135 @@
         <p class="text-xs text-panel-muted mt-1">Or type the clone URL above without picking from the list.</p>
       </details>
       <script>
+        var _xmDeviceTimer = null;
+
         function xmGitProviderChanged() {
           var sel = document.getElementById('git-provider');
-          var opt = sel.options[sel.selectedIndex];
-          var panel = document.getElementById('git-connect-panel');
-          var need = document.getElementById('git-connect-need');
-          var ok = document.getElementById('git-connect-ok');
-          var wrap = document.getElementById('git-repos-wrap');
-          var btn = document.getElementById('git-connect-btn');
-          if (!sel.value) {
-            panel.classList.add('hidden');
-            wrap.classList.add('hidden');
+          var opt = sel ? sel.options[sel.selectedIndex] : null;
+          var connectPanel = document.getElementById('git-connect-panel');
+          var devicePanel  = document.getElementById('git-device-panel');
+          var reposWrap    = document.getElementById('git-repos-wrap');
+          var account      = document.getElementById('git-account-name');
+          var connectLabel = document.getElementById('git-connect-label');
+          xmCancelDevice();
+          if (!sel || !sel.value) {
+            connectPanel.classList.add('hidden');
+            reposWrap.classList.add('hidden');
             return;
           }
-          panel.classList.remove('hidden');
           var connected = opt.getAttribute('data-connected') === '1';
-          var label = opt.getAttribute('data-label') || sel.value;
-          var login = opt.getAttribute('data-login') || '';
-          document.getElementById('git-connect-label').textContent = label;
-          var next = '/projects/new?type=git&provider=' + encodeURIComponent(sel.value);
-          btn.href = '/oauth/git/' + encodeURIComponent(sel.value) + '/connect?next=' + encodeURIComponent(next);
-          btn.textContent = connected ? ('Reconnect ' + label) : ('Connect ' + label);
+          var label  = opt.getAttribute('data-label') || sel.value;
+          var login  = opt.getAttribute('data-login') || '';
+          if (connectLabel) connectLabel.textContent = label;
           if (connected) {
-            need.classList.add('hidden');
-            ok.classList.remove('hidden');
-            document.getElementById('git-connect-login').textContent = login || label;
-            wrap.classList.remove('hidden');
+            connectPanel.classList.add('hidden');
+            devicePanel.classList.add('hidden');
+            if (account) account.textContent = login || label;
+            reposWrap.classList.remove('hidden');
             if (window.htmx) {
               htmx.ajax('GET', '/api/git/repos?provider=' + encodeURIComponent(sel.value), {target: '#git-repo-list', swap: 'innerHTML'});
             }
           } else {
-            need.classList.remove('hidden');
-            ok.classList.add('hidden');
-            wrap.classList.add('hidden');
-            document.getElementById('git-repo-list').innerHTML = '<p class="text-sm text-panel-muted p-2">Connect to load repos.</p>';
+            connectPanel.classList.remove('hidden');
+            devicePanel.classList.add('hidden');
+            reposWrap.classList.add('hidden');
           }
         }
+
+        function xmStartDeviceConnect() {
+          var sel = document.getElementById('git-provider');
+          if (!sel || !sel.value) return;
+          var provider = sel.value;
+
+          // Open a blank tab NOW (during user gesture) so popup blockers won't block it.
+          var tab = window.open('about:blank', '_blank');
+
+          var next = '/projects/new?type=git&provider=' + encodeURIComponent(provider);
+          fetch('/api/git/device/start?provider=' + encodeURIComponent(provider) + '&next=' + encodeURIComponent(next))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data.error) {
+                if (tab) tab.close();
+                alert('Could not start OAuth: ' + data.error);
+                return;
+              }
+              // Navigate the blank tab to GitHub's verification URL.
+              if (tab) tab.location.href = data.verify_url;
+
+              // Show inline device panel.
+              document.getElementById('git-connect-panel').classList.add('hidden');
+              document.getElementById('git-repos-wrap').classList.add('hidden');
+              var dp = document.getElementById('git-device-panel');
+              dp.classList.remove('hidden');
+              var codeEl = document.getElementById('git-device-code');
+              if (codeEl) codeEl.textContent = data.user_code;
+              var hostEl = document.getElementById('git-device-host');
+              if (hostEl && data.verify_url) {
+                try { hostEl.textContent = new URL(data.verify_url).host; } catch(e) {}
+              }
+              document.getElementById('git-device-status').textContent = 'Waiting for approval…';
+
+              // Start polling.
+              var interval = (data.interval || 5) * 1000;
+              if (_xmDeviceTimer) clearInterval(_xmDeviceTimer);
+              _xmDeviceTimer = setInterval(function() {
+                xmPollDevice(data.id, provider, interval);
+              }, interval);
+            })
+            .catch(function(e) {
+              if (tab) tab.close();
+              alert('Network error: ' + e);
+            });
+        }
+
+        function xmPollDevice(id, provider, interval) {
+          fetch('/settings/git/' + encodeURIComponent(provider) + '/device/poll?id=' + encodeURIComponent(id), {
+            headers: {'HX-Request': 'true'}
+          })
+            .then(function(r) {
+              var redirect = r.headers.get('HX-Redirect');
+              if (redirect) {
+                // Approved — stop polling, reload the page as the server requested.
+                clearInterval(_xmDeviceTimer);
+                _xmDeviceTimer = null;
+                window.location.href = redirect;
+                return;
+              }
+              return r.text().then(function(html) {
+                var status = document.getElementById('git-device-status');
+                if (status) status.innerHTML = html;
+              });
+            })
+            .catch(function() {});
+        }
+
+        function xmCancelDevice() {
+          if (_xmDeviceTimer) { clearInterval(_xmDeviceTimer); _xmDeviceTimer = null; }
+          var dp = document.getElementById('git-device-panel');
+          if (dp) dp.classList.add('hidden');
+        }
+
         function xmPickRepo(el) {
-          var url = el.getAttribute('data-clone') || '';
-          var name = el.getAttribute('data-name') || '';
+          var url    = el.getAttribute('data-clone')  || '';
+          var name   = el.getAttribute('data-name')   || '';
           var branch = el.getAttribute('data-branch') || 'main';
-          var urlEl = document.getElementById('git-repo-url');
+          var urlEl    = document.getElementById('git-repo-url');
           var branchEl = document.getElementById('git-branch');
-          var nameEl = document.querySelector('input[name="name"]');
-          if (urlEl) urlEl.value = url;
+          var nameEl   = document.querySelector('input[name="name"]');
+          if (urlEl)    urlEl.value    = url;
           if (branchEl) branchEl.value = branch;
           if (nameEl && !nameEl.value) nameEl.value = name;
-          document.querySelectorAll('#git-repo-list button').forEach(function(b) {
-            b.classList.remove('border-emerald-600');
+          document.querySelectorAll('#git-repo-list > div > div').forEach(function(row) {
+            row.classList.remove('ring-1', 'ring-emerald-600', 'bg-emerald-950/20');
           });
-          el.classList.add('border-emerald-600');
+          var row = el.closest('div.flex');
+          if (row) row.classList.add('ring-1', 'ring-emerald-600', 'bg-emerald-950/20');
+          el.textContent = 'Selected';
+          document.querySelectorAll('#git-repo-list button').forEach(function(b) {
+            if (b !== el) b.textContent = 'Import';
+          });
         }
+
         document.addEventListener('DOMContentLoaded', function() { xmGitProviderChanged(); });
       </script>
       {{end}}

@@ -26,6 +26,28 @@ type Repo struct {
 	CloneURL      string
 	Private       bool
 	DefaultBranch string
+	UpdatedAt     string // human-readable, e.g. "Jan 2, 2006"
+}
+
+// formatRepoTime parses common forge timestamps into a short display string.
+func formatRepoTime(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	layouts := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05.000-0700",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.Format("Jan 2, 2006")
+		}
+	}
+	return ""
 }
 
 // TokenSet is an OAuth token response.
@@ -431,15 +453,22 @@ func listGitHub(ctx context.Context, token string) ([]Repo, error) {
 		CloneURL      string `json:"clone_url"`
 		Private       bool   `json:"private"`
 		DefaultBranch string `json:"default_branch"`
+		PushedAt      string `json:"pushed_at"`
+		UpdatedAt     string `json:"updated_at"`
 	}
 	if err := apiGet(ctx, "https://api.github.com/user/repos?per_page=100&sort=updated", token, ProviderGitHub, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]Repo, 0, len(raw))
 	for _, r := range raw {
+		ts := r.PushedAt
+		if ts == "" {
+			ts = r.UpdatedAt
+		}
 		out = append(out, Repo{
 			Name: r.Name, FullName: r.FullName, CloneURL: r.CloneURL,
 			Private: r.Private, DefaultBranch: r.DefaultBranch,
+			UpdatedAt: formatRepoTime(ts),
 		})
 	}
 	return out, nil
@@ -452,6 +481,7 @@ func listGitLab(ctx context.Context, endpoint, token string) ([]Repo, error) {
 		HTTPURLToRepo     string `json:"http_url_to_repo"`
 		Visibility        string `json:"visibility"`
 		DefaultBranch     string `json:"default_branch"`
+		LastActivityAt    string `json:"last_activity_at"`
 	}
 	urlStr := apiBase(ProviderGitLab, endpoint) + "/projects?membership=true&simple=true&per_page=100&order_by=last_activity_at"
 	if err := apiGet(ctx, urlStr, token, ProviderGitLab, &raw); err != nil {
@@ -462,6 +492,7 @@ func listGitLab(ctx context.Context, endpoint, token string) ([]Repo, error) {
 		out = append(out, Repo{
 			Name: r.Name, FullName: r.PathWithNamespace, CloneURL: r.HTTPURLToRepo,
 			Private: r.Visibility != "public", DefaultBranch: r.DefaultBranch,
+			UpdatedAt: formatRepoTime(r.LastActivityAt),
 		})
 	}
 	return out, nil
@@ -470,9 +501,10 @@ func listGitLab(ctx context.Context, endpoint, token string) ([]Repo, error) {
 func listBitbucket(ctx context.Context, token string) ([]Repo, error) {
 	var page struct {
 		Values []struct {
-			Name     string `json:"name"`
-			FullName string `json:"full_name"`
-			IsPrivate bool  `json:"is_private"`
+			Name       string `json:"name"`
+			FullName   string `json:"full_name"`
+			IsPrivate  bool   `json:"is_private"`
+			UpdatedOn  string `json:"updated_on"`
 			MainBranch *struct {
 				Name string `json:"name"`
 			} `json:"mainbranch"`
@@ -503,6 +535,7 @@ func listBitbucket(ctx context.Context, token string) ([]Repo, error) {
 		out = append(out, Repo{
 			Name: r.Name, FullName: r.FullName, CloneURL: clone,
 			Private: r.IsPrivate, DefaultBranch: branch,
+			UpdatedAt: formatRepoTime(r.UpdatedOn),
 		})
 	}
 	return out, nil
@@ -515,6 +548,7 @@ func listGitea(ctx context.Context, endpoint, token string) ([]Repo, error) {
 		CloneURL      string `json:"clone_url"`
 		Private       bool   `json:"private"`
 		DefaultBranch string `json:"default_branch"`
+		Updated       string `json:"updated_at"`
 	}
 	urlStr := apiBase(ProviderGitea, endpoint) + "/user/repos?limit=100"
 	if err := apiGet(ctx, urlStr, token, ProviderGitea, &raw); err != nil {
@@ -525,6 +559,7 @@ func listGitea(ctx context.Context, endpoint, token string) ([]Repo, error) {
 		out = append(out, Repo{
 			Name: r.Name, FullName: r.FullName, CloneURL: r.CloneURL,
 			Private: r.Private, DefaultBranch: r.DefaultBranch,
+			UpdatedAt: formatRepoTime(r.Updated),
 		})
 	}
 	return out, nil

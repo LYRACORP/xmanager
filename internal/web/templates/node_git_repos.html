@@ -1,23 +1,42 @@
 {{define "node_git_repos"}}
-{{if .GitRepos}}
 <input type="hidden" name="cred_id" value="{{.GitCredID}}" form="git-create-form">
-<div class="space-y-1 max-h-72 overflow-y-auto">
+{{if .GitRepos}}
+<div class="divide-y divide-zinc-800 max-h-80 overflow-y-auto">
   {{range .GitRepos}}
-  <button type="button"
-    class="w-full text-left px-3 py-2 rounded-lg border border-zinc-800 hover:border-emerald-800/50 hover:bg-zinc-900/80 transition-colors"
-    data-clone="{{.CloneURL}}"
-    data-name="{{.Name}}"
-    data-branch="{{.DefaultBranch}}"
-    onclick="xmPickRepo(this)">
-    <div class="flex items-center justify-between gap-2">
-      <span class="text-sm font-medium text-gray-100">{{.FullName}}</span>
-      {{if .Private}}<span class="text-[10px] text-zinc-500">private</span>{{end}}
+  <div class="flex items-center justify-between gap-3 py-3 px-2 hover:bg-zinc-900/60 transition-colors">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 text-zinc-500">
+        {{if .Private}}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
+          <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/>
+        </svg>
+        {{else}}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
+          <path fill-rule="evenodd" d="M6 3.75A2.75 2.75 0 018.75 1h2.5A2.75 2.75 0 0114 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.83 2.54-1.952.599-4.024.921-6.17.921s-4.219-.322-6.17-.921C2.694 12.73 2 11.665 2 10.539V7.07c0-1.321.947-2.489 2.294-2.676A41.047 41.047 0 016 4.193V3.75zm6.5 0v.325a41.622 41.622 0 00-5 0V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25zM10 10a1 1 0 00-1 1v.01a1 1 0 001 1h.01a1 1 0 001-1V11a1 1 0 00-1-1H10z" clip-rule="evenodd"/>
+        </svg>
+        {{end}}
+      </div>
+      <div class="min-w-0">
+        <p class="text-sm font-semibold text-gray-100 truncate">
+          {{.FullName}}{{if .Private}} <span class="text-zinc-500 font-normal">·</span>{{end}}
+          {{if .UpdatedAt}}<span class="text-zinc-500 font-normal text-xs">{{.UpdatedAt}}</span>{{end}}
+        </p>
+      </div>
     </div>
-    <div class="text-[10px] font-mono text-zinc-600 truncate">{{.CloneURL}}</div>
-  </button>
+    <button type="button"
+      class="xm-btn xm-btn-primary shrink-0 text-xs px-4 py-1.5"
+      data-clone="{{.CloneURL}}"
+      data-name="{{.Name}}"
+      data-branch="{{.DefaultBranch}}"
+      onclick="xmPickRepo(this)">
+      Import
+    </button>
+  </div>
   {{end}}
 </div>
 {{else}}
-<div class="text-sm text-panel-muted p-3">No repositories found{{if .TemplateQuery}} for “{{.TemplateQuery}}”{{end}}.</div>
+<p class="text-sm text-panel-muted py-6 text-center">
+  No repositories found{{if .TemplateQuery}} for “{{.TemplateQuery}}”{{end}}.
+</p>
 {{end}}
 {{end}}

@@ -723,6 +723,64 @@ func (h *handler) getAPIGitRepos(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "node_git_repos", data)
 }
 
+// getAPIGitDeviceStart starts an OAuth device flow and returns JSON so the
+// browser can open the verification URL in a new tab without a popup blocker.
+// GET /api/git/device/start?provider=github
+func (h *handler) getAPIGitDeviceStart(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	provider := gitforge.NormalizeProvider(r.URL.Query().Get("provider"))
+	next := safeNextPath(r.URL.Query().Get("next"), "/projects/new?type=git&provider="+provider)
+	if provider == "" {
+		http.Error(w, `{"error":"provider required"}`, http.StatusBadRequest)
+		return
+	}
+	if !gitforge.SupportsDeviceFlow(provider) {
+		http.Error(w, `{"error":"device flow not supported"}`, http.StatusBadRequest)
+		return
+	}
+	app, err := h.appCredentials(provider)
+	if err != nil || app.ClientID == "" {
+		http.Error(w, `{"error":"no OAuth client configured"}`, http.StatusBadRequest)
+		return
+	}
+	dc, err := gitforge.RequestDeviceCode(r.Context(), provider, app)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	id := randomToken()
+	if h.deviceStates == nil {
+		h.deviceStates = newDeviceStateStore()
+	}
+	exp := time.Now().Add(time.Duration(dc.ExpiresIn) * time.Second)
+	if dc.ExpiresIn <= 0 {
+		exp = time.Now().Add(15 * time.Minute)
+	}
+	interval := dc.Interval
+	if interval <= 0 {
+		interval = 5
+	}
+	h.deviceStates.put(id, devicePending{
+		Provider:   provider,
+		DeviceCode: dc.DeviceCode,
+		Interval:   interval,
+		UserID:     sess.UserID,
+		App:        app,
+		Created:    time.Now(),
+		Expires:    exp,
+		Next:       next,
+	})
+	verifyURL := dc.VerificationURIComplete
+	if verifyURL == "" {
+		verifyURL = dc.VerificationURI
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"id":%q,"user_code":%q,"verify_url":%q,"interval":%d}`,
+		id, dc.UserCode, verifyURL, interval)
+}
+
 func htmlEscape(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 	return r.Replace(s)
