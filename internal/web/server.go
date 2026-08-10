@@ -62,7 +62,8 @@ func Run(opts Options) error {
 		sess:        newSessionStore(),
 		staticFS:    staticFS,
 		nodeMode:    opts.Config.Web.IsNode(),
-		oauthStates: newOAuthStateStore(),
+		oauthStates:  newOAuthStateStore(),
+		deviceStates: newDeviceStateStore(),
 	}
 
 	if h.nodeMode {

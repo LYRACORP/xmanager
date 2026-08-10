@@ -33,7 +33,8 @@ type handler struct {
 	node        *nodemetrics.Collector
 	exec        *ssh.Executor
 	localSrvID  uint
-	oauthStates *oauthStateStore
+	oauthStates  *oauthStateStore
+	deviceStates *deviceStateStore
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -109,6 +110,12 @@ type pageData struct {
 	GitProvider  string
 	GitCredID    uint
 	PublicURL    string
+	// Device flow UI
+	DeviceID        string
+	DeviceUserCode  string
+	DeviceVerifyURL string
+	DeviceProvider  string
+	DeviceInterval  int
 }
 
 func (h *handler) register(mux *http.ServeMux) {

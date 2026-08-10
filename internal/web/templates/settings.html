@@ -34,56 +34,66 @@
     {{if .NodeMode}}
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Git providers (OAuth)</h2>
-        <p class="text-xs text-panel-muted mt-1">Create an OAuth App on each forge. Callback URL: <span class="font-mono text-gray-400">{{if .PublicURL}}{{.PublicURL}}{{else}}&lt;public-url&gt;{{end}}/oauth/git/&lt;provider&gt;/callback</span>. Cloud forges need HTTPS.</p>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Git providers</h2>
+        <p class="text-xs text-panel-muted mt-1">Connect in the browser. GitHub/GitLab use a device code on HTTP panels; Bitbucket needs HTTPS public URL. Set <span class="font-mono">XMANAGER_GITHUB_OAUTH_CLIENT_ID</span> (and siblings) or use Advanced.</p>
       </div>
-      <form method="post" action="/settings/git" class="space-y-4">
-        <div>
-          <label class="block text-sm font-semibold mb-1">Public panel URL</label>
-          <input name="public_url" value="{{.PublicURL}}" placeholder="https://panel.example.com" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
-        </div>
+
+      <div class="space-y-3">
         {{range .GitProviders}}
-        <div class="border border-zinc-800 rounded-xl p-4 space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <h3 class="font-semibold text-sm">{{.Label}}</h3>
+        <div class="border border-zinc-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div class="font-semibold text-sm">{{.Label}}</div>
             {{if .Connected}}
-            <span class="text-xs text-emerald-400">connected as {{.AccountLogin}}</span>
-            {{else if .ClientID}}
-            <span class="text-xs text-amber-400">app configured — not connected</span>
+            <div class="text-xs text-emerald-400 mt-0.5">Connected as {{.AccountLogin}}</div>
+            {{else if eq .ConnectMode "need_client"}}
+            <div class="text-xs text-amber-400 mt-0.5">Needs OAuth client ID (env or Advanced)</div>
+            {{else if eq .ConnectMode "need_https"}}
+            <div class="text-xs text-amber-400 mt-0.5">Needs HTTPS Public panel URL</div>
+            {{else if eq .ConnectMode "device"}}
+            <div class="text-xs text-panel-muted mt-0.5">Opens forge device login in your browser</div>
             {{else}}
-            <span class="text-xs text-zinc-500">not configured</span>
+            <div class="text-xs text-panel-muted mt-0.5">Redirects to forge login</div>
             {{end}}
           </div>
-          <div class="grid md:grid-cols-2 gap-2">
-            <input name="{{.Provider}}_client_id" value="{{.ClientID}}" placeholder="Client ID" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
-            <input name="{{.Provider}}_client_secret" type="password" placeholder="{{if .HasSecret}}•••••••• (unchanged){{else}}Client secret{{end}}" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
-            {{if or (eq .Provider "gitea") (eq .Provider "gitlab")}}
-            <input name="{{.Provider}}_endpoint" value="{{.Endpoint}}" placeholder="Base URL (e.g. http://127.0.0.1:3000)" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+          <div class="flex flex-wrap gap-2">
+            <a href="/oauth/git/{{.Provider}}/connect" class="xm-btn xm-btn-primary text-xs">{{if .Connected}}Reconnect{{else}}Connect{{end}}</a>
+            {{if .Connected}}
+            <form method="post" action="/settings/git/{{.Provider}}/disconnect" class="inline">
+              <button type="submit" class="xm-btn xm-btn-ghost text-xs">Disconnect</button>
+            </form>
             {{end}}
           </div>
         </div>
         {{end}}
-        <button type="submit" class="xm-btn xm-btn-primary">Save git settings</button>
-      </form>
-      <div class="space-y-2 pt-2 border-t border-zinc-800">
-        <p class="text-xs text-panel-muted">Connect after saving Client ID + secret:</p>
-        <div class="flex flex-wrap gap-2">
-          {{range .GitProviders}}
-          {{if .ClientID}}
-          <a href="/oauth/git/{{.Provider}}/connect" class="xm-btn xm-btn-primary text-xs">{{if .Connected}}Reconnect {{.Label}}{{else}}Connect {{.Label}}{{end}}</a>
-          {{end}}
-          {{if .Connected}}
-          <form method="post" action="/settings/git/{{.Provider}}/disconnect" class="inline">
-            <button type="submit" class="xm-btn xm-btn-ghost text-xs">Disconnect {{.Label}}</button>
-          </form>
-          {{end}}
-          {{end}}
-        </div>
       </div>
+
+      <details class="pt-2 border-t border-zinc-800">
+        <summary class="text-xs text-panel-muted cursor-pointer py-2">Advanced: custom OAuth apps &amp; public URL</summary>
+        <form method="post" action="/settings/git" class="space-y-4 pt-2">
+          <div>
+            <label class="block text-sm font-semibold mb-1">Public panel URL</label>
+            <input name="public_url" value="{{.PublicURL}}" placeholder="https://panel.example.com" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
+            <p class="text-[10px] text-panel-muted mt-1">Required for Bitbucket / classic redirect. Callback: <span class="font-mono">…/oauth/git/&lt;provider&gt;/callback</span></p>
+          </div>
+          {{range .GitProviders}}
+          <div class="border border-zinc-800 rounded-xl p-3 space-y-2">
+            <h3 class="text-xs font-semibold text-gray-400">{{.Label}}</h3>
+            <div class="grid md:grid-cols-2 gap-2">
+              <input name="{{.Provider}}_client_id" value="{{.ClientID}}" placeholder="Client ID" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+              <input name="{{.Provider}}_client_secret" type="password" placeholder="{{if .HasSecret}}•••••••• (unchanged){{else}}Client secret{{end}}" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+              {{if or (eq .Provider "gitea") (eq .Provider "gitlab")}}
+              <input name="{{.Provider}}_endpoint" value="{{.Endpoint}}" placeholder="Base URL" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+          <button type="submit" class="xm-btn xm-btn-primary text-xs">Save advanced</button>
+        </form>
+      </details>
     </div>
     {{end}}
 
-    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+    <div class="bg-gray-900 rounded-xl border border-zinc-800 p-5">
       <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Poller</h2>
       <dl class="space-y-2 text-sm">
         {{with .Config}}

@@ -88,6 +88,9 @@ func baseEndpoint(provider string, endpoint string) string {
 	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
 	switch NormalizeProvider(provider) {
 	case ProviderGitHub:
+		if endpoint != "" {
+			return endpoint // GitHub Enterprise or test server
+		}
 		return "https://github.com"
 	case ProviderGitLab:
 		if endpoint != "" {
@@ -109,6 +112,10 @@ func baseEndpoint(provider string, endpoint string) string {
 func apiBase(provider string, endpoint string) string {
 	switch NormalizeProvider(provider) {
 	case ProviderGitHub:
+		if endpoint != "" && !strings.Contains(endpoint, "github.com") {
+			// GHE often uses https://ghe.example.com/api/v3
+			return strings.TrimRight(endpoint, "/") + "/api/v3"
+		}
 		return "https://api.github.com"
 	case ProviderGitLab:
 		return baseEndpoint(provider, endpoint) + "/api/v4"

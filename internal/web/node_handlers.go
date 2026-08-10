@@ -100,6 +100,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/git", h.requireAuth(h.postSettingsGit))
 	mux.HandleFunc("GET /oauth/git/{provider}/connect", h.requireAuth(h.getOAuthGitConnect))
 	mux.HandleFunc("GET /oauth/git/{provider}/callback", h.requireAuth(h.getOAuthGitCallback))
+	mux.HandleFunc("GET /settings/git/{provider}/device/poll", h.requireAuth(h.getDevicePoll))
 	mux.HandleFunc("POST /settings/git/{provider}/disconnect", h.requireAuth(h.postOAuthGitDisconnect))
 	mux.HandleFunc("GET /api/git/repos", h.requireAuth(h.getAPIGitRepos))
 	mux.HandleFunc("POST /webhook/{project_id}", h.postNodeWebhook)

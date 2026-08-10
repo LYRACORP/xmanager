@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -70,6 +71,46 @@ type gitProviderView struct {
 	Connected    bool
 	AccountLogin string
 	CredID       uint
+	CanConnect   bool
+	ConnectMode  string // device | redirect | need_https | need_client
+}
+
+type devicePending struct {
+	Provider   string
+	DeviceCode string
+	Interval   int
+	UserID     uint
+	App        gitforge.AppCredentials
+	Created    time.Time
+	Expires    time.Time
+}
+
+type deviceStateStore struct {
+	mu   sync.Mutex
+	data map[string]devicePending
+}
+
+func newDeviceStateStore() *deviceStateStore {
+	return &deviceStateStore{data: make(map[string]devicePending)}
+}
+
+func (s *deviceStateStore) put(id string, p devicePending) {
+	s.mu.Lock()
+	s.data[id] = p
+	s.mu.Unlock()
+}
+
+func (s *deviceStateStore) get(id string) (devicePending, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.data[id]
+	return p, ok
+}
+
+func (s *deviceStateStore) delete(id string) {
+	s.mu.Lock()
+	delete(s.data, id)
+	s.mu.Unlock()
 }
 
 func gitProviderLabels() []struct{ ID, Label string } {
@@ -134,23 +175,64 @@ func (h *handler) loadOAuthApp(provider string) (*storage.GitOAuthApp, error) {
 }
 
 func (h *handler) appCredentials(provider string) (gitforge.AppCredentials, error) {
-	app, err := h.loadOAuthApp(provider)
+	provider = gitforge.NormalizeProvider(provider)
+	base := gitforge.BuiltinCredentials(provider)
+	if provider == gitforge.ProviderGitea && base.Endpoint == "" {
+		base.Endpoint = h.defaultGiteaEndpoint()
+	}
+	if app, err := h.loadOAuthApp(provider); err == nil {
+		secret := ""
+		if app.ClientSecretEncrypted != "" {
+			if s, err := config.Decrypt(app.ClientSecretEncrypted); err == nil {
+				secret = s
+			}
+		}
+		base = gitforge.MergeCredentials(base, gitforge.AppCredentials{
+			ClientID:     app.ClientID,
+			ClientSecret: secret,
+			Endpoint:     app.Endpoint,
+		})
+	}
+	if provider == gitforge.ProviderGitea && base.Endpoint == "" {
+		base.Endpoint = h.defaultGiteaEndpoint()
+	}
+	return base, nil
+}
+
+func (h *handler) requireAppCredentials(provider string) (gitforge.AppCredentials, error) {
+	app, err := h.appCredentials(provider)
 	if err != nil {
-		return gitforge.AppCredentials{}, fmt.Errorf("configure OAuth app for %s in Settings first", provider)
+		return app, err
 	}
-	secret, err := config.Decrypt(app.ClientSecretEncrypted)
-	if err != nil {
-		return gitforge.AppCredentials{}, fmt.Errorf("decrypting client secret: %w", err)
+	if strings.TrimSpace(app.ClientID) == "" {
+		return app, fmt.Errorf("no OAuth client for %s — set XMANAGER_%s_OAUTH_CLIENT_ID or Advanced custom app", provider, strings.ToUpper(provider))
 	}
-	endpoint := app.Endpoint
-	if provider == gitforge.ProviderGitea && endpoint == "" {
-		endpoint = h.defaultGiteaEndpoint()
+	return app, nil
+}
+
+func (h *handler) publicURLIsHTTPS() bool {
+	if h.opts.Config == nil {
+		return false
 	}
-	return gitforge.AppCredentials{
-		ClientID:     app.ClientID,
-		ClientSecret: secret,
-		Endpoint:     endpoint,
-	}, nil
+	u := strings.ToLower(strings.TrimSpace(h.opts.Config.Web.PublicURL))
+	return strings.HasPrefix(u, "https://")
+}
+
+func (h *handler) connectMode(provider string, app gitforge.AppCredentials) string {
+	provider = gitforge.NormalizeProvider(provider)
+	if app.ClientID == "" {
+		return "need_client"
+	}
+	if provider == gitforge.ProviderGitea {
+		return "redirect"
+	}
+	if h.publicURLIsHTTPS() {
+		return "redirect"
+	}
+	if gitforge.SupportsDeviceFlow(provider) {
+		return "device"
+	}
+	return "need_https"
 }
 
 func (h *handler) loadCredential(provider string) (*storage.GitCredential, error) {
@@ -214,14 +296,15 @@ func (h *handler) gitProviderViews() []gitProviderView {
 	out := make([]gitProviderView, 0, 4)
 	for _, p := range gitProviderLabels() {
 		v := gitProviderView{Provider: p.ID, Label: p.Label}
-		if app, err := h.loadOAuthApp(p.ID); err == nil {
-			v.ClientID = app.ClientID
-			v.Endpoint = app.Endpoint
-			v.HasSecret = app.ClientSecretEncrypted != ""
-		}
+		app, _ := h.appCredentials(p.ID)
+		v.ClientID = app.ClientID
+		v.Endpoint = app.Endpoint
+		v.HasSecret = app.ClientSecret != ""
 		if p.ID == gitforge.ProviderGitea && v.Endpoint == "" {
 			v.Endpoint = h.defaultGiteaEndpoint()
 		}
+		v.ConnectMode = h.connectMode(p.ID, app)
+		v.CanConnect = true // always show Connect; handler explains missing client / HTTPS
 		if cred, err := h.loadCredential(p.ID); err == nil && cred.TokenEncrypted != "" {
 			v.Connected = true
 			v.AccountLogin = cred.AccountLogin
@@ -301,11 +384,31 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("unknown provider"), http.StatusSeeOther)
 		return
 	}
-	app, err := h.appCredentials(provider)
+	if provider == gitforge.ProviderGitea {
+		if err := h.ensureGiteaOAuthApp(r); err != nil {
+			http.Redirect(w, r, "/settings?flash="+urlQueryEscape("gitea: "+err.Error()), http.StatusSeeOther)
+			return
+		}
+	}
+	app, err := h.requireAppCredentials(provider)
 	if err != nil {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+	mode := h.connectMode(provider, app)
+	switch mode {
+	case "device":
+		h.startDeviceConnect(w, r, sess, provider, app)
+		return
+	case "need_https":
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(provider+" needs an HTTPS Public panel URL (Advanced), or use GitHub/GitLab device connect"), http.StatusSeeOther)
+		return
+	case "need_client":
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Set OAuth client in Advanced or env XMANAGER_"+strings.ToUpper(provider)+"_OAUTH_CLIENT_ID"), http.StatusSeeOther)
+		return
+	}
+
+	// classic redirect
 	state := randomToken()
 	if h.oauthStates == nil {
 		h.oauthStates = newOAuthStateStore()
@@ -317,6 +420,129 @@ func (h *handler) getOAuthGitConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
+}
+
+func (h *handler) startDeviceConnect(w http.ResponseWriter, r *http.Request, sess *session, provider string, app gitforge.AppCredentials) {
+	dc, err := gitforge.RequestDeviceCode(r.Context(), provider, app)
+	if err != nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("device start: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	id := randomToken()
+	if h.deviceStates == nil {
+		h.deviceStates = newDeviceStateStore()
+	}
+	exp := time.Now().Add(time.Duration(dc.ExpiresIn) * time.Second)
+	if dc.ExpiresIn <= 0 {
+		exp = time.Now().Add(15 * time.Minute)
+	}
+	h.deviceStates.put(id, devicePending{
+		Provider:   provider,
+		DeviceCode: dc.DeviceCode,
+		Interval:   dc.Interval,
+		UserID:     sess.UserID,
+		App:        app,
+		Created:    time.Now(),
+		Expires:    exp,
+	})
+	verify := dc.VerificationURIComplete
+	if verify == "" {
+		verify = dc.VerificationURI
+	}
+	data := h.basePage(sess, "Connect "+provider)
+	data.ActiveNav = "settings"
+	data.DeviceID = id
+	data.DeviceUserCode = dc.UserCode
+	data.DeviceVerifyURL = verify
+	data.DeviceProvider = provider
+	data.DeviceInterval = dc.Interval
+	if data.DeviceInterval <= 0 {
+		data.DeviceInterval = 5
+	}
+	h.render(w, "settings_git_device", data)
+}
+
+func (h *handler) getDevicePoll(w http.ResponseWriter, r *http.Request) {
+	provider := gitforge.NormalizeProvider(r.PathValue("provider"))
+	id := r.URL.Query().Get("id")
+	if provider == "" || id == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if h.deviceStates == nil {
+		http.Error(w, "expired", http.StatusGone)
+		return
+	}
+	pending, ok := h.deviceStates.get(id)
+	if !ok || pending.Provider != provider {
+		http.Error(w, "expired", http.StatusGone)
+		return
+	}
+	if time.Now().After(pending.Expires) {
+		h.deviceStates.delete(id)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="text-amber-300 text-sm">Code expired. <a class="underline" href="/oauth/git/` + provider + `/connect">Try again</a></p>`))
+		return
+	}
+	ts, err := gitforge.PollDeviceToken(r.Context(), provider, pending.App, pending.DeviceCode)
+	if err != nil {
+		if errors.Is(err, gitforge.ErrDevicePending) || errors.Is(err, gitforge.ErrDeviceSlowDown) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<p class="text-panel-muted text-sm">Waiting for approval…</p>`))
+			return
+		}
+		if errors.Is(err, gitforge.ErrDeviceExpired) || errors.Is(err, gitforge.ErrDeviceDenied) {
+			h.deviceStates.delete(id)
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprintf(w, `<p class="text-red-300 text-sm">%s</p>`, htmlEscape(err.Error()))
+		return
+	}
+	h.deviceStates.delete(id)
+	if err := h.persistOAuthTokens(provider, pending.App, ts); err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprintf(w, `<p class="text-red-300 text-sm">%s</p>`, htmlEscape(err.Error()))
+		return
+	}
+	w.Header().Set("HX-Redirect", "/settings?flash="+urlQueryEscape("Connected "+provider))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<p class="text-emerald-400 text-sm">Connected! Redirecting…</p>`))
+}
+
+func (h *handler) persistOAuthTokens(provider string, app gitforge.AppCredentials, ts *gitforge.TokenSet) error {
+	ctx := context.Background()
+	acct, err := gitforge.FetchAccount(ctx, provider, app.Endpoint, ts.AccessToken)
+	if err != nil {
+		return fmt.Errorf("fetch user: %w", err)
+	}
+	enc, err := config.Encrypt(ts.AccessToken)
+	if err != nil {
+		return err
+	}
+	cred := storage.GitCredential{
+		Provider:       provider,
+		Username:       acct.Login,
+		AccountLogin:   acct.Login,
+		TokenEncrypted: enc,
+		Endpoint:       app.Endpoint,
+		Scopes:         ts.Scope,
+	}
+	if ts.RefreshToken != "" {
+		if renc, err := config.Encrypt(ts.RefreshToken); err == nil {
+			cred.RefreshEncrypted = renc
+		}
+	}
+	if ts.ExpiresIn > 0 {
+		exp := time.Now().Add(time.Duration(ts.ExpiresIn) * time.Second)
+		cred.ExpiresAt = &exp
+	}
+	var existing storage.GitCredential
+	if err := h.opts.DB.Where("provider = ?", provider).Order("id desc").First(&existing).Error; err == nil {
+		cred.ID = existing.ID
+		cred.CreatedAt = existing.CreatedAt
+		return h.opts.DB.Save(&cred).Error
+	}
+	return h.opts.DB.Create(&cred).Error
 }
 
 func (h *handler) getOAuthGitCallback(w http.ResponseWriter, r *http.Request) {
@@ -340,53 +566,21 @@ func (h *handler) getOAuthGitCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("oauth state mismatch"), http.StatusSeeOther)
 		return
 	}
-	app, err := h.appCredentials(provider)
+	app, err := h.requireAppCredentials(provider)
 	if err != nil {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	ctx := r.Context()
-	ts, err := gitforge.ExchangeCode(ctx, provider, app, h.oauthRedirectURI(r, provider), code)
+	ts, err := gitforge.ExchangeCode(r.Context(), provider, app, h.oauthRedirectURI(r, provider), code)
 	if err != nil {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("token exchange: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	acct, err := gitforge.FetchAccount(ctx, provider, app.Endpoint, ts.AccessToken)
-	if err != nil {
-		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("fetch user: "+err.Error()), http.StatusSeeOther)
-		return
-	}
-	enc, err := config.Encrypt(ts.AccessToken)
-	if err != nil {
+	if err := h.persistOAuthTokens(provider, app, ts); err != nil {
 		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	cred := storage.GitCredential{
-		Provider:       provider,
-		Username:       acct.Login,
-		AccountLogin:   acct.Login,
-		TokenEncrypted: enc,
-		Endpoint:       app.Endpoint,
-		Scopes:         ts.Scope,
-	}
-	if ts.RefreshToken != "" {
-		if renc, err := config.Encrypt(ts.RefreshToken); err == nil {
-			cred.RefreshEncrypted = renc
-		}
-	}
-	if ts.ExpiresIn > 0 {
-		exp := time.Now().Add(time.Duration(ts.ExpiresIn) * time.Second)
-		cred.ExpiresAt = &exp
-	}
-	var existing storage.GitCredential
-	if err := h.opts.DB.Where("provider = ?", provider).Order("id desc").First(&existing).Error; err == nil {
-		cred.ID = existing.ID
-		cred.CreatedAt = existing.CreatedAt
-		_ = h.opts.DB.Save(&cred).Error
-	} else {
-		_ = h.opts.DB.Create(&cred).Error
-	}
-	http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Connected "+provider+" as "+acct.Login), http.StatusSeeOther)
+	http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Connected "+provider), http.StatusSeeOther)
 }
 
 func (h *handler) postOAuthGitDisconnect(w http.ResponseWriter, r *http.Request) {

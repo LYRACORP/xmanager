@@ -1,0 +1,25 @@
+{{define "settings_git_device"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-lg space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight">Connect {{.DeviceProvider}}</h1>
+    <p class="text-panel-muted text-sm mt-1">Approve access in your browser, then this page finishes automatically.</p>
+  </div>
+
+  <div class="xm-card p-6 space-y-4 text-center">
+    <p class="text-xs text-panel-muted uppercase tracking-wide">Enter this code</p>
+    <p class="text-3xl font-mono font-bold tracking-widest text-emerald-300">{{.DeviceUserCode}}</p>
+    <a href="{{.DeviceVerifyURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-primary inline-flex">Open {{.DeviceProvider}} in browser</a>
+    <div id="device-poll"
+         hx-get="/settings/git/{{.DeviceProvider}}/device/poll?id={{.DeviceID}}"
+         hx-trigger="every {{.DeviceInterval}}s"
+         hx-swap="innerHTML">
+      <p class="text-panel-muted text-sm">Waiting for approval…</p>
+    </div>
+  </div>
+
+  <a href="/settings" class="text-xs text-panel-muted hover:text-gray-300">← Cancel</a>
+</div>
+{{template "foot" .}}
+{{end}}
