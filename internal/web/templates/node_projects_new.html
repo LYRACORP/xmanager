@@ -98,6 +98,7 @@
             data-connected="{{if .Connected}}1{{else}}0{{end}}"
             data-login="{{.AccountLogin}}"
             data-label="{{.Label}}"
+            data-mode="{{.ConnectMode}}"
             {{if eq $.SelectedProvider .Provider}}selected{{end}}>
             {{.Label}}{{if .Connected}} ({{.AccountLogin}}){{end}}
           </option>
@@ -109,7 +110,7 @@
       <div id="git-connect-panel" class="xm-card p-8 text-center space-y-4 {{if not .SelectedProvider}}hidden{{end}}">
         <p class="text-base font-semibold text-gray-100">Connect <span id="git-connect-label">provider</span></p>
         <p class="text-sm text-panel-muted max-w-sm mx-auto">Authorize in your browser, then pick a repository.</p>
-        <button id="git-connect-btn" type="button" onclick="xmStartDeviceConnect()"
+        <button id="git-connect-btn" type="button" onclick="xmConnectGit()"
           class="xm-btn xm-btn-primary inline-flex text-sm">Connect</button>
       </div>
 
@@ -138,7 +139,7 @@
             hx-trigger="keyup changed delay:300ms"
             hx-target="#git-repo-list"
             hx-include="#git-provider">
-          <button type="button" id="git-reconnect-btn" onclick="xmStartDeviceConnect()"
+          <button type="button" id="git-reconnect-btn" onclick="xmConnectGit()"
             class="text-xs text-panel-muted hover:text-gray-300 underline shrink-0">Reconnect</button>
         </div>
         <div id="git-repo-list" class="xm-card p-1 min-h-[4rem]">
@@ -190,6 +191,20 @@
             devicePanel.classList.add('hidden');
             reposWrap.classList.add('hidden');
           }
+        }
+
+        function xmConnectGit() {
+          var sel = document.getElementById('git-provider');
+          if (!sel || !sel.value) return;
+          var opt = sel.options[sel.selectedIndex];
+          var mode = opt ? opt.getAttribute('data-mode') : '';
+          var provider = sel.value;
+          var next = '/projects/new?type=git&provider=' + encodeURIComponent(provider);
+          if (mode === 'relay' || mode === 'redirect') {
+            window.location.href = '/oauth/git/' + encodeURIComponent(provider) + '/connect?next=' + encodeURIComponent(next);
+            return;
+          }
+          xmStartDeviceConnect();
         }
 
         function xmStartDeviceConnect() {
