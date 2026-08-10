@@ -57,3 +57,7 @@ should we merge portainer and other ones ?
 
 
 during upgrading web panel, must show progressbar and details. must play sound when finished.
+
+
+
+
