@@ -1,0 +1,135 @@
+{{define "node_projects_new"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">New project</h1>
+      <p class="text-panel-muted text-sm mt-1">Choose a source, then configure</p>
+    </div>
+    <a href="/projects" class="xm-btn xm-btn-ghost text-xs">← Back</a>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  {{if not .CreateType}}
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="xm-card p-5 space-y-3">
+      <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">Custom</h2>
+      <div class="grid grid-cols-2 gap-2">
+        <a href="/projects/new?type=git" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">git</span><span class="xm-type-label">Git</span>
+        </a>
+        <a href="/projects/new?type=image" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">img</span><span class="xm-type-label">Image</span>
+        </a>
+        <a href="/projects/new?type=dockerfile" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">df</span><span class="xm-type-label">Dockerfile</span>
+        </a>
+        <a href="/projects/new?type=compose" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">cmp</span><span class="xm-type-label">Compose</span>
+        </a>
+        <a href="/projects/new?type=push" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">psh</span><span class="xm-type-label">Push</span>
+        </a>
+        <a href="/projects/templates" class="xm-type-card-inner text-center no-underline hover:border-emerald-700/50">
+          <span class="xm-type-glyph">1×</span><span class="xm-type-label">Templates</span>
+        </a>
+      </div>
+      <details class="pt-2">
+        <summary class="text-xs text-panel-muted cursor-pointer">Advanced (clone, scratch, archive, function)</summary>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <a href="/projects/new?type=clone" class="text-xs text-indigo-300">clone</a>
+          <a href="/projects/new?type=scratch" class="text-xs text-indigo-300">scratch</a>
+          <a href="/projects/new?type=archive" class="text-xs text-indigo-300">archive</a>
+          <a href="/projects/new?type=function" class="text-xs text-indigo-300">function</a>
+        </div>
+      </details>
+    </div>
+    <div class="xm-card p-5 space-y-3">
+      <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">Templates</h2>
+      <p class="text-sm text-panel-muted">CapRover-compatible one-click apps (WordPress, Redis, Nextcloud, …).</p>
+      <a href="/projects/templates" class="xm-btn xm-btn-primary">Browse one-click catalog →</a>
+    </div>
+  </div>
+  {{else}}
+  <form method="post" action="/projects" class="xm-card p-5 md:p-6 space-y-5">
+    <input type="hidden" name="type" value="{{.CreateType}}">
+    <div class="flex items-center gap-2 text-sm">
+      <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.CreateType}}</span>
+      <a href="/projects/new" class="text-xs text-panel-muted hover:text-gray-300">change type</a>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-2">Name</label>
+      <input name="name" required placeholder="my-app" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-2">Domain (optional)</label>
+      <div class="xm-domain-affix">
+        <span>https://</span>
+        <input name="domain" placeholder="app.example.com">
+      </div>
+    </div>
+
+    {{if or (eq .CreateType "image") (eq .CreateType "push")}}
+    <div class="grid md:grid-cols-2 gap-3">
+      {{if eq .CreateType "image"}}
+      <input name="image" required placeholder="Image (nginx)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+      <input name="tag" placeholder="Tag (latest)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+      {{else}}
+      <input name="pushed_image" required placeholder="registry/image:tag" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono md:col-span-2">
+      {{end}}
+      <input name="ports" placeholder="Ports e.g. 8080:80" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono md:col-span-2">
+    </div>
+    {{end}}
+
+    {{if or (eq .CreateType "git") (eq .CreateType "clone")}}
+    <div class="grid md:grid-cols-2 gap-3">
+      <input name="repo_url" required placeholder="Git repo URL" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm md:col-span-2">
+      <input name="branch" placeholder="Branch (main)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+      <input name="ports" placeholder="Ports e.g. 3000:3000" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    </div>
+    {{end}}
+
+    {{if eq .CreateType "dockerfile"}}
+    <textarea name="dockerfile" rows="8" required placeholder="FROM …" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono"></textarea>
+    <input name="ports" placeholder="Ports e.g. 8080:80" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    {{end}}
+
+    {{if or (eq .CreateType "compose") (eq .CreateType "oneclick")}}
+    <textarea name="compose_yaml" rows="10" required placeholder="services:&#10;  web:&#10;    image: nginx" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono"></textarea>
+    <input name="ports" placeholder="Ports (optional)" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    {{end}}
+
+    {{if eq .CreateType "archive"}}
+    <input name="archive_path" required placeholder="/path/to/app.tar.gz on host" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    {{end}}
+
+    {{if eq .CreateType "function"}}
+    <div class="grid md:grid-cols-2 gap-3">
+      <input name="runtime" required placeholder="runtime: python|node|go" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+      <input name="handler" required placeholder="handler" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+      <input name="ports" placeholder="Ports e.g. 8080:8080" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono md:col-span-2">
+    </div>
+    {{end}}
+
+    {{if eq .CreateType "scratch"}}
+    <p class="text-sm text-panel-muted">Creates an empty project directory on the host. Deploy later.</p>
+    {{end}}
+
+    <label class="flex items-center gap-2 text-sm text-gray-300">
+      <input type="checkbox" name="persistent_data" value="on" class="rounded border-zinc-600">
+      Has persistent data
+    </label>
+    <label class="flex items-center gap-2 text-sm text-gray-300">
+      <input type="checkbox" name="deploy_now" value="on" class="rounded border-zinc-600" {{if ne .CreateType "scratch"}}checked{{end}}>
+      Deploy now
+    </label>
+
+    <button type="submit" class="xm-btn xm-btn-primary">Create project</button>
+  </form>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

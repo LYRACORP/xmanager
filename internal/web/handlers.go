@@ -10,12 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/apps"
 	"github.com/lyracorp/xmanager/internal/auth"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -88,6 +90,17 @@ type pageData struct {
 	StatMailboxes  int
 	StatDatabases  int
 	WelcomeName    string
+	// Projects PaaS UX
+	Project            *storage.Project
+	ProjectConfig      project.Config
+	ProjectDomainsList []storage.ProjectDomain
+	ProjectEnvVars     []storage.ProjectEnvVar
+	DeployHistory      []storage.DeployHistory
+	ActiveTab          string
+	CreateType         string
+	TemplateSummaries  []apps.Summary
+	TemplateApp        *apps.App
+	TemplateQuery      string
 }
 
 func (h *handler) register(mux *http.ServeMux) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,7 @@ type Variable struct {
 
 // App is the parsed representation of a CapRover-style one-click app YAML.
 type App struct {
+	ID          string // filename without .yml
 	DisplayName string
 	Description string
 	IsOfficial  bool
@@ -29,6 +31,14 @@ type App struct {
 		Start string
 		End   string
 	}
+}
+
+// Summary is a lightweight catalog entry for listing templates.
+type Summary struct {
+	ID          string
+	DisplayName string
+	Description string
+	IsOfficial  bool
 }
 
 // raw YAML shape matching CapRover one-click-app format (v4)
@@ -52,15 +62,31 @@ type Loader struct {
 	dirs []string
 }
 
+// DefaultDirs are the standard CapRover one-click search paths (relative to cwd).
+func DefaultDirs() []string {
+	return []string{
+		"apps",
+		"apps/caprover",
+	}
+}
+
 // NewLoader returns a Loader that searches dirs in order (first match wins).
 func NewLoader(dirs ...string) *Loader {
+	if len(dirs) == 0 {
+		dirs = DefaultDirs()
+	}
 	return &Loader{dirs: dirs}
 }
 
-// List returns the names (display names) of all available one-click apps.
+// DefaultLoader uses DefaultDirs.
+func DefaultLoader() *Loader {
+	return NewLoader(DefaultDirs()...)
+}
+
+// List returns the IDs (filename without .yml) of all available one-click apps.
 func (l *Loader) List() ([]string, error) {
 	seen := make(map[string]bool)
-	var names []string
+	var ids []string
 	for _, dir := range l.dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -70,25 +96,65 @@ func (l *Loader) List() ([]string, error) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
 				continue
 			}
-			name := strings.TrimSuffix(e.Name(), ".yml")
-			if !seen[name] {
-				seen[name] = true
-				names = append(names, name)
+			id := strings.TrimSuffix(e.Name(), ".yml")
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
 			}
 		}
 	}
-	return names, nil
+	sort.Strings(ids)
+	return ids, nil
 }
 
-// Load parses an app by name (filename without .yml).
+// ListSummaries returns catalog metadata for each template (best-effort parse).
+func (l *Loader) ListSummaries() ([]Summary, error) {
+	ids, err := l.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Summary, 0, len(ids))
+	for _, id := range ids {
+		app, err := l.Load(id)
+		if err != nil {
+			out = append(out, Summary{ID: id, DisplayName: id})
+			continue
+		}
+		name := app.DisplayName
+		if name == "" {
+			name = id
+		}
+		out = append(out, Summary{
+			ID:          id,
+			DisplayName: name,
+			Description: app.Description,
+			IsOfficial:  app.IsOfficial,
+		})
+	}
+	return out, nil
+}
+
+// Load parses an app by ID (filename without .yml).
 func (l *Loader) Load(name string) (*App, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("invalid app id")
+	}
 	for _, dir := range l.dirs {
 		path := filepath.Join(dir, name+".yml")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		return parseApp(data)
+		app, err := parseApp(data)
+		if err != nil {
+			return nil, err
+		}
+		app.ID = name
+		if app.DisplayName == "" {
+			app.DisplayName = name
+		}
+		return app, nil
 	}
 	return nil, fmt.Errorf("app %q not found in any search path", name)
 }
@@ -102,13 +168,17 @@ func (l *Loader) Render(name string, values map[string]string) (string, error) {
 	}
 
 	compose := app.ComposeYAML
-	// apply defaults first, then provided values
 	for _, v := range app.Variables {
 		val, ok := values[v.ID]
 		if !ok || val == "" {
 			val = v.DefaultValue
 		}
 		compose = strings.ReplaceAll(compose, v.ID, val)
+		// CapRover also uses $$cap_appname style without doubling in some files
+		short := strings.TrimPrefix(v.ID, "$$")
+		if short != v.ID {
+			compose = strings.ReplaceAll(compose, "$$"+short, val)
+		}
 	}
 	return compose, nil
 }
@@ -119,7 +189,6 @@ func parseApp(data []byte) (*App, error) {
 		return nil, fmt.Errorf("parsing app yaml: %w", err)
 	}
 
-	// Re-marshal just the services block so callers get a clean compose snippet.
 	composeYAML := ""
 	if len(raw.Services) > 0 {
 		doc := map[string]interface{}{

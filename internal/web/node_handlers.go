@@ -51,10 +51,19 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /cron/{id}/logs", h.requireAuth(h.getNodeCronLogs))
 
 	mux.HandleFunc("GET /projects", h.requireAuth(h.getNodeProjects))
+	mux.HandleFunc("GET /projects/new", h.requireAuth(h.getNodeProjectsNew))
 	mux.HandleFunc("POST /projects", h.requireAuth(h.postNodeProjects))
+	mux.HandleFunc("GET /projects/templates", h.requireAuth(h.getNodeProjectTemplates))
+	mux.HandleFunc("GET /projects/templates/{id}", h.requireAuth(h.getNodeProjectTemplate))
+	mux.HandleFunc("POST /projects/templates/{id}", h.requireAuth(h.postNodeProjectTemplate))
+	mux.HandleFunc("GET /projects/{id}", h.requireAuth(h.getNodeProjectDetail))
 	mux.HandleFunc("POST /projects/{id}/deploy", h.requireAuth(h.postNodeProjectDeploy))
 	mux.HandleFunc("POST /projects/{id}/stop", h.requireAuth(h.postNodeProjectStop))
+	mux.HandleFunc("POST /projects/{id}/restart", h.requireAuth(h.postNodeProjectRestart))
 	mux.HandleFunc("POST /projects/{id}/domain", h.requireAuth(h.postNodeProjectDomain))
+	mux.HandleFunc("POST /projects/{id}/env", h.requireAuth(h.postNodeProjectEnv))
+	mux.HandleFunc("POST /projects/{id}/env/{env_id}/delete", h.requireAuth(h.postNodeProjectEnvDelete))
+	mux.HandleFunc("POST /projects/{id}/delete", h.requireAuth(h.postNodeProjectDelete))
 
 	mux.HandleFunc("GET /databases", h.requireAuth(h.getNodeDatabases))
 	mux.HandleFunc("POST /databases", h.requireAuth(h.postNodeDatabases))
@@ -215,125 +224,6 @@ func (h *handler) getNodeCronLogs(w http.ResponseWriter, r *http.Request) {
 		data.Flash = err.Error()
 	}
 	h.render(w, "node_cron_logs", data)
-}
-
-// --- Projects ---
-
-func (h *handler) getNodeProjects(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFromCtx(r.Context())
-	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Order("name asc").Find(&projects)
-	data := h.basePage(sess, "Projects")
-	data.ActiveNav = "projects"
-	data.Projects = projects
-	data.ProjectTypes = []string{
-		"image", "compose", "dockerfile", "git", "oneclick",
-		"clone", "push", "scratch", "archive", "function",
-	}
-	h.render(w, "node_projects", data)
-}
-
-func (h *handler) postNodeProjects(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-	cfg := project.Config{
-		Image:             r.FormValue("image"),
-		Tag:               r.FormValue("tag"),
-		RepoURL:           r.FormValue("repo_url"),
-		Branch:            r.FormValue("branch"),
-		ComposeYAML:       r.FormValue("compose_yaml"),
-		DockerfileContent: r.FormValue("dockerfile"),
-		PushedImage:       r.FormValue("pushed_image"),
-		ArchivePath:       r.FormValue("archive_path"),
-		Runtime:           r.FormValue("runtime"),
-		Handler:           r.FormValue("handler"),
-	}
-	if ports := strings.TrimSpace(r.FormValue("ports")); ports != "" {
-		cfg.Ports = strings.Split(ports, ",")
-	}
-	cfgJSON, _ := json.Marshal(cfg)
-	secret, _ := project.GenerateWebhookSecret()
-	persistent := r.FormValue("persistent_data") == "on" || r.FormValue("persistent_data") == "1" || r.FormValue("persistent_data") == "true"
-	source := r.FormValue("source")
-	if source == "" {
-		source = cfg.RepoURL
-		if source == "" {
-			source = cfg.Image
-		}
-		if source == "" {
-			source = cfg.PushedImage
-		}
-	}
-	p := storage.Project{
-		Name:           r.FormValue("name"),
-		ServerID:       h.localServerID(),
-		Type:           r.FormValue("type"),
-		Source:         source,
-		Domain:         r.FormValue("domain"),
-		PersistentData: persistent,
-		DeployStatus:   project.StatusPending,
-		ConfigJSON:     string(cfgJSON),
-		WebhookSecret:  secret,
-	}
-	if err := h.opts.DB.Create(&p).Error; err != nil {
-		sess := sessionFromCtx(r.Context())
-		data := h.basePage(sess, "Projects")
-		data.ActiveNav = "projects"
-		data.Flash = err.Error()
-		h.opts.DB.Where("server_id = ?", h.localServerID()).Order("name asc").Find(&data.Projects)
-		h.render(w, "node_projects", data)
-		return
-	}
-	if p.Domain != "" {
-		_ = h.opts.DB.Create(&storage.ProjectDomain{ProjectID: p.ID, Domain: p.Domain, SSL: true}).Error
-		if m := proxy.NewManager(proxy.Nginx, h.localExec()); m != nil {
-			if nm, ok := m.(*proxy.NginxManager); ok {
-				_ = nm.AddVHost(p.Domain, "http://127.0.0.1:8080")
-			}
-		}
-	}
-	http.Redirect(w, r, "/projects", http.StatusSeeOther)
-}
-
-func (h *handler) postNodeProjectDeploy(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	var p storage.Project
-	if err := h.opts.DB.First(&p, id).Error; err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	dep := project.NewDeployer(h.localExec(), h.opts.DB)
-	_, _ = dep.Deploy(&p)
-	http.Redirect(w, r, "/projects", http.StatusSeeOther)
-}
-
-func (h *handler) postNodeProjectStop(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	var p storage.Project
-	if err := h.opts.DB.First(&p, id).Error; err != nil {
-		http.Redirect(w, r, "/projects", http.StatusSeeOther)
-		return
-	}
-	name := strings.ToLower(strings.ReplaceAll(p.Name, " ", "-"))
-	_, _ = h.localExec().Run(fmt.Sprintf("docker rm -f %s 2>/dev/null; cd /opt/xmanager/projects/%s && docker compose down 2>/dev/null || true", name, name))
-	_ = h.opts.DB.Model(&p).Update("deploy_status", project.StatusStopped).Error
-	http.Redirect(w, r, "/projects", http.StatusSeeOther)
-}
-
-func (h *handler) postNodeProjectDomain(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	domain := strings.TrimSpace(r.FormValue("domain"))
-	upstream := strings.TrimSpace(r.FormValue("upstream"))
-	_, err := h.connectDomain(domainConnectOpts{
-		Domain:    domain,
-		Upstream:  upstream,
-		ProjectID: uint(id),
-	})
-	flash := ""
-	if err != nil {
-		flash = "?flash=" + urlQueryEscape(err.Error())
-	}
-	http.Redirect(w, r, "/projects"+flash, http.StatusSeeOther)
 }
 
 func (h *handler) postNodeWebhook(w http.ResponseWriter, r *http.Request) {

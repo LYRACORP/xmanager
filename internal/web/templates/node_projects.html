@@ -2,109 +2,52 @@
 {{template "head" .}}
 {{template "nav" .}}
 <div class="xm-page space-y-6">
-  <div>
-    <h1 class="text-3xl font-bold tracking-tight">Create project</h1>
-    <p class="text-panel-muted text-sm mt-1">Pick a platform, set an ID, then deploy on this host</p>
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">Projects</h1>
+      <p class="text-panel-muted text-sm mt-1">Apps and compose stacks on this host</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/projects/templates" class="xm-btn xm-btn-ghost">One-click apps</a>
+      <a href="/projects/new" class="xm-btn xm-btn-primary">+ New</a>
+    </div>
   </div>
+
   {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
-  <form method="post" action="/projects" class="xm-card p-5 md:p-6 space-y-6">
-    <div>
-      <h2 class="text-sm font-semibold text-gray-200 mb-3">Platform</h2>
-      <div class="xm-type-grid">
-        {{range $i, $t := .ProjectTypes}}
-        <label class="xm-type-card">
-          <input type="radio" name="type" value="{{$t}}" {{if eq $i 0}}checked{{end}} required>
-          <span class="xm-type-card-inner">
-            <span class="xm-type-glyph">{{printf "%.2s" $t}}</span>
-            <span class="xm-type-label">{{$t}}</span>
-          </span>
-        </label>
-        {{end}}
+  {{if .Projects}}
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {{range .Projects}}
+    <a href="/projects/{{.ID}}" class="xm-card p-5 hover:border-emerald-800/60 transition-colors block">
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <h2 class="font-semibold text-gray-100 truncate">{{.Name}}</h2>
+        <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border
+          {{if eq .DeployStatus "running"}}border-emerald-700 text-emerald-300 bg-emerald-950/40
+          {{else if eq .DeployStatus "failed"}}border-red-800 text-red-300 bg-red-950/30
+          {{else if eq .DeployStatus "building"}}border-sky-800 text-sky-300 bg-sky-950/30
+          {{else}}border-zinc-700 text-zinc-400{{end}}">{{.DeployStatus}}</span>
       </div>
-    </div>
-
-    <div class="grid md:grid-cols-2 gap-4">
-      <div class="md:col-span-2">
-        <label class="block text-sm font-semibold text-gray-200 mb-2">Project name</label>
-        <input name="name" required placeholder="my-app" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+      <div class="flex flex-wrap gap-2 text-xs mb-2">
+        <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.Type}}</span>
+        {{if .PersistentData}}<span class="text-panel-muted">persistent</span>{{end}}
       </div>
-      <div class="md:col-span-2">
-        <label class="block text-sm font-semibold text-gray-200 mb-2">Domain</label>
-        <div class="xm-domain-affix">
-          <span>https://</span>
-          <input name="domain" placeholder="app.example.com">
-        </div>
-      </div>
-      <input name="ports" placeholder="Ports e.g. 8080:80" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
-      <input name="image" placeholder="Image (image type)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
-      <input name="tag" placeholder="Tag" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
-      <input name="branch" placeholder="Branch (main)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
-      <input name="repo_url" placeholder="Git repo URL" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm md:col-span-2">
-      <input name="pushed_image" placeholder="Pushed image (push type)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
-      <input name="archive_path" placeholder="Archive path on host" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
-      <input name="runtime" placeholder="Function runtime (python|node|go)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
-      <input name="handler" placeholder="Function handler" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
-      <textarea name="compose_yaml" rows="3" placeholder="docker-compose YAML (compose / oneclick)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono md:col-span-2"></textarea>
-      <textarea name="dockerfile" rows="3" placeholder="Dockerfile content" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono md:col-span-2"></textarea>
-    </div>
-
-    <label class="flex items-center gap-2 text-sm text-gray-300">
-      <input type="checkbox" name="persistent_data" value="on" class="rounded border-zinc-600">
-      Has persistent data (database, volumes, files…)
-    </label>
-
-    <button type="submit" class="xm-btn xm-btn-primary">Create project</button>
-  </form>
-
-  <div class="xm-card overflow-hidden">
-    <div class="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Your projects</h2>
-      <span class="text-xs text-panel-muted">{{len .Projects}} total</span>
-    </div>
-    {{if .Projects}}
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-panel-muted text-left border-b border-zinc-800">
-          <tr>
-            <th class="px-4 py-3">Name</th>
-            <th class="px-4 py-3">Type</th>
-            <th class="px-4 py-3">Domain</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3">Actions</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-zinc-800">
-          {{range .Projects}}
-          <tr>
-            <td class="px-4 py-3 font-medium">{{.Name}}</td>
-            <td class="px-4 py-3 font-mono text-xs text-indigo-300">{{.Type}}</td>
-            <td class="px-4 py-3 text-xs text-panel-muted">{{if .Domain}}{{.Domain}}{{else}}—{{end}}</td>
-            <td class="px-4 py-3 text-xs">{{.DeployStatus}}</td>
-            <td class="px-4 py-3 space-y-2">
-              <div class="space-x-2">
-                <form action="/projects/{{.ID}}/deploy" method="post" class="inline"><button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded-lg">Deploy</button></form>
-                <form action="/projects/{{.ID}}/stop" method="post" class="inline"><button class="text-xs text-amber-400 hover:underline">Stop</button></form>
-              </div>
-              <form action="/projects/{{.ID}}/domain" method="post" class="flex gap-1 mt-1">
-                <input name="domain" placeholder="domain" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-0.5 text-xs w-28">
-                <input name="upstream" placeholder="http://127.0.0.1:8080" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-0.5 text-xs w-36">
-                <button class="text-xs text-emerald-400">Attach</button>
-              </form>
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
-    {{else}}
+      <p class="text-xs text-panel-muted truncate">{{if .Domain}}{{.Domain}}{{else if .Source}}{{.Source}}{{else}}—{{end}}</p>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="xm-card">
     <div class="xm-empty">
       <div class="xm-empty-ico">▣</div>
       <h3>No projects yet</h3>
-      <p>Choose a platform above and create your first app on this server.</p>
+      <p>Create from Git, Docker image, Compose, or install a CapRover one-click app.</p>
+      <div class="flex flex-wrap gap-2 mt-2 justify-center">
+        <a href="/projects/new" class="xm-btn xm-btn-primary">+ New project</a>
+        <a href="/projects/templates" class="xm-btn xm-btn-ghost">Browse templates</a>
+      </div>
     </div>
-    {{end}}
   </div>
+  {{end}}
 </div>
 {{template "foot" .}}
 {{end}}

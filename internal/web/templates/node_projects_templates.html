@@ -1,0 +1,88 @@
+{{define "node_projects_templates"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">One-click apps</h1>
+      <p class="text-panel-muted text-sm mt-1">CapRover-compatible templates</p>
+    </div>
+    <a href="/projects/new" class="xm-btn xm-btn-ghost text-xs">← Custom create</a>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <form method="get" action="/projects/templates" class="flex gap-2">
+    <input name="q" value="{{.TemplateQuery}}" placeholder="Search templates…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+    <button class="xm-btn xm-btn-ghost">Search</button>
+  </form>
+
+  {{if .TemplateSummaries}}
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {{range .TemplateSummaries}}
+    <a href="/projects/templates/{{.ID}}" class="xm-card p-4 hover:border-emerald-800/50 transition-colors block">
+      <div class="flex items-start justify-between gap-2 mb-1">
+        <h2 class="font-semibold text-gray-100 text-sm">{{.DisplayName}}</h2>
+        {{if .IsOfficial}}<span class="text-[10px] text-emerald-400 border border-emerald-800/50 px-1.5 py-0.5 rounded">official</span>{{end}}
+      </div>
+      <p class="text-xs text-panel-muted line-clamp-2">{{if .Description}}{{.Description}}{{else}}{{.ID}}{{end}}</p>
+      <p class="text-[10px] font-mono text-zinc-600 mt-2">{{.ID}}</p>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="xm-card">
+    <div class="xm-empty">
+      <div class="xm-empty-ico">1×</div>
+      <h3>No templates found</h3>
+      <p>Ensure <span class="font-mono">apps/caprover</span> is present, or clear the search.</p>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}
+
+{{define "node_project_template"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6 max-w-2xl">
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">{{if .TemplateApp}}{{.TemplateApp.DisplayName}}{{else}}Template{{end}}</h1>
+      <p class="text-panel-muted text-sm mt-1">{{if .TemplateApp}}{{.TemplateApp.Description}}{{end}}</p>
+    </div>
+    <a href="/projects/templates" class="xm-btn xm-btn-ghost text-xs">← Catalog</a>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  {{if .TemplateApp}}
+  {{if .TemplateApp.Instructions.Start}}
+  <div class="xm-card p-4 text-sm text-panel-muted whitespace-pre-wrap">{{.TemplateApp.Instructions.Start}}</div>
+  {{end}}
+
+  <form method="post" action="/projects/templates/{{.TemplateApp.ID}}" class="xm-card p-5 space-y-4">
+    <div>
+      <label class="block text-sm font-semibold mb-2">App name</label>
+      <input name="name" required value="{{.TemplateApp.ID}}" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-semibold mb-2">Domain (optional)</label>
+      <div class="xm-domain-affix"><span>https://</span><input name="domain" placeholder="app.example.com"></div>
+    </div>
+    {{range .TemplateApp.Variables}}
+    <div>
+      <label class="block text-sm font-semibold mb-1">{{if .Label}}{{.Label}}{{else}}{{.ID}}{{end}}</label>
+      {{if .Description}}<p class="text-xs text-panel-muted mb-1">{{.Description}}</p>{{end}}
+      <input name="var_{{.ID}}" value="{{.DefaultValue}}" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    </div>
+    {{end}}
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="deploy_now" value="on" checked class="rounded border-zinc-600">
+      Deploy now
+    </label>
+    <button type="submit" class="xm-btn xm-btn-primary">Install</button>
+  </form>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

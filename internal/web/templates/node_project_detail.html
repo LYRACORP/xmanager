@@ -1,0 +1,140 @@
+{{define "node_project_detail"}}
+{{template "head" .}}
+{{template "nav" .}}
+{{with .Project}}
+<div class="xm-page space-y-6">
+  <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+    <div>
+      <a href="/projects" class="text-xs text-panel-muted hover:text-gray-300">← Projects</a>
+      <h1 class="text-3xl font-bold tracking-tight mt-1">{{.Name}}</h1>
+      <div class="flex flex-wrap gap-2 mt-2 text-xs items-center">
+        <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.Type}}</span>
+        <span class="px-2 py-0.5 rounded-full border text-[10px] uppercase
+          {{if eq .DeployStatus "running"}}border-emerald-700 text-emerald-300
+          {{else if eq .DeployStatus "failed"}}border-red-800 text-red-300
+          {{else}}border-zinc-700 text-zinc-400{{end}}">{{.DeployStatus}}</span>
+        {{if .Domain}}<span class="text-panel-muted">{{.Domain}}</span>{{end}}
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="/projects/{{.ID}}/deploy"><button class="xm-btn xm-btn-primary text-xs">Deploy</button></form>
+      <form method="post" action="/projects/{{.ID}}/restart"><button class="xm-btn xm-btn-ghost text-xs">Restart</button></form>
+      <form method="post" action="/projects/{{.ID}}/stop"><button class="xm-btn xm-btn-ghost text-xs text-amber-300">Stop</button></form>
+      <form method="post" action="/projects/{{.ID}}/delete" onsubmit="return confirm('Delete this project?')"><button class="xm-btn xm-btn-ghost text-xs text-red-400">Delete</button></form>
+    </div>
+  </div>
+
+  {{if $.Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{$.Flash}}</p>{{end}}
+
+  <div class="flex flex-wrap gap-1 border-b border-zinc-800 pb-0">
+    {{$id := .ID}}
+    {{$tab := $.ActiveTab}}
+    <a href="/projects/{{$id}}?tab=overview" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "overview"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Overview</a>
+    <a href="/projects/{{$id}}?tab=deploy" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "deploy"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Deploy</a>
+    <a href="/projects/{{$id}}?tab=env" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "env"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Environment</a>
+    <a href="/projects/{{$id}}?tab=domains" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "domains"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Domains</a>
+    <a href="/projects/{{$id}}?tab=logs" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "logs"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Logs</a>
+  </div>
+
+  {{if eq $.ActiveTab "overview"}}
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="xm-card p-5 space-y-3 text-sm">
+      <h2 class="text-xs font-semibold text-panel-muted uppercase">Details</h2>
+      <dl class="space-y-2">
+        <div class="flex justify-between gap-2"><dt class="text-panel-muted">Source</dt><dd class="font-mono text-xs text-right truncate max-w-[14rem]">{{if .Source}}{{.Source}}{{else}}—{{end}}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-panel-muted">Persistent</dt><dd>{{if .PersistentData}}yes{{else}}no{{end}}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="text-panel-muted">Ports</dt><dd class="font-mono text-xs">{{if $.ProjectConfig.Ports}}{{range $.ProjectConfig.Ports}}{{.}} {{end}}{{else}}—{{end}}</dd></div>
+      </dl>
+    </div>
+    <div class="xm-card p-5 space-y-3 text-sm">
+      <h2 class="text-xs font-semibold text-panel-muted uppercase">Webhook</h2>
+      {{if .WebhookSecret}}
+      <p class="text-xs text-panel-muted">POST <span class="font-mono text-gray-300">/webhook/{{.ID}}</span></p>
+      <p class="text-xs text-panel-muted">Header <span class="font-mono">X-Webhook-Secret</span></p>
+      <code class="block text-xs font-mono bg-zinc-950 border border-zinc-800 rounded-lg p-2 break-all select-all">{{.WebhookSecret}}</code>
+      {{else}}
+      <p class="text-panel-muted text-xs">No webhook secret</p>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if eq $.ActiveTab "deploy"}}
+  <div class="xm-card p-5 space-y-4">
+    <form method="post" action="/projects/{{.ID}}/deploy">
+      <button class="xm-btn xm-btn-primary">Force deploy</button>
+    </form>
+    <h2 class="text-xs font-semibold text-panel-muted uppercase">History</h2>
+    {{if $.DeployHistory}}
+    <ul class="space-y-3 text-sm">
+      {{range $.DeployHistory}}
+      <li class="border border-zinc-800 rounded-lg p-3">
+        <div class="flex justify-between gap-2 text-xs mb-1">
+          <span class="{{if eq .Status "running"}}text-emerald-300{{else if eq .Status "failed"}}text-red-300{{else}}text-panel-muted{{end}}">{{.Status}}</span>
+          <span class="text-panel-muted">{{.TriggeredAt.Format "2006-01-02 15:04"}}</span>
+        </div>
+        {{if .Output}}<pre class="text-[11px] font-mono text-zinc-400 max-h-32 overflow-auto whitespace-pre-wrap">{{.Output}}</pre>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-panel-muted text-sm">No deploys yet</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if eq $.ActiveTab "env"}}
+  <div class="xm-card p-5 space-y-4">
+    <form method="post" action="/projects/{{.ID}}/env" class="flex flex-wrap gap-2 items-end">
+      <input name="key" required placeholder="KEY" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="value" placeholder="value" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono flex-1 min-w-[10rem]">
+      <button class="xm-btn xm-btn-primary text-xs">Save</button>
+    </form>
+    {{if $.ProjectEnvVars}}
+    <ul class="divide-y divide-zinc-800 text-sm">
+      {{range $.ProjectEnvVars}}
+      <li class="py-2 flex justify-between items-center gap-2">
+        <div>
+          <span class="font-mono text-indigo-300">{{.Key}}</span>
+          <span class="font-mono text-panel-muted text-xs ml-2">{{.ValueEncrypted}}</span>
+        </div>
+        <form method="post" action="/projects/{{$.Project.ID}}/env/{{.ID}}/delete">
+          <button class="text-xs text-red-400">Delete</button>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-panel-muted text-sm">No environment variables</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if eq $.ActiveTab "domains"}}
+  <div class="xm-card p-5 space-y-4">
+    <form method="post" action="/projects/{{.ID}}/domain" class="grid md:grid-cols-3 gap-2">
+      <input name="domain" required placeholder="example.com" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+      <input name="upstream" placeholder="http://127.0.0.1:PORT" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <button class="xm-btn xm-btn-primary text-xs">Attach domain</button>
+    </form>
+    {{if $.ProjectDomainsList}}
+    <ul class="text-sm space-y-2">
+      {{range $.ProjectDomainsList}}
+      <li class="font-mono text-indigo-300">{{.Domain}} {{if .SSL}}<span class="text-[10px] text-emerald-400">ssl</span>{{end}}</li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-panel-muted text-sm">No domains attached</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if eq $.ActiveTab "logs"}}
+  <div class="xm-card p-0 overflow-hidden">
+    <pre class="p-4 text-xs font-mono text-gray-300 overflow-auto max-h-[70vh] whitespace-pre-wrap bg-zinc-950">{{if $.LogText}}{{$.LogText}}{{else}}No logs{{end}}</pre>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{template "foot" .}}
+{{end}}
