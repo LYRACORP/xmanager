@@ -52,7 +52,7 @@
     </div>
   </div>
   {{else}}
-  <form method="post" action="/projects" class="xm-card p-5 md:p-6 space-y-5">
+  <form method="post" action="/projects" id="git-create-form" class="xm-card p-5 md:p-6 space-y-5">
     <input type="hidden" name="type" value="{{.CreateType}}">
     <div class="flex items-center gap-2 text-sm">
       <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.CreateType}}</span>
@@ -85,10 +85,69 @@
     {{end}}
 
     {{if or (eq .CreateType "git") (eq .CreateType "clone")}}
-    <div class="grid md:grid-cols-2 gap-3">
-      <input name="repo_url" required placeholder="Git repo URL" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm md:col-span-2">
-      <input name="branch" placeholder="Branch (main)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
-      <input name="ports" placeholder="Ports e.g. 3000:3000" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+    <div class="space-y-4">
+      {{if eq .CreateType "git"}}
+      <div>
+        <label class="block text-sm font-semibold mb-2">Git provider</label>
+        <select name="provider" id="git-provider"
+          class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm"
+          hx-get="/api/git/repos"
+          hx-trigger="change"
+          hx-target="#git-repo-list"
+          hx-include="[name='q']">
+          <option value="">Select provider…</option>
+          {{range .GitProviders}}
+          <option value="{{.Provider}}" {{if not .Connected}}disabled{{end}}>
+            {{.Label}}{{if .Connected}} ({{.AccountLogin}}){{else}} — connect in Settings{{end}}
+          </option>
+          {{end}}
+        </select>
+        <p class="text-xs text-panel-muted mt-1"><a href="/settings" class="text-indigo-300 hover:underline">Settings → Git providers</a> to connect OAuth.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-2">Search repos</label>
+        <input name="q" id="git-repo-q" placeholder="Filter…"
+          class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm"
+          hx-get="/api/git/repos"
+          hx-trigger="keyup changed delay:300ms"
+          hx-target="#git-repo-list"
+          hx-include="#git-provider">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-2">Repository</label>
+        <div id="git-repo-list" class="xm-card p-2 min-h-[4rem]">
+          <p class="text-sm text-panel-muted p-2">Select a connected provider to load repos.</p>
+        </div>
+      </div>
+      {{end}}
+      <div class="grid md:grid-cols-2 gap-3">
+        <input name="repo_url" id="git-repo-url" {{if ne .CreateType "git"}}required{{end}} placeholder="Git repo URL" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm md:col-span-2">
+        <input name="branch" id="git-branch" placeholder="Branch (main)" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm">
+        <input name="ports" placeholder="Ports e.g. 3000:3000" class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono">
+      </div>
+      {{if eq .CreateType "git"}}
+      <details>
+        <summary class="text-xs text-panel-muted cursor-pointer">Paste URL manually</summary>
+        <p class="text-xs text-panel-muted mt-1">Or type the clone URL above without picking from the list.</p>
+      </details>
+      <script>
+        function xmPickRepo(el) {
+          var url = el.getAttribute('data-clone') || '';
+          var name = el.getAttribute('data-name') || '';
+          var branch = el.getAttribute('data-branch') || 'main';
+          var urlEl = document.getElementById('git-repo-url');
+          var branchEl = document.getElementById('git-branch');
+          var nameEl = document.querySelector('input[name="name"]');
+          if (urlEl) urlEl.value = url;
+          if (branchEl) branchEl.value = branch;
+          if (nameEl && !nameEl.value) nameEl.value = name;
+          document.querySelectorAll('#git-repo-list button').forEach(function(b) {
+            b.classList.remove('border-emerald-600');
+          });
+          el.classList.add('border-emerald-600');
+        }
+      </script>
+      {{end}}
     </div>
     {{end}}
 

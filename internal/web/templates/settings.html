@@ -1,14 +1,14 @@
 {{define "settings"}}
 {{template "head" .}}
 {{template "nav" .}}
-<div class="xm-page max-w-2xl">
+<div class="xm-page max-w-3xl">
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-gray-100">Settings</h1>
-    <p class="text-gray-500 text-sm mt-0.5">Current configuration overview</p>
+    <p class="text-gray-500 text-sm mt-0.5">Panel configuration</p>
   </div>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm mb-4">{{.Flash}}</p>{{end}}
 
   <div class="space-y-4">
-    <!-- Web section -->
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
       <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Web Panel</h2>
       <dl class="space-y-2 text-sm">
@@ -31,7 +31,58 @@
       </dl>
     </div>
 
-    <!-- Poller section -->
+    {{if .NodeMode}}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Git providers (OAuth)</h2>
+        <p class="text-xs text-panel-muted mt-1">Create an OAuth App on each forge. Callback URL: <span class="font-mono text-gray-400">{{if .PublicURL}}{{.PublicURL}}{{else}}&lt;public-url&gt;{{end}}/oauth/git/&lt;provider&gt;/callback</span>. Cloud forges need HTTPS.</p>
+      </div>
+      <form method="post" action="/settings/git" class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold mb-1">Public panel URL</label>
+          <input name="public_url" value="{{.PublicURL}}" placeholder="https://panel.example.com" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono">
+        </div>
+        {{range .GitProviders}}
+        <div class="border border-zinc-800 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="font-semibold text-sm">{{.Label}}</h3>
+            {{if .Connected}}
+            <span class="text-xs text-emerald-400">connected as {{.AccountLogin}}</span>
+            {{else if .ClientID}}
+            <span class="text-xs text-amber-400">app configured — not connected</span>
+            {{else}}
+            <span class="text-xs text-zinc-500">not configured</span>
+            {{end}}
+          </div>
+          <div class="grid md:grid-cols-2 gap-2">
+            <input name="{{.Provider}}_client_id" value="{{.ClientID}}" placeholder="Client ID" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+            <input name="{{.Provider}}_client_secret" type="password" placeholder="{{if .HasSecret}}•••••••• (unchanged){{else}}Client secret{{end}}" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+            {{if or (eq .Provider "gitea") (eq .Provider "gitlab")}}
+            <input name="{{.Provider}}_endpoint" value="{{.Endpoint}}" placeholder="Base URL (e.g. http://127.0.0.1:3000)" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+        <button type="submit" class="xm-btn xm-btn-primary">Save git settings</button>
+      </form>
+      <div class="space-y-2 pt-2 border-t border-zinc-800">
+        <p class="text-xs text-panel-muted">Connect after saving Client ID + secret:</p>
+        <div class="flex flex-wrap gap-2">
+          {{range .GitProviders}}
+          {{if .ClientID}}
+          <a href="/oauth/git/{{.Provider}}/connect" class="xm-btn xm-btn-primary text-xs">{{if .Connected}}Reconnect {{.Label}}{{else}}Connect {{.Label}}{{end}}</a>
+          {{end}}
+          {{if .Connected}}
+          <form method="post" action="/settings/git/{{.Provider}}/disconnect" class="inline">
+            <button type="submit" class="xm-btn xm-btn-ghost text-xs">Disconnect {{.Label}}</button>
+          </form>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
       <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Poller</h2>
       <dl class="space-y-2 text-sm">
@@ -54,7 +105,6 @@
       </dl>
     </div>
 
-    <!-- AI section -->
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
       <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">AI</h2>
       <dl class="space-y-2 text-sm">
@@ -74,7 +124,7 @@
     </div>
 
     <p class="text-xs text-gray-600 text-center pt-2">
-      Edit configuration at <code class="font-mono">~/.config/xmanager/config.yaml</code>
+      Edit base config at <code class="font-mono">~/.config/xmanager/config.yaml</code>
     </p>
   </div>
 </div>

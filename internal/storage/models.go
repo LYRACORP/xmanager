@@ -159,10 +159,24 @@ type ProjectEnvVar struct {
 
 type GitCredential struct {
 	gorm.Model
-	Provider       string `gorm:"not null" json:"provider"` // github, gitlab, bitbucket, gitea
-	Username       string `json:"username"`
-	TokenEncrypted string `gorm:"type:text" json:"-"`
-	Endpoint       string `json:"endpoint"`
+	Provider         string     `gorm:"not null;index" json:"provider"` // github, gitlab, bitbucket, gitea
+	Username         string     `json:"username"`
+	AccountLogin     string     `json:"account_login"`
+	TokenEncrypted   string     `gorm:"type:text" json:"-"`
+	RefreshEncrypted string     `gorm:"type:text" json:"-"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	Endpoint         string     `json:"endpoint"`
+	Scopes           string     `json:"scopes"`
+}
+
+// GitOAuthApp holds per-provider OAuth application credentials (client id/secret).
+type GitOAuthApp struct {
+	gorm.Model
+	Provider             string `gorm:"uniqueIndex;not null" json:"provider"` // github, gitlab, bitbucket, gitea
+	ClientID             string `json:"client_id"`
+	ClientSecretEncrypted string `gorm:"type:text" json:"-"`
+	Endpoint             string `json:"endpoint"` // self-hosted GitLab/Gitea base URL
+	Enabled              bool   `gorm:"default:true" json:"enabled"`
 }
 
 type CronJob struct {

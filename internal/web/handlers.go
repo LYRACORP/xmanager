@@ -14,6 +14,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/auth"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/docker"
+	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
@@ -24,14 +25,15 @@ import (
 )
 
 type handler struct {
-	opts       Options
-	tmpl       *template.Template
-	sess       *sessionStore
-	staticFS   fs.FS
-	nodeMode   bool
-	node       *nodemetrics.Collector
-	exec       *ssh.Executor
-	localSrvID uint
+	opts        Options
+	tmpl        *template.Template
+	sess        *sessionStore
+	staticFS    fs.FS
+	nodeMode    bool
+	node        *nodemetrics.Collector
+	exec        *ssh.Executor
+	localSrvID  uint
+	oauthStates *oauthStateStore
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -101,6 +103,12 @@ type pageData struct {
 	TemplateSummaries  []apps.Summary
 	TemplateApp        *apps.App
 	TemplateQuery      string
+	// Git OAuth / repo picker
+	GitProviders []gitProviderView
+	GitRepos    []gitforge.Repo
+	GitProvider  string
+	GitCredID    uint
+	PublicURL    string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -495,13 +503,23 @@ func (h *handler) postUptime(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
-	h.render(w, "settings", pageData{
+	data := pageData{
 		Title:     "Settings",
 		Session:   sess,
 		NodeMode:  h.nodeMode,
 		ActiveNav: "settings",
 		Config:    h.opts.Config,
-	})
+	}
+	if h.nodeMode {
+		data.GitProviders = h.gitProviderViews()
+		if h.opts.Config != nil {
+			data.PublicURL = h.opts.Config.Web.PublicURL
+		}
+		if flash := r.URL.Query().Get("flash"); flash != "" {
+			data.Flash = flash
+		}
+	}
+	h.render(w, "settings", data)
 }
 
 // --- Webhook handler (no auth, validates secret header) ---

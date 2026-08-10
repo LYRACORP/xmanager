@@ -117,6 +117,9 @@ func (h *handler) getNodeProjectsNew(w http.ResponseWriter, r *http.Request) {
 		"image", "git", "dockerfile", "compose", "push",
 		"oneclick", "clone", "scratch", "archive", "function",
 	}
+	if data.CreateType == "git" || data.CreateType == "clone" {
+		data.GitProviders = h.gitProviderViews()
+	}
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
@@ -142,6 +145,16 @@ func (h *handler) postNodeProjects(w http.ResponseWriter, r *http.Request) {
 		ArchivePath:       r.FormValue("archive_path"),
 		Runtime:           r.FormValue("runtime"),
 		Handler:           r.FormValue("handler"),
+		CredID:            parseUintForm(r.FormValue("cred_id")),
+	}
+	if cfg.CredID == 0 {
+		if p := strings.TrimSpace(r.FormValue("provider")); p != "" {
+			cfg.CredID = h.connectedCredID(p)
+		}
+	}
+	if (typ == "git" || typ == "clone") && strings.TrimSpace(cfg.RepoURL) == "" {
+		http.Redirect(w, r, "/projects/new?type="+url.QueryEscape(typ)+"&flash="+urlQueryEscape("select a repository or paste a URL"), http.StatusSeeOther)
+		return
 	}
 	if ports := strings.TrimSpace(r.FormValue("ports")); ports != "" {
 		parts := strings.Split(ports, ",")

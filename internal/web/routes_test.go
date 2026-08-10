@@ -2,10 +2,27 @@ package web
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/storage"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+func openTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.AutoMigrate(&storage.GitCredential{}, &storage.GitOAuthApp{}, &storage.User{})
+	return db
+}
 
 func TestRegisterNodeRoutesNoConflict(t *testing.T) {
 	h := &handler{
@@ -15,12 +32,37 @@ func TestRegisterNodeRoutesNoConflict(t *testing.T) {
 		nodeMode: true,
 	}
 	mux := http.NewServeMux()
-	// Must not panic: previously POST /projects/{id}/deploy conflicted with
-	// POST /projects/templates/{id} (and /projects/oneclick/{id}) on overlapping paths.
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("registerNode panicked: %v", r)
 		}
 	}()
 	h.registerNode(mux)
+}
+
+func TestAPIGitReposUnauthorized(t *testing.T) {
+	db := openTestDB(t)
+	h := &handler{
+		opts:     Options{Config: &config.Config{}, DB: db},
+		nodeMode: true,
+		sess:     newSessionStore(),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/git/repos", h.requireAuth(h.getAPIGitRepos))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/git/repos?provider=github", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d want redirect", rec.Code)
+	}
+
+	token := h.sess.create(1, "admin", "admin")
+	req2 := httptest.NewRequest(http.MethodGet, "/api/git/repos?provider=github", nil)
+	req2.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d body %s", rec2.Code, rec2.Body.String())
+	}
 }

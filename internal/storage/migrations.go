@@ -18,6 +18,7 @@ func runMigrations(db *gorm.DB) error {
 		&ProjectDomain{},
 		&ProjectEnvVar{},
 		&GitCredential{},
+		&GitOAuthApp{},
 		&CronJob{},
 		&CronRun{},
 		&UptimeMonitor{},

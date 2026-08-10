@@ -51,10 +51,11 @@ type LogConfig struct {
 }
 
 type WebConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Host    string `mapstructure:"host"`
-	Port    int    `mapstructure:"port"`
-	Role    string `mapstructure:"role"` // control (default) | node
+	Enabled   bool   `mapstructure:"enabled"`
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	Role      string `mapstructure:"role"` // control (default) | node
+	PublicURL string `mapstructure:"public_url"` // https://panel.example.com — OAuth redirect base
 }
 
 const (
@@ -111,6 +112,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("web.host", "127.0.0.1")
 	viper.SetDefault("web.port", 8080)
 	viper.SetDefault("web.role", "control")
+	viper.SetDefault("web.public_url", "")
 	viper.SetDefault("poller.interval_sec", 30)
 	viper.SetDefault("poller.metric_retention", 288)
 	viper.SetDefault("poller.uptime_interval_sec", 60)
@@ -158,6 +160,7 @@ func Save(cfg *Config) error {
 	viper.Set("web.host", cfg.Web.Host)
 	viper.Set("web.port", cfg.Web.Port)
 	viper.Set("web.role", cfg.Web.Role)
+	viper.Set("web.public_url", cfg.Web.PublicURL)
 	viper.Set("poller.interval_sec", cfg.Poller.IntervalSec)
 	viper.Set("poller.metric_retention", cfg.Poller.MetricRetention)
 	viper.Set("poller.uptime_interval_sec", cfg.Poller.UptimeIntervalSec)

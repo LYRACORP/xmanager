@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
@@ -181,10 +183,16 @@ func (d *Deployer) deployGit(proj *storage.Project, cfg *Config) (*DeployResult,
 	if branch == "" {
 		branch = "main"
 	}
+	branch = sanitizeGitRef(branch)
+
+	authURL, err := d.authenticatedRepoURL(cfg, repoURL)
+	if err != nil {
+		return nil, err
+	}
 
 	cloneOrPull := fmt.Sprintf(
 		"if [ -d %s/.git ]; then cd %s && git fetch origin && git reset --hard origin/%s; else git clone --depth 1 -b %s %s %s; fi 2>&1",
-		dir, dir, branch, branch, repoURL, dir,
+		dir, dir, branch, branch, shellQuote(authURL), dir,
 	)
 	res, err := d.exec.Run(cloneOrPull)
 	if err != nil {
@@ -229,9 +237,14 @@ func (d *Deployer) deployClone(proj *storage.Project, cfg *Config) (*DeployResul
 	if branch == "" {
 		branch = "main"
 	}
+	branch = sanitizeGitRef(branch)
+	authURL, err := d.authenticatedRepoURL(cfg, repoURL)
+	if err != nil {
+		return nil, err
+	}
 	cmd := fmt.Sprintf(
 		"rm -rf %s && git clone --depth 1 -b %s %s %s 2>&1",
-		dir, branch, repoURL, dir,
+		dir, branch, shellQuote(authURL), dir,
 	)
 	res, err := d.exec.Run(cmd)
 	if err != nil {
@@ -382,4 +395,36 @@ func sanitizeName(s string) string {
 
 func shellQuote(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`
+}
+
+func sanitizeGitRef(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '/' || c == '.' {
+			b.WriteRune(c)
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "main"
+	}
+	return out
+}
+
+// authenticatedRepoURL injects an OAuth token into the clone URL when CredID is set.
+func (d *Deployer) authenticatedRepoURL(cfg *Config, repoURL string) (string, error) {
+	if cfg == nil || cfg.CredID == 0 || d.db == nil {
+		return repoURL, nil
+	}
+	var cred storage.GitCredential
+	if err := d.db.First(&cred, cfg.CredID).Error; err != nil {
+		return "", fmt.Errorf("git credential %d: %w", cfg.CredID, err)
+	}
+	token, err := config.Decrypt(cred.TokenEncrypted)
+	if err != nil {
+		return "", fmt.Errorf("decrypting git token: %w", err)
+	}
+	return gitforge.AuthenticatedCloneURL(cred.Provider, repoURL, token)
 }

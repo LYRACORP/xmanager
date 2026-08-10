@@ -1,0 +1,23 @@
+{{define "node_git_repos"}}
+{{if .GitRepos}}
+<input type="hidden" name="cred_id" value="{{.GitCredID}}" form="git-create-form">
+<div class="space-y-1 max-h-72 overflow-y-auto">
+  {{range .GitRepos}}
+  <button type="button"
+    class="w-full text-left px-3 py-2 rounded-lg border border-zinc-800 hover:border-emerald-800/50 hover:bg-zinc-900/80 transition-colors"
+    data-clone="{{.CloneURL}}"
+    data-name="{{.Name}}"
+    data-branch="{{.DefaultBranch}}"
+    onclick="xmPickRepo(this)">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-medium text-gray-100">{{.FullName}}</span>
+      {{if .Private}}<span class="text-[10px] text-zinc-500">private</span>{{end}}
+    </div>
+    <div class="text-[10px] font-mono text-zinc-600 truncate">{{.CloneURL}}</div>
+  </button>
+  {{end}}
+</div>
+{{else}}
+<div class="text-sm text-panel-muted p-3">No repositories found{{if .TemplateQuery}} for “{{.TemplateQuery}}”{{end}}.</div>
+{{end}}
+{{end}}
