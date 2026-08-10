@@ -12,7 +12,7 @@ import (
 // After registering at https://github.com/settings/applications/new
 // (Enable Device Flow checked), put the Client ID here.
 var defaultClientIDs = map[string]string{
-	ProviderGitHub: "", // set after registering XManager OAuth App (device flow)
+	ProviderGitHub: "Ov23liFFBIVHJ0NLTNly",
 	// ProviderGitLab: "",
 }
 
