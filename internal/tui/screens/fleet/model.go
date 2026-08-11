@@ -183,6 +183,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.message = msg.Detail
 		return m, shared.WaitMsg(m.webProgCh)
 
+	case shared.ProgressNetTickMsg:
+		if !m.webProgress.Active {
+			return m, nil
+		}
+		m.webProgress.SampleNet()
+		return m, shared.TickProgressNet()
+
 	case shared.WebPanelDoneMsg:
 		m.busy = false
 		m.webProgCh = nil
@@ -326,7 +333,7 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		default:
 			m.message = fmt.Sprintf("Uninstalling web panel from %s…", s.Name)
 		}
-		return m, m.runWebPanel(s, action)
+		return m, tea.Batch(m.runWebPanel(s, action), shared.TickProgressNet())
 	case "n", "N", "esc":
 		m.mode = modeGrid
 		m.message = ""

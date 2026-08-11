@@ -1,8 +1,12 @@
 package shared
 
 import (
+	"fmt"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/localnet"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
 )
@@ -22,6 +26,9 @@ type WebPanelDoneMsg struct {
 	Err       error
 }
 
+// ProgressNetTickMsg triggers a local network traffic sample while progress is active.
+type ProgressNetTickMsg struct{}
+
 // WebPanelProgressState tracks live progress for the TUI.
 type WebPanelProgressState struct {
 	Active bool
@@ -29,12 +36,27 @@ type WebPanelProgressState struct {
 	Pct    float64
 	Detail string
 	Log    []string
+
+	NetIface   string
+	NetRxBps   float64
+	NetTxBps   float64
+	NetRxTotal uint64
+	NetTxTotal uint64
+	netPrev    localnet.Counters
+	netStart   localnet.Counters
+	netReady   bool
 }
 
 const webPanelLogMax = 8
 
 func (p *WebPanelProgressState) Start(action string) {
 	*p = WebPanelProgressState{Active: true, Action: action, Pct: 0}
+	if c, err := localnet.Sample(); err == nil {
+		p.netPrev = c
+		p.netStart = c
+		p.NetIface = c.Iface
+		p.netReady = true
+	}
 }
 
 func (p *WebPanelProgressState) Apply(msg WebPanelProgressMsg) {
@@ -52,11 +74,43 @@ func (p *WebPanelProgressState) Apply(msg WebPanelProgressMsg) {
 	}
 }
 
+// SampleNet refreshes live send/receive rates from the local machine.
+func (p *WebPanelProgressState) SampleNet() {
+	if !p.Active {
+		return
+	}
+	cur, err := localnet.Sample()
+	if err != nil {
+		return
+	}
+	if p.netReady {
+		p.NetRxBps, p.NetTxBps = localnet.Rates(p.netPrev, cur)
+		if cur.Rx >= p.netStart.Rx {
+			p.NetRxTotal = cur.Rx - p.netStart.Rx
+		}
+		if cur.Tx >= p.netStart.Tx {
+			p.NetTxTotal = cur.Tx - p.netStart.Tx
+		}
+	} else {
+		p.netStart = cur
+		p.netReady = true
+	}
+	p.netPrev = cur
+	p.NetIface = cur.Iface
+}
+
 func (p *WebPanelProgressState) Reset() {
 	*p = WebPanelProgressState{}
 }
 
-// View renders a progress bar plus recent detail lines.
+// TickProgressNet schedules the next network sample (~2 Hz).
+func TickProgressNet() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return ProgressNetTickMsg{}
+	})
+}
+
+// View renders a progress bar, live net traffic, and recent detail lines.
 func (p WebPanelProgressState) View(width int) string {
 	if !p.Active {
 		return ""
@@ -84,6 +138,7 @@ func (p WebPanelProgressState) View(width int) string {
 	lines := []string{
 		" " + theme.TitleStyle().Render(title),
 		" " + g.View(),
+		" " + p.netLine(),
 	}
 	if p.Detail != "" {
 		lines = append(lines, " "+theme.WarningText().Render(p.Detail))
@@ -95,6 +150,28 @@ func (p WebPanelProgressState) View(width int) string {
 		lines = append(lines, " "+theme.MutedText().Render("• "+d))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (p WebPanelProgressState) netLine() string {
+	iface := p.NetIface
+	if iface == "" {
+		iface = "?"
+	}
+	line := fmt.Sprintf("NET  ↓ %s  ↑ %s  (%s)  · session ↓%s ↑%s",
+		localnet.FormatRate(p.NetRxBps),
+		localnet.FormatRate(p.NetTxBps),
+		iface,
+		localnet.FormatBytes(p.NetRxTotal),
+		localnet.FormatBytes(p.NetTxTotal),
+	)
+	style := theme.MutedText()
+	// Highlight when there is meaningful traffic (not stuck idle).
+	if p.NetRxBps+p.NetTxBps >= 1024 {
+		style = theme.SuccessText()
+	} else if p.netReady {
+		style = theme.WarningText()
+	}
+	return style.Render(line)
 }
 
 // WaitMsg reads the next message from a progress channel (nil when closed).

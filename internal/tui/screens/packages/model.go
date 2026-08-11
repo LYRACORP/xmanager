@@ -116,6 +116,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.progress.Apply(msg)
 		return m, shared.WaitMsg(m.progCh)
 
+	case shared.ProgressNetTickMsg:
+		if !m.progress.Active {
+			return m, nil
+		}
+		m.progress.SampleNet()
+		return m, shared.TickProgressNet()
+
 	case recipeDoneMsg:
 		m.busy = false
 		m.progCh = nil
@@ -214,7 +221,7 @@ func (m *Model) startInstall() tea.Cmd {
 		})
 		ch <- recipeDoneMsg{ok: res.OK, out: res.Output, creds: res.Creds, err: res.Err}
 	}()
-	return shared.WaitMsg(ch)
+	return tea.Batch(shared.WaitMsg(ch), shared.TickProgressNet())
 }
 
 func (m *Model) View() string {

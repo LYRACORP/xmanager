@@ -629,10 +629,38 @@ func (w *WebPanel) uploadViaSFTP(localPath string) error {
 		return err
 	}
 	tmp := fmt.Sprintf("%s/xmanager.%d", installDir, time.Now().UnixNano())
-	if err := sftp.WriteFile(tmp, data, 0755); err != nil {
+	total := int64(len(data))
+	w.report(0.40, fmt.Sprintf("Uploading binary to remote… 0/%s", formatByteSize(total)))
+	lastPct := -1
+	err = sftp.WriteFileProgress(tmp, data, 0755, func(written, tot int64) {
+		if tot <= 0 {
+			return
+		}
+		frac := float64(written) / float64(tot)
+		pct := int(frac * 100)
+		// Throttle UI updates to whole percents.
+		if pct == lastPct && written != tot {
+			return
+		}
+		lastPct = pct
+		// Map upload into 0.40–0.52 of overall progress.
+		w.report(0.40+0.12*frac, fmt.Sprintf("Uploading binary to remote… %s/%s (%d%%)",
+			formatByteSize(written), formatByteSize(tot), pct))
+	})
+	if err != nil {
 		return fmt.Errorf("writing: %w", err)
 	}
 	return w.run(fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
+}
+
+func formatByteSize(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	if n < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
 }
 
 func (w *WebPanel) uploadViaSCP(localPath string) error {

@@ -265,6 +265,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.statusMsg = msg.Detail
 		return m, shared.WaitMsg(m.webProgCh)
 
+	case shared.ProgressNetTickMsg:
+		if !m.webProgress.Active {
+			return m, nil
+		}
+		m.webProgress.SampleNet()
+		return m, shared.TickProgressNet()
+
 	case shared.WebPanelDoneMsg:
 		m.webBusy = false
 		m.webProgCh = nil
@@ -484,15 +491,15 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			case 1:
 				m.webProgress.Start("install")
 				m.statusMsg = "Installing node web panel…"
-				return m, m.runWebPanel("install")
+				return m, tea.Batch(m.runWebPanel("install"), shared.TickProgressNet())
 			case 4:
 				m.webProgress.Start("upgrade")
 				m.statusMsg = "Upgrading node web panel…"
-				return m, m.runWebPanel("upgrade")
+				return m, tea.Batch(m.runWebPanel("upgrade"), shared.TickProgressNet())
 			default:
 				m.webProgress.Start("uninstall")
 				m.statusMsg = "Uninstalling web panel…"
-				return m, m.runWebPanel("uninstall")
+				return m, tea.Batch(m.runWebPanel("uninstall"), shared.TickProgressNet())
 			}
 		case "n", "N", "esc":
 			m.webConfirm = 0

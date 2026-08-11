@@ -1,6 +1,9 @@
 package shared
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestWebPanelProgressStateApply(t *testing.T) {
 	var p WebPanelProgressState
@@ -21,6 +24,10 @@ func TestWebPanelProgressStateApply(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty view")
 	}
+	if !strings.Contains(view, "NET") {
+		t.Fatalf("expected NET line in view: %q", view)
+	}
+	p.SampleNet()
 	p.Reset()
 	if p.Active || p.View(40) != "" {
 		t.Fatalf("reset failed: %+v", p)

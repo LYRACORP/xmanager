@@ -35,14 +35,36 @@ func (s *SFTPClient) ReadFile(path string) ([]byte, error) {
 }
 
 func (s *SFTPClient) WriteFile(path string, data []byte, perm os.FileMode) error {
+	return s.WriteFileProgress(path, data, perm, nil)
+}
+
+// WriteProgressFunc reports bytes written so far and total size.
+type WriteProgressFunc func(written, total int64)
+
+// WriteFileProgress writes data in chunks, optionally reporting progress.
+func (s *SFTPClient) WriteFileProgress(path string, data []byte, perm os.FileMode, onProgress WriteProgressFunc) error {
 	f, err := s.sftpClient.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
 		return fmt.Errorf("creating remote file %s: %w", path, err)
 	}
 	defer f.Close()
 
-	if _, err := f.Write(data); err != nil {
-		return fmt.Errorf("writing remote file %s: %w", path, err)
+	total := int64(len(data))
+	const chunk = 256 * 1024
+	var written int64
+	for written < total {
+		end := written + chunk
+		if end > total {
+			end = total
+		}
+		n, err := f.Write(data[written:end])
+		written += int64(n)
+		if onProgress != nil {
+			onProgress(written, total)
+		}
+		if err != nil {
+			return fmt.Errorf("writing remote file %s: %w", path, err)
+		}
 	}
 
 	return s.sftpClient.Chmod(path, perm)
