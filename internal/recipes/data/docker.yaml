@@ -2,6 +2,15 @@ id: docker
 name: Docker + Compose
 description: Official Docker CE, Compose plugin, and docker-compose binary
 steps:
+  - name: Wait for apt (stop racing unattended-upgrades)
+    commands:
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        # Soft-stop automatic upgrades so they don't re-grab the lock mid-install.
+        systemctl stop unattended-upgrades.service 2>/dev/null || true
+        systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+        systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+        echo "apt services paused for install"
   - name: Remove conflicting packages
     commands:
       - "export DEBIAN_FRONTEND=noninteractive"

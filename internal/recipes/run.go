@@ -3,6 +3,7 @@ package recipes
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lyracorp/xmanager/internal/ssh"
 )
@@ -20,6 +21,12 @@ type RunResult struct {
 type Runner struct {
 	Exec *ssh.Executor
 }
+
+const (
+	aptLockWaitSecs   = 5
+	aptLockMaxWaits   = 120 // ~10 minutes
+	aptLockMaxRetries = 24  // extra retries if lock races after wait
+)
 
 // Run executes all steps, calling onProgress between commands.
 func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
@@ -62,7 +69,11 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 		for _, cmd := range step.Commands {
 			detail := truncate(strings.ReplaceAll(cmd, "\n", " "), 72)
 			report(step.Name + ": " + detail)
-			res, err := r.Exec.Run("bash -lc " + shellQuote(cmd))
+
+			res, err := r.runCommand(cmd, usesApt(cmd), func(msg string) {
+				report(msg)
+				log.WriteString(msg + "\n")
+			})
 			done++
 			if err != nil {
 				msg := fmt.Sprintf("SSH error: %v", err)
@@ -99,6 +110,98 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 		onProgress(1, mat.Name+" complete")
 	}
 	return RunResult{OK: true, Output: log.String(), Creds: creds}
+}
+
+func (r Runner) runCommand(cmd string, apt bool, note func(string)) (*ssh.ExecResult, error) {
+	if !apt {
+		return r.Exec.Run("bash -lc " + shellQuote(cmd))
+	}
+
+	for attempt := 0; attempt <= aptLockMaxRetries; attempt++ {
+		if err := r.waitAptLock(note); err != nil {
+			return &ssh.ExecResult{ExitCode: 1, Stderr: err.Error()}, nil
+		}
+		res, err := r.Exec.Run("bash -lc " + shellQuote(cmd))
+		if err != nil {
+			return nil, err
+		}
+		out := res.Stdout + "\n" + res.Stderr
+		if res.ExitCode == 0 || !isAptLockError(out) {
+			return res, nil
+		}
+		if attempt == aptLockMaxRetries {
+			return res, nil
+		}
+		note(fmt.Sprintf("apt lock contended (unattended-upgrades or another apt); retry %d/%d…",
+			attempt+1, aptLockMaxRetries))
+		time.Sleep(time.Duration(aptLockWaitSecs) * time.Second)
+	}
+	return r.Exec.Run("bash -lc " + shellQuote(cmd))
+}
+
+func (r Runner) waitAptLock(note func(string)) error {
+	// Remote poll: locks held by unattended-upgrades / apt-get / dpkg.
+	script := `
+held=0
+for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
+  if command -v fuser >/dev/null 2>&1; then
+    if fuser "$lock" >/dev/null 2>&1; then held=1; break; fi
+  elif [ -f "$lock" ] && command -v lsof >/dev/null 2>&1; then
+    if lsof "$lock" >/dev/null 2>&1; then held=1; break; fi
+  fi
+done
+if [ "$held" = "1" ]; then
+  pid=$(fuser /var/lib/dpkg/lock-frontend 2>/dev/null | tr -d ' ' | head -c 32 || true)
+  echo "BUSY:${pid:-unknown}"
+  exit 2
+fi
+echo FREE
+exit 0
+`
+	for i := 0; i < aptLockMaxWaits; i++ {
+		res, err := r.Exec.Run("bash -lc " + shellQuote(script))
+		if err != nil {
+			return err
+		}
+		out := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+		if res.ExitCode == 0 && strings.Contains(out, "FREE") {
+			return nil
+		}
+		pid := "unknown"
+		if _, rest, ok := strings.Cut(out, "BUSY:"); ok {
+			pid = strings.TrimSpace(strings.Split(rest, "\n")[0])
+		}
+		if note != nil && i%2 == 0 {
+			note(fmt.Sprintf("Waiting for apt/dpkg lock (pid %s)… %ds", pid, (i+1)*aptLockWaitSecs))
+		}
+		time.Sleep(time.Duration(aptLockWaitSecs) * time.Second)
+	}
+	return fmt.Errorf("timed out waiting for apt/dpkg lock after %d seconds", aptLockMaxWaits*aptLockWaitSecs)
+}
+
+func usesApt(cmd string) bool {
+	c := strings.ToLower(cmd)
+	for _, needle := range []string{
+		"apt-get ", "apt-get\t", "apt-get\n",
+		"apt ", "\napt ",
+		"dpkg ",
+		"unattended-upgrade",
+	} {
+		if strings.Contains(c, needle) {
+			return true
+		}
+	}
+	// Common patterns without trailing space in scripts
+	return strings.Contains(c, "apt-get") || strings.Contains(c, "apt install") || strings.Contains(c, "apt update")
+}
+
+func isAptLockError(output string) bool {
+	s := strings.ToLower(output)
+	return strings.Contains(s, "could not get lock") ||
+		strings.Contains(s, "unable to acquire the dpkg frontend lock") ||
+		strings.Contains(s, "unable to lock the administration directory") ||
+		strings.Contains(s, "is another process using it") ||
+		strings.Contains(s, "dpkg frontend lock")
 }
 
 func shellQuote(s string) string {
