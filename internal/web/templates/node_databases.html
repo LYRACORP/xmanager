@@ -6,7 +6,7 @@
   <div class="flex items-end justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold tracking-tight">Databases</h1>
-      <p class="text-panel-muted text-xs mt-0.5">Create and manage database engines on this server</p>
+      <p class="text-panel-muted text-xs mt-0.5">Install and manage database engines · everything runs in Docker</p>
     </div>
     <button onclick="xmDBTab('advanced')" id="tab-adv-btn"
       class="text-xs text-panel-muted hover:text-gray-300 underline transition-colors">Advanced</button>
@@ -16,169 +16,180 @@
   <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
   {{end}}
 
-  {{/* ── NORMAL MODE ─────────────────────────────────────────────── */}}
-  <div id="tab-normal">
+  {{/* ── NORMAL WIZARD ─────────────────────────────────────────── */}}
+  <div id="tab-normal" class="space-y-4">
 
-    {{/* Step 1 — Pick engine */}}
-    <div class="xm-card p-5 space-y-5">
-      <p class="text-xs text-panel-muted uppercase tracking-wide font-semibold">Step 1 · Choose a database engine</p>
-
-      <div class="grid grid-cols-3 sm:grid-cols-6 gap-3" id="db-type-grid">
+    {{/* Step 1 — Engine picker */}}
+    <div class="xm-card p-5 space-y-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Step 1 — Choose engine</p>
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {{$avail := .DBAvailable}}
-
-        {{/* PostgreSQL */}}
-        <button type="button" onclick="xmSelectDB('postgres')"
-          data-db="postgres"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-blue-600/60 hover:bg-blue-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#336791"/>
-            <text x="16" y="22" text-anchor="middle" font-size="13" font-weight="bold" fill="white" font-family="monospace">PG</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">PostgreSQL</span>
-          {{if index $avail "postgres"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
+        {{range $db := .DBEngines}}
+        <button type="button" onclick="xmSelectDB('{{$db}}')" data-db="{{$db}}"
+          class="db-type-card relative flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-zinc-600 transition-all cursor-pointer group">
+          <div class="db-icon w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm font-mono
+            {{if eq $db "postgres"}}bg-[#336791]
+            {{else if eq $db "mysql"}}bg-[#E48E00]
+            {{else if eq $db "mariadb"}}bg-[#C0765A]
+            {{else if eq $db "mongodb"}}bg-[#13AA52]
+            {{else if eq $db "redis"}}bg-[#DC382D]
+            {{else}}bg-[#FAAD1C]{{end}}">
+            {{if eq $db "postgres"}}PG
+            {{else if eq $db "mysql"}}MY
+            {{else if eq $db "mariadb"}}MDB
+            {{else if eq $db "mongodb"}}MNG
+            {{else if eq $db "redis"}}RD
+            {{else}}CH{{end}}
+          </div>
+          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors leading-tight text-center">
+            {{if eq $db "postgres"}}PostgreSQL
+            {{else if eq $db "mysql"}}MySQL
+            {{else if eq $db "mariadb"}}MariaDB
+            {{else if eq $db "mongodb"}}MongoDB
+            {{else if eq $db "redis"}}Redis
+            {{else}}ClickHouse{{end}}
+          </span>
+          {{if index $avail $db}}
+          <span class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          {{end}}
         </button>
-
-        {{/* MySQL */}}
-        <button type="button" onclick="xmSelectDB('mysql')"
-          data-db="mysql"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-orange-600/60 hover:bg-orange-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#E48E00"/>
-            <text x="16" y="22" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="monospace">MY</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">MySQL</span>
-          {{if index $avail "mysql"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
-        </button>
-
-        {{/* MariaDB */}}
-        <button type="button" onclick="xmSelectDB('mariadb')"
-          data-db="mariadb"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-amber-600/60 hover:bg-amber-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#C0765A"/>
-            <text x="16" y="22" text-anchor="middle" font-size="9" font-weight="bold" fill="white" font-family="monospace">MDB</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">MariaDB</span>
-          {{if index $avail "mariadb"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
-        </button>
-
-        {{/* MongoDB */}}
-        <button type="button" onclick="xmSelectDB('mongodb')"
-          data-db="mongodb"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-emerald-600/60 hover:bg-emerald-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#13AA52"/>
-            <text x="16" y="22" text-anchor="middle" font-size="9" font-weight="bold" fill="white" font-family="monospace">MNG</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">MongoDB</span>
-          {{if index $avail "mongodb"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
-        </button>
-
-        {{/* Redis */}}
-        <button type="button" onclick="xmSelectDB('redis')"
-          data-db="redis"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-red-600/60 hover:bg-red-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#DC382D"/>
-            <text x="16" y="22" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="monospace">RD</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">Redis</span>
-          {{if index $avail "redis"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
-        </button>
-
-        {{/* ClickHouse */}}
-        <button type="button" onclick="xmSelectDB('clickhouse')"
-          data-db="clickhouse"
-          class="db-type-card flex flex-col items-center gap-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:border-yellow-600/60 hover:bg-yellow-950/20 transition-all group cursor-pointer">
-          <svg viewBox="0 0 32 32" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="#FAAD1C"/>
-            <text x="16" y="22" text-anchor="middle" font-size="9" font-weight="bold" fill="white" font-family="monospace">CH</text>
-          </svg>
-          <span class="text-[11px] text-zinc-400 group-hover:text-white transition-colors">ClickHouse</span>
-          {{if index $avail "clickhouse"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mx-auto"></span>{{end}}
-        </button>
+        {{end}}
       </div>
     </div>
 
-    {{/* Step 2 — Name + action (hidden until type is picked) */}}
-    <div id="db-create-panel" class="hidden mt-3">
-      <div class="xm-card p-5 space-y-4">
-        <div class="flex items-center gap-2">
-          <span id="db-sel-label" class="text-xs font-semibold uppercase tracking-wide text-indigo-300"></span>
-          <span id="db-status-badge" class="hidden text-[10px] px-2 py-0.5 rounded-full border border-emerald-700 text-emerald-300 bg-emerald-950/40">running</span>
-          <span id="db-missing-badge" class="hidden text-[10px] px-2 py-0.5 rounded-full border border-amber-700 text-amber-300 bg-amber-950/30">not installed</span>
-        </div>
+    {{/* Steps 2-4 — hidden until engine selected */}}
+    <div id="db-wizard-panel" class="hidden space-y-3">
 
-        <div id="db-already-msg" class="hidden text-xs text-panel-muted">
-          This engine is already running. Enter a name to create a new database inside it.
+      {{/* Step 2 — Version */}}
+      <div class="xm-card p-5 space-y-3">
+        <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Step 2 — Version</p>
+        <div id="db-version-grid" class="flex flex-wrap gap-2"></div>
+        <input type="hidden" id="db-sel-version">
+      </div>
+
+      {{/* Step 3 — Extensions (PostgreSQL only) */}}
+      <div id="db-pg-options" class="hidden xm-card p-5 space-y-4">
+        <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Step 3 — Extensions &amp; Tools</p>
+
+        <div class="space-y-3">
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="ext-pgvector" value="1"
+              class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
+            <div>
+              <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">pgvector</p>
+              <p class="text-xs text-panel-muted">Vector similarity search — required for AI/embedding workloads (used by pgvector/pgvector image)</p>
+            </div>
+          </label>
+
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="ext-postgis" value="1"
+              class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
+            <div>
+              <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">PostGIS</p>
+              <p class="text-xs text-panel-muted">Geospatial / GIS support — adds geometry, geography, raster types (postgis/postgis image)</p>
+            </div>
+          </label>
+
+          <div class="border-t border-zinc-800 pt-3">
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" id="ext-pgadmin" value="1" onchange="xmTogglePgAdmin(this.checked)"
+                class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-blue-500 focus:ring-blue-500/30 w-4 h-4">
+              <div>
+                <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">pgAdmin 4</p>
+                <p class="text-xs text-panel-muted">Web-based GUI for managing your PostgreSQL databases — runs on port <span class="font-mono text-zinc-300">:5050</span></p>
+              </div>
+            </label>
+            <div id="pgadmin-creds" class="hidden mt-3 ml-7 grid sm:grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-panel-muted block mb-1">pgAdmin email</label>
+                <input id="pgadmin-email" placeholder="admin@xmanager.local"
+                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              </div>
+              <div>
+                <label class="text-xs text-panel-muted block mb-1">pgAdmin password</label>
+                <input id="pgadmin-pass" type="password" placeholder="auto-generated if blank"
+                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="db-install-msg" class="hidden text-xs text-panel-muted">
-          This engine is not installed yet. We'll pull the Docker image and start it automatically.
+      </div>
+
+      {{/* Step 4 — Name + Install */}}
+      <div class="xm-card p-5 space-y-4">
+        <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold" id="db-step-label">Step 4 — Database name &amp; install</p>
+
+        <div id="db-running-notice" class="hidden text-xs text-emerald-300 bg-emerald-950/30 border border-emerald-800/40 rounded-lg px-3 py-2">
+          This engine is already running. We'll just create a new database inside it.
         </div>
 
         <div>
-          <label class="block text-xs text-panel-muted mb-1">Database name</label>
+          <label class="text-xs text-panel-muted block mb-1">Database name <span class="text-zinc-600">(optional — leave blank to only install the engine)</span></label>
           <input id="db-name-input" placeholder="my_database"
             class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
         </div>
 
-        {{/* Action buttons — shown depending on whether engine is running */}}
-        <div class="flex flex-wrap gap-2">
-          {{/* Already running → just create DB */}}
-          <form id="db-create-form" method="post" action="/databases" class="hidden">
-            <input type="hidden" name="db_type" id="db-create-type">
-            <input type="hidden" name="name" id="db-create-name">
-            <button type="submit" class="xm-btn xm-btn-primary">Create database</button>
-          </form>
-          {{/* Not installed → install + create */}}
-          <form id="db-install-form" method="post" action="/databases/install" class="hidden">
-            <input type="hidden" name="db_type" id="db-install-type">
-            <input type="hidden" name="name" id="db-install-name">
-            <button type="submit" class="xm-btn xm-btn-primary">Install &amp; create database</button>
-          </form>
-          {{/* Just install without creating a DB */}}
-          <form id="db-install-only-form" method="post" action="/databases/install" class="hidden">
-            <input type="hidden" name="db_type" id="db-install-only-type">
-            <input type="hidden" name="name" id="db-install-only-name">
-            <button type="submit" class="xm-btn xm-btn-ghost text-xs">Install engine only</button>
-          </form>
-        </div>
+        {{/* Hidden forms — switched based on running state */}}
+        <form id="db-create-form" method="post" action="/databases" class="hidden">
+          <input type="hidden" name="db_type" id="dc-type">
+          <input type="hidden" name="name" id="dc-name">
+          <button type="submit" class="xm-btn xm-btn-primary">Create database</button>
+        </form>
+
+        <form id="db-install-form" method="post" action="/databases/install">
+          <input type="hidden" name="db_type" id="di-type">
+          <input type="hidden" name="name" id="di-name">
+          <input type="hidden" name="version" id="di-version">
+          <input type="hidden" name="ext_pgvector" id="di-pgvector" value="0">
+          <input type="hidden" name="ext_postgis" id="di-postgis" value="0">
+          <input type="hidden" name="pgadmin" id="di-pgadmin" value="0">
+          <input type="hidden" name="pgadmin_email" id="di-pgadmin-email">
+          <input type="hidden" name="pgadmin_pass" id="di-pgadmin-pass">
+          <div class="flex flex-wrap gap-2 items-center">
+            <button type="submit" id="di-btn" class="xm-btn xm-btn-primary">
+              Install &amp; create database
+            </button>
+            <span class="text-xs text-zinc-600" id="di-image-hint"></span>
+          </div>
+        </form>
       </div>
     </div>
 
-    {{/* Existing databases */}}
+    {{/* Existing running DBs */}}
     {{if .NodeDBs}}
-    <div class="mt-6 space-y-3">
-      <p class="text-xs text-panel-muted uppercase tracking-wide font-semibold">Running databases</p>
+    <div class="space-y-3 mt-2">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Running engines</p>
       {{range .NodeDBs}}
       <div class="xm-card p-4 space-y-3">
         <div class="flex items-center gap-2">
-          <span class="text-xs font-mono font-semibold text-emerald-300 uppercase">{{.Type}}</span>
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span class="text-xs text-emerald-400">running</span>
+          <span class="text-xs font-mono font-bold text-white uppercase px-2 py-0.5 rounded
+            {{if eq .Type "postgres"}}bg-[#336791]/60
+            {{else if eq .Type "mysql"}}bg-[#E48E00]/60
+            {{else if eq .Type "mariadb"}}bg-[#C0765A]/60
+            {{else if eq .Type "mongodb"}}bg-[#13AA52]/60
+            {{else if eq .Type "redis"}}bg-[#DC382D]/60
+            {{else}}bg-[#FAAD1C]/60{{end}}">{{.Type}}</span>
+          <span class="flex items-center gap-1 text-[10px] text-emerald-300">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>running
+          </span>
         </div>
-        <div class="grid sm:grid-cols-2 gap-4 text-sm">
+        <div class="grid sm:grid-cols-2 gap-4">
           <div>
-            <p class="text-xs text-panel-muted mb-1.5">Databases</p>
+            <p class="text-[11px] text-panel-muted uppercase tracking-wide mb-2">Databases</p>
             <ul class="space-y-1">
               {{range .Databases}}
-              <li class="flex items-center justify-between font-mono text-xs text-gray-300 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5">
-                <span>{{.Name}}</span>
-                {{if .Size}}<span class="text-zinc-600">{{.Size}}</span>{{end}}
+              <li class="flex items-center justify-between font-mono text-xs text-gray-300 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5">
+                <span>{{.Name}}</span>{{if .Size}}<span class="text-zinc-600 text-[10px]">{{.Size}}</span>{{end}}
               </li>
-              {{else}}
-              <li class="text-xs text-panel-muted">No databases yet</li>
-              {{end}}
+              {{else}}<li class="text-xs text-panel-muted">No databases yet</li>{{end}}
             </ul>
           </div>
           <div>
-            <p class="text-xs text-panel-muted mb-1.5">Users</p>
+            <p class="text-[11px] text-panel-muted uppercase tracking-wide mb-2">Users</p>
             <ul class="space-y-1">
               {{range .Users}}
-              <li class="font-mono text-xs text-gray-300 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5">{{.Name}}</li>
-              {{else}}
-              <li class="text-xs text-panel-muted">No users listed</li>
-              {{end}}
+              <li class="font-mono text-xs text-gray-300 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5">{{.Name}}</li>
+              {{else}}<li class="text-xs text-panel-muted">No users</li>{{end}}
             </ul>
           </div>
         </div>
@@ -186,60 +197,51 @@
       {{end}}
     </div>
     {{else}}
-    <div class="mt-6 xm-card">
+    <div class="xm-card">
       <div class="xm-empty">
         <div class="xm-empty-ico">⧉</div>
-        <h3>No databases running yet</h3>
-        <p>Pick an engine above to install it.</p>
+        <h3>No databases installed yet</h3>
+        <p>Pick an engine above and we'll pull the Docker image and start it.</p>
       </div>
     </div>
     {{end}}
   </div>
 
-  {{/* ── ADVANCED MODE ────────────────────────────────────────────── */}}
+  {{/* ── ADVANCED ──────────────────────────────────────────────── */}}
   <div id="tab-advanced" class="hidden space-y-4">
     <div class="flex items-center justify-between">
       <h2 class="text-sm font-semibold text-gray-300">Advanced</h2>
-      <button onclick="xmDBTab('normal')" class="text-xs text-panel-muted hover:text-gray-300 underline">← Back to normal</button>
+      <button onclick="xmDBTab('normal')" class="text-xs text-panel-muted hover:text-gray-300 underline">← Normal mode</button>
     </div>
-
     <div class="grid md:grid-cols-3 gap-4">
       <form method="post" action="/databases" class="xm-card p-4 space-y-2">
-        <h3 class="text-sm text-gray-300 font-semibold">Create database</h3>
+        <h3 class="text-sm font-semibold text-gray-300">Create database</h3>
         <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
           <option>postgres</option><option>mysql</option><option>mariadb</option>
           <option>mongodb</option><option>clickhouse</option><option>redis</option>
         </select>
-        <input name="name" required placeholder="db name"
-          class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="name" required placeholder="db name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
         <button class="xm-btn xm-btn-primary text-xs">+ Create</button>
       </form>
-
       <form method="post" action="/databases/user" class="xm-card p-4 space-y-2">
-        <h3 class="text-sm text-gray-300 font-semibold">Create user</h3>
+        <h3 class="text-sm font-semibold text-gray-300">Create user</h3>
         <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
           <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option>
         </select>
-        <input name="username" required placeholder="username"
-          class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
-        <input name="password" type="password" required placeholder="password"
-          class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
-        <input name="databases" placeholder="db names (comma)"
-          class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="username" required placeholder="username" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="password" type="password" required placeholder="password" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="databases" placeholder="db names (comma)" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
         <button class="xm-btn xm-btn-ghost text-xs w-full justify-center">Create user</button>
       </form>
-
       <form method="post" action="/databases/backup" class="xm-card p-4 space-y-2">
-        <h3 class="text-sm text-gray-300 font-semibold">Backup</h3>
+        <h3 class="text-sm font-semibold text-gray-300">Backup</h3>
         <select name="db_type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm">
           <option>postgres</option><option>mysql</option><option>mariadb</option><option>mongodb</option>
         </select>
-        <input name="name" required placeholder="database name"
-          class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
-        <button class="xm-btn xm-btn-ghost text-xs w-full justify-center">Backup to /opt/xmanager/backups</button>
+        <input name="name" required placeholder="database name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <button class="xm-btn xm-btn-ghost text-xs w-full justify-center">Backup → /opt/xmanager/backups</button>
       </form>
     </div>
-
     <form method="post" action="/databases/link" class="xm-card p-4 flex flex-wrap gap-2 items-end">
       <div>
         <label class="text-xs text-panel-muted">Link DB → project</label>
@@ -256,14 +258,11 @@
       <input name="username" placeholder="username" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
       <button class="xm-btn xm-btn-ghost text-xs">Link</button>
     </form>
-
     {{if .ProjectDBs}}
     <div class="xm-card p-4">
       <h2 class="text-xs font-semibold text-panel-muted uppercase mb-2">Project links</h2>
       <ul class="text-xs space-y-1 font-mono text-gray-300">
-        {{range .ProjectDBs}}
-        <li>project #{{.ProjectID}} → {{.DBType}}/{{.DBName}} ({{.Username}})</li>
-        {{end}}
+        {{range .ProjectDBs}}<li>project #{{.ProjectID}} → {{.DBType}}/{{.DBName}} ({{.Username}})</li>{{end}}
       </ul>
     </div>
     {{end}}
@@ -274,6 +273,26 @@
 <script>
 var _xmDBAvail = {{.DBAvailable | json}};
 
+var DB_VERSIONS = {
+  postgres:   [['17','17'],['16','16'],['15','15'],['14','14']],
+  mysql:      [['9.0','9.0'],['8.4','8.4'],['8.0','8.0']],
+  mariadb:    [['11.4','11.4'],['11.2','11.2'],['10.11','10.11 LTS']],
+  mongodb:    [['8.0','8.0'],['7.0','7.0'],['6.0','6.0']],
+  redis:      [['7.4','7.4'],['7.2','7.2'],['6.2','6.2']],
+  clickhouse: [['24.8','24.8'],['24.3','24.3'],['23.8','23.8']]
+};
+
+var DB_IMAGES = {
+  postgres:   'postgres:{v}-alpine',
+  mysql:      'mysql:{v}',
+  mariadb:    'mariadb:{v}',
+  mongodb:    'mongo:{v}',
+  redis:      'redis:{v}-alpine',
+  clickhouse: 'clickhouse/clickhouse-server:{v}'
+};
+
+var _selDB = '', _selVer = '';
+
 function xmDBTab(tab) {
   document.getElementById('tab-normal').classList.toggle('hidden', tab !== 'normal');
   document.getElementById('tab-advanced').classList.toggle('hidden', tab !== 'advanced');
@@ -281,47 +300,104 @@ function xmDBTab(tab) {
 }
 
 function xmSelectDB(type) {
-  // Highlight selected card
+  _selDB = type;
+  // Highlight card
   document.querySelectorAll('.db-type-card').forEach(function(c) {
-    c.classList.remove('border-indigo-500', 'bg-indigo-950/20', 'ring-2', 'ring-indigo-500/30');
+    c.classList.remove('border-indigo-500','ring-2','ring-indigo-500/30','bg-indigo-950/10');
   });
-  var card = document.querySelector('[data-db="' + type + '"]');
-  if (card) card.classList.add('border-indigo-500', 'bg-indigo-950/20', 'ring-2', 'ring-indigo-500/30');
+  var card = document.querySelector('[data-db="'+type+'"]');
+  if (card) card.classList.add('border-indigo-500','ring-2','ring-indigo-500/30','bg-indigo-950/10');
 
-  var labels = {
-    postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB',
-    mongodb: 'MongoDB', redis: 'Redis', clickhouse: 'ClickHouse'
-  };
-  document.getElementById('db-sel-label').textContent = labels[type] || type;
+  // Build version radio buttons
+  var grid = document.getElementById('db-version-grid');
+  grid.innerHTML = '';
+  var versions = DB_VERSIONS[type] || [];
+  versions.forEach(function(v, i) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = v[1] + (i === 0 ? ' ★' : '');
+    btn.dataset.ver = v[0];
+    btn.className = 'ver-btn px-3 py-1.5 rounded-lg border text-xs font-mono transition-all '
+      + (i === 0 ? 'border-indigo-500 bg-indigo-950/30 text-indigo-300' : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500');
+    btn.onclick = function() { xmSelectVersion(v[0]); };
+    grid.appendChild(btn);
+  });
+  if (versions.length) xmSelectVersion(versions[0][0]);
 
+  // Show/hide PostgreSQL options
+  document.getElementById('db-pg-options').classList.toggle('hidden', type !== 'postgres');
+
+  // Show wizard
+  document.getElementById('db-wizard-panel').classList.remove('hidden');
+  document.getElementById('db-step-label').textContent =
+    _xmDBAvail && _xmDBAvail[type] ? 'Step 4 — Database name' : 'Step 4 — Database name &amp; install';
+
+  // Running notice
+  document.getElementById('db-running-notice').classList.toggle('hidden', !(_xmDBAvail && _xmDBAvail[type]));
+
+  // Show create vs install form
   var running = _xmDBAvail && _xmDBAvail[type];
-  document.getElementById('db-status-badge').classList.toggle('hidden', !running);
-  document.getElementById('db-missing-badge').classList.toggle('hidden', running);
-  document.getElementById('db-already-msg').classList.toggle('hidden', !running);
-  document.getElementById('db-install-msg').classList.toggle('hidden', running);
-
-  // Show appropriate forms
   document.getElementById('db-create-form').classList.toggle('hidden', !running);
   document.getElementById('db-install-form').classList.toggle('hidden', running);
-  document.getElementById('db-install-only-form').classList.toggle('hidden', running);
+  document.getElementById('di-type').value = type;
+  document.getElementById('dc-type').value = type;
 
-  // Set hidden fields
-  ['db-create-type', 'db-install-type', 'db-install-only-type'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.value = type;
-  });
-
-  document.getElementById('db-create-panel').classList.remove('hidden');
   document.getElementById('db-name-input').focus();
 }
 
-// Sync name input → hidden form fields
-document.getElementById('db-name-input').addEventListener('input', function() {
-  var v = this.value;
-  ['db-create-name', 'db-install-name', 'db-install-only-name'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.value = v;
+function xmSelectVersion(ver) {
+  _selVer = ver;
+  document.querySelectorAll('.ver-btn').forEach(function(b) {
+    var sel = b.dataset.ver === ver;
+    b.className = 'ver-btn px-3 py-1.5 rounded-lg border text-xs font-mono transition-all '
+      + (sel ? 'border-indigo-500 bg-indigo-950/30 text-indigo-300' : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500');
   });
+  document.getElementById('di-version').value = ver;
+  document.getElementById('db-sel-version').value = ver;
+  xmUpdateImageHint();
+}
+
+function xmUpdateImageHint() {
+  var pgv  = document.getElementById('ext-pgvector') && document.getElementById('ext-pgvector').checked;
+  var pgs  = document.getElementById('ext-postgis')  && document.getElementById('ext-postgis').checked;
+  var hint = '';
+  if (_selDB === 'postgres') {
+    if (pgv && pgs)     hint = 'postgis/postgis:'+_selVer+'-3.5 + pgvector';
+    else if (pgs)       hint = 'postgis/postgis:'+_selVer+'-3.5';
+    else if (pgv)       hint = 'pgvector/pgvector:pg'+_selVer;
+    else                hint = 'postgres:'+_selVer+'-alpine';
+  } else {
+    hint = (DB_IMAGES[_selDB] || '').replace('{v}', _selVer);
+  }
+  var el = document.getElementById('di-image-hint');
+  if (el) el.textContent = hint ? '🐳 ' + hint : '';
+}
+
+function xmTogglePgAdmin(on) {
+  document.getElementById('pgadmin-creds').classList.toggle('hidden', !on);
+}
+
+// Sync name + extension inputs into hidden form fields on submit
+document.getElementById('db-install-form').addEventListener('submit', function() {
+  document.getElementById('di-name').value  = document.getElementById('db-name-input').value;
+  document.getElementById('dc-name').value  = document.getElementById('db-name-input').value;
+  var pgv = document.getElementById('ext-pgvector');
+  var pgs = document.getElementById('ext-postgis');
+  var pga = document.getElementById('ext-pgadmin');
+  document.getElementById('di-pgvector').value = pgv && pgv.checked ? '1' : '0';
+  document.getElementById('di-postgis').value  = pgs && pgs.checked ? '1' : '0';
+  document.getElementById('di-pgadmin').value  = pga && pga.checked ? '1' : '0';
+  document.getElementById('di-pgadmin-email').value = (document.getElementById('pgadmin-email') || {}).value || '';
+  document.getElementById('di-pgadmin-pass').value  = (document.getElementById('pgadmin-pass')  || {}).value || '';
+});
+
+document.getElementById('db-create-form').addEventListener('submit', function() {
+  document.getElementById('dc-name').value = document.getElementById('db-name-input').value;
+});
+
+['ext-pgvector','ext-postgis'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('change', xmUpdateImageHint);
 });
 </script>
 

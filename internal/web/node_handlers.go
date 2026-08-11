@@ -320,6 +320,7 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	data.ActiveNav = "databases"
 	data.NodeDBs = dbs
 	data.DBAvailable = availMap
+	data.DBEngines = []string{"postgres", "mysql", "mariadb", "mongodb", "redis", "clickhouse"}
 	data.ProjectDBs = links
 	data.Projects = projects
 	if flash := r.URL.Query().Get("flash"); flash != "" {
@@ -338,62 +339,140 @@ func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/databases", http.StatusSeeOther)
 }
 
-// postNodeDatabaseInstall installs a database engine as a Docker container,
-// then optionally creates the first database inside it.
+// postNodeDatabaseInstall installs a database engine as a Docker container
+// (with optional version, extensions, pgAdmin4), then creates the first DB.
 func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	dbType := strings.TrimSpace(r.FormValue("db_type"))
-	dbName := strings.TrimSpace(r.FormValue("name"))
-	exec := h.localExec()
+	dbType    := strings.TrimSpace(r.FormValue("db_type"))
+	dbName    := strings.TrimSpace(r.FormValue("name"))
+	version   := strings.TrimSpace(r.FormValue("version"))
+	pgvector  := r.FormValue("ext_pgvector") == "1"
+	postgis   := r.FormValue("ext_postgis") == "1"
+	pgadmin   := r.FormValue("pgadmin") == "1"
+	pgaEmail  := strings.TrimSpace(r.FormValue("pgadmin_email"))
+	pgaPass   := strings.TrimSpace(r.FormValue("pgadmin_pass"))
+	exec      := h.localExec()
 
-	// Generate a random root password for the new instance.
-	rootPass := randomToken()[:16]
+	rootPass := randomToken()[:20]
+	var cmds []string
+	var flash string
 
-	var cmd string
 	switch dbType {
 	case "postgres":
-		cmd = fmt.Sprintf(
-			`docker run -d --name xm-postgres --restart unless-stopped -e POSTGRES_PASSWORD=%s -p 5432:5432 -v xm-postgres-data:/var/lib/postgresql/data postgres:16-alpine 2>&1`,
-			rootPass,
-		)
+		if version == "" {
+			version = "17"
+		}
+		// Choose image based on extensions
+		image := "postgres:" + version + "-alpine"
+		if pgvector && postgis {
+			// Use PostGIS image (Debian-based) and install pgvector afterward
+			image = fmt.Sprintf("postgis/postgis:%s-3.5", version)
+		} else if postgis {
+			image = fmt.Sprintf("postgis/postgis:%s-3.5", version)
+		} else if pgvector {
+			image = fmt.Sprintf("pgvector/pgvector:pg%s", version)
+		}
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-postgres --restart unless-stopped`+
+				` -e POSTGRES_PASSWORD=%s -p 5432:5432`+
+				` -v xm-postgres-data:/var/lib/postgresql/data %s 2>&1`,
+			rootPass, image,
+		))
+		// If both: install pgvector after container is healthy
+		if pgvector && postgis {
+			cmds = append(cmds,
+				`sleep 8`,
+				`docker exec xm-postgres bash -c "apt-get update -qq && apt-get install -y postgresql-`+version+`-pgvector 2>&1" || true`,
+			)
+		}
+		flash = fmt.Sprintf("PostgreSQL %s started (root password: %s)", version, rootPass)
+		if pgvector { flash += " + pgvector" }
+		if postgis  { flash += " + PostGIS" }
+
+		// pgAdmin4
+		if pgadmin {
+			if pgaEmail == "" { pgaEmail = "admin@xmanager.local" }
+			if pgaPass  == "" { pgaPass  = randomToken()[:12] }
+			cmds = append(cmds, fmt.Sprintf(
+				`docker run -d --name xm-pgadmin --restart unless-stopped`+
+					` -e PGADMIN_DEFAULT_EMAIL=%s -e PGADMIN_DEFAULT_PASSWORD=%s`+
+					` -p 5050:80 dpage/pgadmin4:latest 2>&1`,
+				pgaEmail, pgaPass,
+			))
+			flash += fmt.Sprintf(" · pgAdmin4 at :5050 (login: %s / %s)", pgaEmail, pgaPass)
+		}
+
 	case "mysql":
-		cmd = fmt.Sprintf(
-			`docker run -d --name xm-mysql --restart unless-stopped -e MYSQL_ROOT_PASSWORD=%s -p 3306:3306 -v xm-mysql-data:/var/lib/mysql mysql:8 2>&1`,
-			rootPass,
-		)
+		if version == "" { version = "9.0" }
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-mysql --restart unless-stopped`+
+				` -e MYSQL_ROOT_PASSWORD=%s -p 3306:3306`+
+				` -v xm-mysql-data:/var/lib/mysql mysql:%s 2>&1`,
+			rootPass, version,
+		))
+		flash = fmt.Sprintf("MySQL %s started (root password: %s)", version, rootPass)
+
 	case "mariadb":
-		cmd = fmt.Sprintf(
-			`docker run -d --name xm-mariadb --restart unless-stopped -e MARIADB_ROOT_PASSWORD=%s -p 3306:3306 -v xm-mariadb-data:/var/lib/mysql mariadb:11 2>&1`,
-			rootPass,
-		)
+		if version == "" { version = "11.4" }
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-mariadb --restart unless-stopped`+
+				` -e MARIADB_ROOT_PASSWORD=%s -p 3306:3306`+
+				` -v xm-mariadb-data:/var/lib/mysql mariadb:%s 2>&1`,
+			rootPass, version,
+		))
+		flash = fmt.Sprintf("MariaDB %s started (root password: %s)", version, rootPass)
+
 	case "mongodb":
-		cmd = `docker run -d --name xm-mongodb --restart unless-stopped -p 27017:27017 -v xm-mongo-data:/data/db mongo:7 2>&1`
+		if version == "" { version = "8.0" }
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-mongodb --restart unless-stopped`+
+				` -p 27017:27017 -v xm-mongo-data:/data/db mongo:%s 2>&1`,
+			version,
+		))
+		flash = fmt.Sprintf("MongoDB %s started (no auth — add MONGO_INITDB_ROOT_USERNAME for prod)", version)
+
 	case "redis":
-		cmd = `docker run -d --name xm-redis --restart unless-stopped -p 6379:6379 -v xm-redis-data:/data redis:7-alpine redis-server --save 60 1 2>&1`
+		if version == "" { version = "7.4" }
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-redis --restart unless-stopped`+
+				` -p 6379:6379 -v xm-redis-data:/data`+
+				` redis:%s-alpine redis-server --save 60 1 --requirepass %s 2>&1`,
+			version, rootPass,
+		))
+		flash = fmt.Sprintf("Redis %s started (password: %s)", version, rootPass)
+
 	case "clickhouse":
-		cmd = `docker run -d --name xm-clickhouse --restart unless-stopped -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v xm-clickhouse-data:/var/lib/clickhouse clickhouse/clickhouse-server:24 2>&1`
+		if version == "" { version = "24.8" }
+		cmds = append(cmds, fmt.Sprintf(
+			`docker run -d --name xm-clickhouse --restart unless-stopped`+
+				` -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144`+
+				` -v xm-clickhouse-data:/var/lib/clickhouse`+
+				` clickhouse/clickhouse-server:%s 2>&1`,
+			version,
+		))
+		flash = fmt.Sprintf("ClickHouse %s started", version)
+
 	default:
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("unknown db type: "+dbType), http.StatusSeeOther)
 		return
 	}
 
-	res, _ := exec.Run(cmd)
-	flash := dbType + " container started"
-	if res.ExitCode != 0 && res.Stdout != "" {
-		// Already running is fine
-		if !strings.Contains(res.Stdout, "already in use") {
-			flash = "install error: " + res.Stdout
+	for _, cmd := range cmds {
+		res, _ := exec.Run(cmd)
+		if res.ExitCode != 0 && !strings.Contains(res.Stdout+res.Stderr, "already in use") {
+			flash = "install error: " + res.Stdout + res.Stderr
+			http.Redirect(w, r, "/databases?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+			return
 		}
 	}
 
-	// Wait a moment then create the initial database if requested.
+	// Create the initial database if a name was given
 	if dbName != "" {
-		_, _ = exec.Run("sleep 3")
-		t := dbmanager.DBType(dbType)
-		mgr := dbmanager.NewManager(t, exec)
+		_, _ = exec.Run("sleep 4")
+		mgr := dbmanager.NewManager(dbmanager.DBType(dbType), exec)
 		if mgr != nil {
 			if err := mgr.CreateDatabase(dbName); err != nil {
-				flash += " · db create: " + err.Error()
+				flash += " · db create failed: " + err.Error()
 			} else {
 				flash += " · database \"" + dbName + "\" created"
 			}

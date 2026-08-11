@@ -79,6 +79,7 @@ type pageData struct {
 	CronJobID      uint
 	NodeDBs        []nodeDBView
 	DBAvailable    map[string]bool
+	DBEngines      []string
 	ProjectDBs     []storage.ProjectDatabase
 	NodeServices   []nodeServiceView
 	ProjectDomains    []storage.ProjectDomain
