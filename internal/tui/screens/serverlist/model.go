@@ -24,6 +24,7 @@ const (
 	modeAdd
 	modeEdit
 	modeConfirmDelete
+	modeConfirmHostKey
 )
 
 type formField int
@@ -59,6 +60,8 @@ type Model struct {
 	message        string
 	editID         uint
 	connectPending uint // navigate to dashboard after successful connect
+	hostKeyPending uint
+	hostKeyHint    string
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -111,6 +114,11 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	case modeConfirmDelete:
 		return []components.KeyBinding{
 			{Key: "y", Desc: "confirm delete"},
+			{Key: "n", Desc: "cancel"},
+		}
+	case modeConfirmHostKey:
+		return []components.KeyBinding{
+			{Key: "y", Desc: "replace key"},
 			{Key: "n", Desc: "cancel"},
 		}
 	default:
@@ -180,11 +188,29 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			} else {
 				m.message = "Connection successful!"
 			}
+			m.hostKeyPending = 0
+			m.hostKeyHint = ""
 			now := time.Now()
 			m.ctx.DB.Model(&storage.Server{}).Where("id = ?", msg.serverID).Updates(map[string]interface{}{
 				"is_active": true, "last_seen": &now,
 			})
 		} else {
+			if ssh.IsHostKeyMismatch(msg.err) {
+				m.hostKeyPending = msg.serverID
+				m.hostKeyHint = ""
+				if mismatch, ok := ssh.AsHostKeyMismatch(msg.err); ok {
+					if fp := mismatch.Fingerprint(); fp != "" {
+						m.hostKeyHint = "new fingerprint " + fp
+					}
+				}
+				// Keep connectPending so a successful replace still opens the dashboard.
+				if m.connectPending != msg.serverID {
+					m.connectPending = 0
+				}
+				m.setMode(modeConfirmHostKey)
+				m.message = ""
+				return m, nil
+			}
 			if m.connectPending == msg.serverID {
 				m.connectPending = 0
 			}
@@ -200,6 +226,8 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateForm(msg)
 		case modeConfirmDelete:
 			return m.updateDelete(msg)
+		case modeConfirmHostKey:
+			return m.updateHostKeyConfirm(msg)
 		}
 	}
 	if m.mode == modeList {
@@ -236,14 +264,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "t":
 		if idx := m.table.Cursor(); idx < len(m.servers) {
 			m.message = "Testing connection..."
-			return m, m.testConn(m.servers[idx])
+			return m, m.testConn(m.servers[idx], false)
 		}
 	case "enter":
 		if idx := m.table.Cursor(); idx < len(m.servers) {
 			s := m.servers[idx]
 			m.connectPending = s.ID
 			m.message = "Connecting..."
-			return m, m.testConn(s)
+			return m, m.testConn(s, false)
 		}
 	case "q", "esc":
 		return m, tea.Quit
@@ -295,6 +323,40 @@ func (m *Model) updateDelete(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) updateHostKeyConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		s, ok := m.serverByID(m.hostKeyPending)
+		m.setMode(modeList)
+		m.hostKeyHint = ""
+		if !ok {
+			m.hostKeyPending = 0
+			m.connectPending = 0
+			m.message = "Server not found"
+			return m, nil
+		}
+		m.message = "Replacing host key and connecting..."
+		return m, m.testConn(s, true)
+	case "n", "N", "esc":
+		m.setMode(modeList)
+		m.hostKeyPending = 0
+		m.hostKeyHint = ""
+		m.connectPending = 0
+		m.message = "Host key not replaced"
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) serverByID(id uint) (storage.Server, bool) {
+	for _, s := range m.servers {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return storage.Server{}, false
+}
+
 func (m *Model) populateForm(s storage.Server) {
 	m.form[fieldName].SetValue(s.Name)
 	m.form[fieldHost].SetValue(s.Host)
@@ -328,11 +390,12 @@ func (m *Model) saveServer() tea.Cmd {
 	}
 }
 
-func (m *Model) testConn(s storage.Server) tea.Cmd {
+func (m *Model) testConn(s storage.Server, replaceHostKey bool) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.ctx.Pool.Connect(s.ID, ssh.ClientConfig{
 			Host: s.Host, Port: s.Port, User: s.User,
 			KeyPath: s.SSHKeyPath, Password: s.Password, JumpHost: s.JumpHost,
+			ReplaceChangedHostKey: replaceHostKey,
 		})
 		return testResultMsg{serverID: s.ID, ok: err == nil, err: err}
 	}
@@ -361,6 +424,18 @@ func (m *Model) viewList() string {
 	}
 	if m.mode == modeConfirmDelete {
 		parts = append(parts, "", " "+theme.WarningText().Render("Delete this server? (y/n)"))
+	}
+	if m.mode == modeConfirmHostKey {
+		name := "server"
+		if s, ok := m.serverByID(m.hostKeyPending); ok {
+			name = s.Name
+		}
+		parts = append(parts, "",
+			" "+theme.WarningText().Render(fmt.Sprintf(
+				"Host key for %s changed (common after OS reinstall). Replace old key and connect? (y/n)", name)))
+		if m.hostKeyHint != "" {
+			parts = append(parts, " "+theme.MutedText().Render(m.hostKeyHint))
+		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

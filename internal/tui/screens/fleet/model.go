@@ -23,6 +23,7 @@ const (
 	modeGrid mode = iota
 	modeAdd
 	modeConfirmDelete
+	modeConfirmHostKey
 	modeConfirmWebInstall
 	modeManageWebPanel
 	modeConfirmWebUpgrade
@@ -62,19 +63,21 @@ type webPanelResultMsg struct {
 }
 
 type Model struct {
-	ctx       *shared.AppContext
-	servers   []storage.Server
-	snaps     map[uint]storage.ServerMetricSnapshot
-	webPanels map[uint]bool
-	cursor    int
-	mode      mode
-	form      [fieldCount]textinput.Model
-	formIdx   int
-	deleteID  uint
-	message   string
-	width     int
-	height    int
-	busy      bool
+	ctx            *shared.AppContext
+	servers        []storage.Server
+	snaps          map[uint]storage.ServerMetricSnapshot
+	webPanels      map[uint]bool
+	cursor         int
+	mode           mode
+	form           [fieldCount]textinput.Model
+	formIdx        int
+	deleteID       uint
+	hostKeyPending uint
+	hostKeyHint    string
+	message        string
+	width          int
+	height         int
+	busy           bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -106,7 +109,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "u", Desc: "uninstall"},
 			{Key: "esc", Desc: "cancel"},
 		}
-	case modeConfirmDelete, modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall:
+	case modeConfirmDelete, modeConfirmHostKey, modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall:
 		return []components.KeyBinding{
 			{Key: "y", Desc: "confirm"},
 			{Key: "n/esc", Desc: "cancel"},
@@ -163,12 +166,21 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	case connectResultMsg:
 		if msg.ok {
 			m.message = "Connected — opening dashboard…"
+			m.hostKeyPending = 0
+			m.hostKeyHint = ""
 			return m, func() tea.Msg {
 				return shared.ConnectServerMsg{ServerID: msg.serverID}
 			}
 		}
-		m.message = fmt.Sprintf("Connection failed: %v", msg.err)
 		m.busy = false
+		if ssh.IsHostKeyMismatch(msg.err) {
+			m.hostKeyPending = msg.serverID
+			m.hostKeyHint = hostKeyConfirmHint(msg.err)
+			m.mode = modeConfirmHostKey
+			m.message = ""
+			return m, nil
+		}
+		m.message = fmt.Sprintf("Connection failed: %v", msg.err)
 		return m, nil
 
 	case webPanelResultMsg:
@@ -196,6 +208,8 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateForm(msg)
 		case modeConfirmDelete:
 			return m.updateDelete(msg)
+		case modeConfirmHostKey:
+			return m.updateHostKeyConfirm(msg)
 		case modeManageWebPanel:
 			return m.updateWebManage(msg)
 		case modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall:
@@ -232,7 +246,7 @@ func (m *Model) updateGrid(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		s := m.servers[m.cursor]
 		m.message = "Connecting…"
 		m.busy = true
-		return m, m.connect(s)
+		return m, m.connect(s, false)
 	case "w":
 		if count == 0 {
 			return m, nil
@@ -435,18 +449,61 @@ func (m *Model) updateDelete(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) connect(s storage.Server) tea.Cmd {
+func (m *Model) updateHostKeyConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		s, ok := m.serverByID(m.hostKeyPending)
+		m.mode = modeGrid
+		m.hostKeyHint = ""
+		if !ok {
+			m.hostKeyPending = 0
+			m.message = "Server not found"
+			return m, nil
+		}
+		m.message = "Replacing host key and connecting…"
+		m.busy = true
+		return m, m.connect(s, true)
+	case "n", "N", "esc":
+		m.mode = modeGrid
+		m.hostKeyPending = 0
+		m.hostKeyHint = ""
+		m.message = "Host key not replaced"
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) serverByID(id uint) (storage.Server, bool) {
+	for _, s := range m.servers {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return storage.Server{}, false
+}
+
+func (m *Model) connect(s storage.Server, replaceHostKey bool) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.ctx.Pool.Connect(s.ID, ssh.ClientConfig{
-			Host:     s.Host,
-			Port:     s.Port,
-			User:     s.User,
-			KeyPath:  s.SSHKeyPath,
-			Password: s.Password,
-			JumpHost: s.JumpHost,
+			Host:                  s.Host,
+			Port:                  s.Port,
+			User:                  s.User,
+			KeyPath:               s.SSHKeyPath,
+			Password:              s.Password,
+			JumpHost:              s.JumpHost,
+			ReplaceChangedHostKey: replaceHostKey,
 		})
 		return connectResultMsg{serverID: s.ID, ok: err == nil, err: err}
 	}
+}
+
+func hostKeyConfirmHint(err error) string {
+	if mismatch, ok := ssh.AsHostKeyMismatch(err); ok {
+		if fp := mismatch.Fingerprint(); fp != "" {
+			return "new fingerprint " + fp
+		}
+	}
+	return ""
 }
 
 func (m *Model) initForm() {
@@ -512,6 +569,21 @@ func (m *Model) View() string {
 			"",
 			" "+theme.WarningText().Render("Delete this server? (y/n)"),
 		)
+	case modeConfirmHostKey:
+		name := m.selectedName()
+		if s, ok := m.serverByID(m.hostKeyPending); ok {
+			name = s.Name
+		}
+		lines := []string{
+			m.viewGrid(),
+			"",
+			" " + theme.WarningText().Render(fmt.Sprintf(
+				"Host key for %s changed (common after OS reinstall). Replace old key and connect? (y/n)", name)),
+		}
+		if m.hostKeyHint != "" {
+			lines = append(lines, " "+theme.MutedText().Render(m.hostKeyHint))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, lines...)
 	case modeConfirmWebInstall:
 		name := m.selectedName()
 		return lipgloss.JoinVertical(lipgloss.Left,
