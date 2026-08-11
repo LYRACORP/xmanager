@@ -1,0 +1,53 @@
+id: apt-unlock
+name: Fix apt lock
+description: "Nuke stuck apt/dpkg locks (unattended-upgrades, stale locks) so installs can run"
+steps:
+  - name: Stop automatic apt services
+    commands:
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        systemctl stop unattended-upgrades.service 2>/dev/null || true
+        systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+        systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+        systemctl kill --kill-who=all unattended-upgrades.service 2>/dev/null || true
+        echo "Stopped apt timers / unattended-upgrades"
+  - name: Kill processes holding apt locks
+    commands:
+      - |
+        set +e
+        for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
+          if command -v fuser >/dev/null 2>&1; then
+            echo "fuser $lock:"
+            fuser -v "$lock" 2>&1 || true
+            fuser -k -TERM "$lock" 2>/dev/null || true
+          fi
+        done
+        # Named offenders that commonly wedge apt on fresh Ubuntu VPS boxes
+        pkill -TERM -x unattended-upgr 2>/dev/null || true
+        pkill -TERM -x apt-get 2>/dev/null || true
+        pkill -TERM -x apt 2>/dev/null || true
+        pkill -TERM -x dpkg 2>/dev/null || true
+        sleep 2
+        pkill -KILL -x unattended-upgr 2>/dev/null || true
+        pkill -KILL -x apt-get 2>/dev/null || true
+        pkill -KILL -x apt 2>/dev/null || true
+        pkill -KILL -x dpkg 2>/dev/null || true
+        echo "Lock holders signaled"
+  - name: Remove stale lock files
+    commands:
+      - |
+        rm -f /var/lib/dpkg/lock-frontend \
+              /var/lib/dpkg/lock \
+              /var/lib/apt/lists/lock \
+              /var/cache/apt/archives/lock \
+              /var/cache/apt/archives/lock.lock \
+              /var/lib/dpkg/lock-frontend.lock
+        echo "Removed apt/dpkg lock files"
+  - name: Repair dpkg and verify apt
+    commands:
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        dpkg --configure -a || true
+        apt-get -f install -y || true
+        apt-get update -y
+        echo "apt is usable again"

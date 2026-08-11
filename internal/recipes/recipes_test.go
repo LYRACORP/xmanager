@@ -11,7 +11,7 @@ func TestAllRecipesLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"base": true, "docker": true, "nodejs": true,
+		"apt-unlock": true, "base": true, "docker": true, "nodejs": true,
 		"pgadmin4": true, "portainer": true, "postgres": true, "python": true,
 	}
 	if len(all) != len(want) {
