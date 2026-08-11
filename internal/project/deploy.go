@@ -198,25 +198,65 @@ func (d *Deployer) deployGit(proj *storage.Project, cfg *Config) (*DeployResult,
 	if err != nil {
 		return nil, fmt.Errorf("git clone/pull: %w", err)
 	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("git clone/pull failed:\n%s", res.Stdout+res.Stderr)
+	}
 
-	// try docker compose first, fall back to Dockerfile
-	composeCheck := d.exec.RunQuiet(fmt.Sprintf("test -f %s/docker-compose.yml && echo yes", dir))
-	if composeCheck == "yes" {
+	// try docker-compose.yml / docker-compose.yaml first
+	composeCheck := d.exec.RunQuiet(fmt.Sprintf(
+		"{ test -f %s/docker-compose.yml || test -f %s/docker-compose.yaml; } && echo yes || echo no",
+		dir, dir,
+	))
+	if strings.TrimSpace(composeCheck) == "yes" {
 		upRes, err := d.exec.Run(fmt.Sprintf("cd %s && docker compose up -d 2>&1", dir))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compose up: %w", err)
+		}
+		if upRes.ExitCode != 0 {
+			return nil, fmt.Errorf("docker compose up failed:\n%s", upRes.Stdout+upRes.Stderr)
 		}
 		return &DeployResult{Status: StatusRunning, Output: res.Stdout + upRes.Stdout}, nil
+	}
+
+	// No Dockerfile — auto-detect the runtime and generate one
+	dockerfileCheck := d.exec.RunQuiet(fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", dir))
+	if strings.TrimSpace(dockerfileCheck) != "yes" {
+		rt, detErr := d.autoDetectRuntime(dir)
+		if detErr != nil {
+			return nil, fmt.Errorf("auto-detect runtime: %w", detErr)
+		}
+		if rt == nil {
+			return nil, fmt.Errorf(
+				"no Dockerfile or docker-compose.yml found and runtime could not be detected.\n" +
+					"Add a Dockerfile to your repo, or switch the project type to Compose / Image.",
+			)
+		}
+		if err := d.writeRemoteFile(dir+"/Dockerfile", rt.Dockerfile); err != nil {
+			return nil, fmt.Errorf("writing auto-generated Dockerfile (%s): %w", rt.Name, err)
+		}
+		res.Stdout += fmt.Sprintf("\n[xmanager] auto-detected runtime: %s — generated Dockerfile\n", rt.Name)
 	}
 
 	buildRes, err := d.exec.Run(fmt.Sprintf("cd %s && docker build -t %s . 2>&1", dir, name))
 	if err != nil {
 		return nil, fmt.Errorf("docker build: %w", err)
 	}
-	runRes, _ := d.exec.Run(fmt.Sprintf(
-		"docker rm -f %s 2>/dev/null; docker run -d --name %s --restart unless-stopped %s 2>&1",
-		name, name, name,
+	if buildRes.ExitCode != 0 {
+		return nil, fmt.Errorf("docker build failed:\n%s", buildRes.Stdout+buildRes.Stderr)
+	}
+
+	portFlags := buildPortFlags(cfg.Ports)
+	envFlags := buildEnvFlags(cfg.EnvVars)
+	runRes, err := d.exec.Run(fmt.Sprintf(
+		"docker rm -f %s 2>/dev/null; docker run -d --name %s --restart unless-stopped %s %s %s 2>&1",
+		name, name, envFlags, portFlags, name,
 	))
+	if err != nil {
+		return nil, fmt.Errorf("docker run: %w", err)
+	}
+	if runRes.ExitCode != 0 {
+		return nil, fmt.Errorf("docker run failed:\n%s", runRes.Stdout+runRes.Stderr)
+	}
 	return &DeployResult{Status: StatusRunning, Output: res.Stdout + buildRes.Stdout + runRes.Stdout}, nil
 }
 
