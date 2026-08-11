@@ -67,39 +67,53 @@
         <input type="hidden" id="db-sel-version">
       </div>
 
-      {{/* Step 3 — Extensions (PostgreSQL only) */}}
-      <div id="db-pg-options" class="hidden xm-card p-5 space-y-4">
-        <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Step 3 — Extensions &amp; Tools</p>
+      {{/* Step 3 — Tools (Adminer for all · Postgres extras) */}}
+      <div id="db-tools-panel" class="xm-card p-5 space-y-4">
+        <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Step 3 — Tools</p>
 
         <div class="space-y-3">
+          {{/* Adminer — all engines */}}
           <label class="flex items-start gap-3 cursor-pointer group">
-            <input type="checkbox" id="ext-pgvector" value="1"
-              class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
+            <input type="checkbox" id="ext-adminer" value="1"
+              class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500/30 w-4 h-4">
             <div>
-              <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">pgvector</p>
-              <p class="text-xs text-panel-muted">Vector similarity search — required for AI/embedding workloads (used by pgvector/pgvector image)</p>
+              <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">Adminer 6</p>
+              <p class="text-xs text-panel-muted">
+                Universal DB GUI (dockerized) with drivers for PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse &amp; Elasticsearch —
+                opens on port <span class="font-mono text-zinc-300">:8081</span>
+              </p>
             </div>
           </label>
 
-          <label class="flex items-start gap-3 cursor-pointer group">
-            <input type="checkbox" id="ext-postgis" value="1"
-              class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
-            <div>
-              <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">PostGIS</p>
-              <p class="text-xs text-panel-muted">Geospatial / GIS support — adds geometry, geography, raster types (postgis/postgis image)</p>
-            </div>
-          </label>
+          {{/* Postgres-only extensions */}}
+          <div id="db-pg-exts" class="hidden space-y-3 border-t border-zinc-800 pt-3">
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" id="ext-pgvector" value="1"
+                class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
+              <div>
+                <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">pgvector</p>
+                <p class="text-xs text-panel-muted">Vector similarity search — AI/embedding workloads</p>
+              </div>
+            </label>
 
-          <div class="border-t border-zinc-800 pt-3">
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" id="ext-postgis" value="1"
+                class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-indigo-500 focus:ring-indigo-500/30 w-4 h-4">
+              <div>
+                <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">PostGIS</p>
+                <p class="text-xs text-panel-muted">Geospatial / GIS — geometry, geography, raster types</p>
+              </div>
+            </label>
+
             <label class="flex items-start gap-3 cursor-pointer group">
               <input type="checkbox" id="ext-pgadmin" value="1" onchange="xmTogglePgAdmin(this.checked)"
                 class="mt-0.5 rounded border-zinc-600 bg-zinc-900 text-blue-500 focus:ring-blue-500/30 w-4 h-4">
               <div>
                 <p class="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">pgAdmin 4</p>
-                <p class="text-xs text-panel-muted">Web-based GUI for managing your PostgreSQL databases — runs on port <span class="font-mono text-zinc-300">:5050</span></p>
+                <p class="text-xs text-panel-muted">Postgres-specific GUI — port <span class="font-mono text-zinc-300">:5050</span></p>
               </div>
             </label>
-            <div id="pgadmin-creds" class="hidden mt-3 ml-7 grid sm:grid-cols-2 gap-2">
+            <div id="pgadmin-creds" class="hidden ml-7 grid sm:grid-cols-2 gap-2">
               <div>
                 <label class="text-xs text-panel-muted block mb-1">pgAdmin email</label>
                 <input id="pgadmin-email" placeholder="admin@xmanager.local"
@@ -143,6 +157,7 @@
           <input type="hidden" name="ext_pgvector" id="di-pgvector" value="0">
           <input type="hidden" name="ext_postgis" id="di-postgis" value="0">
           <input type="hidden" name="pgadmin" id="di-pgadmin" value="0">
+          <input type="hidden" name="adminer" id="di-adminer" value="0">
           <input type="hidden" name="pgadmin_email" id="di-pgadmin-email">
           <input type="hidden" name="pgadmin_pass" id="di-pgadmin-pass">
           <div class="flex flex-wrap gap-2 items-center">
@@ -324,8 +339,8 @@ function xmSelectDB(type) {
   });
   if (versions.length) xmSelectVersion(versions[0][0]);
 
-  // Show/hide PostgreSQL options
-  document.getElementById('db-pg-options').classList.toggle('hidden', type !== 'postgres');
+  // Show/hide PostgreSQL extras
+  document.getElementById('db-pg-exts').classList.toggle('hidden', type !== 'postgres');
 
   // Show wizard
   document.getElementById('db-wizard-panel').classList.remove('hidden');
@@ -335,12 +350,17 @@ function xmSelectDB(type) {
   // Running notice
   document.getElementById('db-running-notice').classList.toggle('hidden', !(_xmDBAvail && _xmDBAvail[type]));
 
-  // Show create vs install form
+  // Always show install form (needed for Adminer / first-time engine).
+  // Also show create form when the engine is already running.
   var running = _xmDBAvail && _xmDBAvail[type];
   document.getElementById('db-create-form').classList.toggle('hidden', !running);
-  document.getElementById('db-install-form').classList.toggle('hidden', running);
+  document.getElementById('db-install-form').classList.remove('hidden');
   document.getElementById('di-type').value = type;
   document.getElementById('dc-type').value = type;
+  var btn = document.getElementById('di-btn');
+  if (btn) {
+    btn.textContent = running ? 'Install Adminer / tools' : 'Install & create database';
+  }
 
   document.getElementById('db-name-input').focus();
 }
@@ -384,9 +404,11 @@ document.getElementById('db-install-form').addEventListener('submit', function()
   var pgv = document.getElementById('ext-pgvector');
   var pgs = document.getElementById('ext-postgis');
   var pga = document.getElementById('ext-pgadmin');
+  var adm = document.getElementById('ext-adminer');
   document.getElementById('di-pgvector').value = pgv && pgv.checked ? '1' : '0';
   document.getElementById('di-postgis').value  = pgs && pgs.checked ? '1' : '0';
   document.getElementById('di-pgadmin').value  = pga && pga.checked ? '1' : '0';
+  document.getElementById('di-adminer').value  = adm && adm.checked ? '1' : '0';
   document.getElementById('di-pgadmin-email').value = (document.getElementById('pgadmin-email') || {}).value || '';
   document.getElementById('di-pgadmin-pass').value  = (document.getElementById('pgadmin-pass')  || {}).value || '';
 });
