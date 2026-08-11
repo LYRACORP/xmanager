@@ -55,13 +55,6 @@ type connectResultMsg struct {
 	err      error
 }
 
-type webPanelResultMsg struct {
-	serverID  uint
-	installed bool
-	url       string
-	err       error
-}
-
 type Model struct {
 	ctx            *shared.AppContext
 	servers        []storage.Server
@@ -78,6 +71,8 @@ type Model struct {
 	width          int
 	height         int
 	busy           bool
+	webProgress    shared.WebPanelProgressState
+	webProgCh      <-chan tea.Msg
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -90,8 +85,8 @@ func New(ctx *shared.AppContext) *Model {
 	return m
 }
 
-func (m *Model) Name() string     { return "Fleet Overview" }
-func (m *Model) SetSize(w, h int) { m.width = w; m.height = h }
+func (m *Model) Name() string                        { return "Fleet Overview" }
+func (m *Model) SetSize(w, h int)                    { m.width = w; m.height = h }
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
@@ -183,19 +178,26 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.message = fmt.Sprintf("Connection failed: %v", msg.err)
 		return m, nil
 
-	case webPanelResultMsg:
+	case shared.WebPanelProgressMsg:
+		m.webProgress.Apply(msg)
+		m.message = msg.Detail
+		return m, shared.WaitMsg(m.webProgCh)
+
+	case shared.WebPanelDoneMsg:
 		m.busy = false
-		if msg.err != nil {
-			m.message = fmt.Sprintf("Web panel failed: %v", msg.err)
+		m.webProgCh = nil
+		m.webProgress.Reset()
+		if msg.Err != nil {
+			m.message = fmt.Sprintf("Web panel failed: %v", msg.Err)
 			return m, nil
 		}
-		m.webPanels[msg.serverID] = msg.installed
-		if msg.installed {
-			m.message = fmt.Sprintf("Node web panel ready — %s", msg.url)
+		m.webPanels[msg.ServerID] = msg.Installed
+		if msg.Installed {
+			m.message = fmt.Sprintf("Node web panel ready — %s", msg.URL)
 		} else {
 			m.message = "Web panel uninstalled"
 		}
-		return m, m.load()
+		return m, tea.Batch(shared.PlayFinishSound(), m.load())
 
 	case tea.KeyMsg:
 		if m.busy {
@@ -315,6 +317,7 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		}
 		m.mode = modeGrid
 		m.busy = true
+		m.webProgress.Start(action)
 		switch action {
 		case "install":
 			m.message = fmt.Sprintf("Installing node web panel on %s…", s.Name)
@@ -333,7 +336,10 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 }
 
 func (m *Model) runWebPanel(s storage.Server, action string) tea.Cmd {
-	return func() tea.Msg {
+	ch := make(chan tea.Msg, 16)
+	m.webProgCh = ch
+	go func() {
+		defer close(ch)
 		cfg := ssh.ClientConfig{
 			Host:     s.Host,
 			Port:     s.Port,
@@ -344,42 +350,53 @@ func (m *Model) runWebPanel(s storage.Server, action string) tea.Cmd {
 		}
 		_, err := m.ctx.Pool.Reconnect(s.ID, cfg)
 		if err != nil {
-			return webPanelResultMsg{serverID: s.ID, err: fmt.Errorf("reconnect: %w", err)}
+			ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: fmt.Errorf("reconnect: %w", err)}
+			return
 		}
 		exec, ok := m.ctx.Pool.GetExecutor(s.ID)
 		if !ok {
-			return webPanelResultMsg{serverID: s.ID, err: fmt.Errorf("executor unavailable")}
+			ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: fmt.Errorf("executor unavailable")}
+			return
 		}
 		svc := webpanel.New(m.ctx.DB, s.ID)
 		svc.SetHost(s.Host)
 		svc.SetSSH(cfg)
 		svc.SetPool(m.ctx.Pool)
+		svc.SetProgress(func(pct float64, detail string) {
+			ch <- shared.WebPanelProgressMsg{Pct: pct, Detail: detail}
+		})
 		switch action {
 		case "install":
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
-				return webPanelResultMsg{serverID: s.ID, err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: err}
+				return
 			}
-			return webPanelResultMsg{
-				serverID:  s.ID,
-				installed: true,
-				url:       fmt.Sprintf("http://%s:8080", s.Host),
+			ch <- shared.WebPanelDoneMsg{
+				ServerID:  s.ID,
+				Action:    action,
+				Installed: true,
+				URL:       fmt.Sprintf("http://%s:8080", s.Host),
 			}
 		case "upgrade":
 			if err := svc.Upgrade(exec, "8080"); err != nil {
-				return webPanelResultMsg{serverID: s.ID, err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: err}
+				return
 			}
-			return webPanelResultMsg{
-				serverID:  s.ID,
-				installed: true,
-				url:       fmt.Sprintf("http://%s:8080", s.Host),
+			ch <- shared.WebPanelDoneMsg{
+				ServerID:  s.ID,
+				Action:    action,
+				Installed: true,
+				URL:       fmt.Sprintf("http://%s:8080", s.Host),
 			}
 		default:
 			if err := svc.Disable(exec); err != nil {
-				return webPanelResultMsg{serverID: s.ID, err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: err}
+				return
 			}
-			return webPanelResultMsg{serverID: s.ID, installed: false}
+			ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Installed: false}
 		}
-	}
+	}()
+	return shared.WaitMsg(ch)
 }
 
 func (m *Model) ensureExec(s storage.Server) (*ssh.Executor, error) {
@@ -651,11 +668,13 @@ func (m *Model) viewGrid() string {
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	msg := ""
-	if m.message != "" {
-		msg = "\n " + m.message
+	parts := []string{header, "", body}
+	if m.webProgress.Active {
+		parts = append(parts, "", m.webProgress.View(m.width))
+	} else if m.message != "" {
+		parts = append(parts, "\n "+m.message)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", body, msg)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m *Model) renderCard(s storage.Server, selected bool, width int) string {

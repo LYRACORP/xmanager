@@ -27,7 +27,9 @@ func renderDashboard(m *Model) string {
 		body = m.renderOverview()
 	}
 
-	if m.statusMsg != "" {
+	if m.webProgress.Active {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, "", m.webProgress.View(m.width))
+	} else if m.statusMsg != "" {
 		style := theme.WarningText()
 		if m.webBusy {
 			style = theme.MutedText()

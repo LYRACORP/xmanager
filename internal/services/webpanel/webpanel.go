@@ -23,14 +23,18 @@ const (
 	configPath  = "/root/.config/xmanager/config.yaml"
 )
 
+// ProgressFunc reports install/upgrade progress. pct is 0..1; detail is a short status line.
+type ProgressFunc func(pct float64, detail string)
+
 // WebPanel installs the XManager HTMX web UI on a remote server (systemd + binary).
 type WebPanel struct {
 	services.BaseDeployer
-	serverID uint
-	host     string
-	sshCfg   ssh.ClientConfig
-	pool     *ssh.Pool
-	exec     *ssh.Executor
+	serverID   uint
+	host       string
+	sshCfg     ssh.ClientConfig
+	pool       *ssh.Pool
+	exec       *ssh.Executor
+	onProgress ProgressFunc
 }
 
 func New(db *gorm.DB, serverID uint) *WebPanel {
@@ -44,6 +48,22 @@ func (w *WebPanel) SetSSH(cfg ssh.ClientConfig) { w.sshCfg = cfg }
 
 // SetPool enables reconnect after stale sessions (upload / long install).
 func (w *WebPanel) SetPool(p *ssh.Pool) { w.pool = p }
+
+// SetProgress registers a callback for step-by-step install/upgrade progress.
+func (w *WebPanel) SetProgress(fn ProgressFunc) { w.onProgress = fn }
+
+func (w *WebPanel) report(pct float64, detail string) {
+	if w.onProgress == nil {
+		return
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 1 {
+		pct = 1
+	}
+	w.onProgress(pct, detail)
+}
 
 func (w *WebPanel) Name() string { return ServiceType }
 
@@ -86,13 +106,19 @@ func (w *WebPanel) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	}
 	force := cfg["force"] == "true" || cfg["force"] == "1"
 
+	w.report(0.02, "Starting web panel install…")
 	if err := w.enableBinary(port, force); err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("http://%s:%s", w.hostOr("host"), port)
-	return w.SaveInstance(w.serverID, ServiceType, "running",
-		fmt.Sprintf(`{"port":"%s","url":"%s"}`, port, url))
+	w.report(0.98, "Saving service instance…")
+	if err := w.SaveInstance(w.serverID, ServiceType, "running",
+		fmt.Sprintf(`{"port":"%s","url":"%s"}`, port, url)); err != nil {
+		return err
+	}
+	w.report(1.0, "Web panel ready")
+	return nil
 }
 
 // Upgrade force-reinstalls the node panel (new binary + role:node config + restart).
@@ -158,15 +184,18 @@ func (w *WebPanel) detectRemoteArch() string {
 }
 
 func (w *WebPanel) enableBinary(port string, force bool) error {
+	w.report(0.05, "Creating install directories…")
 	if err := w.run("mkdir -p " + installDir + " /root/.config/xmanager"); err != nil {
 		return fmt.Errorf("creating dirs: %w", err)
 	}
 
+	w.report(0.10, "Preparing xmanager binary…")
 	if err := w.ensureBinary(force); err != nil {
 		return err
 	}
 
 	// Upload / SFTP often leaves the pooled session dead — refresh before systemd steps.
+	w.report(0.55, "Refreshing SSH session…")
 	_ = w.reconnect()
 
 	configYAML := fmt.Sprintf(`web:
@@ -183,6 +212,7 @@ poller:
   uptime_interval_sec: 60
 `, port)
 
+	w.report(0.60, "Writing node web panel config…")
 	cmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", configPath, configYAML)
 	if err := w.run(cmd); err != nil {
 		return fmt.Errorf("writing config: %w", err)
@@ -205,6 +235,7 @@ Environment=HOME=/root
 WantedBy=multi-user.target
 `, binPath)
 
+	w.report(0.68, "Installing systemd unit…")
 	unitCmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", unitPath, unit)
 	if err := w.run(unitCmd); err != nil {
 		return fmt.Errorf("writing systemd unit: %w", err)
@@ -213,6 +244,7 @@ WantedBy=multi-user.target
 	// Fresh connection again — restart can race with MaxSessions / stale TCP.
 	_ = w.reconnect()
 	// Wait for the process to stay up (crash-loop Restart=on-failure can briefly look active).
+	w.report(0.78, "Starting xmanager-web service…")
 	start := `systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && sleep 2 && systemctl is-active xmanager-web`
 	if err := w.run(start); err != nil {
 		// Last resort: system OpenSSH (independent of the Go pool).
@@ -226,6 +258,7 @@ WantedBy=multi-user.target
 	}
 	// Confirm listener actually binds (is-active alone is not enough after a panic).
 	_ = w.reconnect()
+	w.report(0.88, fmt.Sprintf("Verifying listener on :%s…", port))
 	listenCheck := fmt.Sprintf(`for i in 1 2 3 4 5; do ss -ltn 2>/dev/null | grep -q ':%s ' && exit 0; sleep 1; done; journalctl -u xmanager-web -n 40 --no-pager; exit 1`, port)
 	if err := w.run(listenCheck); err != nil {
 		if err2 := w.runSystemSSH(listenCheck); err2 != nil {
@@ -235,6 +268,7 @@ WantedBy=multi-user.target
 
 	// Kick default node stacks (gitea, registry, …) over SSH so they don't
 	// depend solely on the panel process noticing them after restart.
+	w.report(0.93, "Enabling default node stacks…")
 	w.enableDefaultNodeStacks()
 	return nil
 }
@@ -373,10 +407,13 @@ func (w *WebPanel) runSystemSSH(cmd string) error {
 func (w *WebPanel) ensureBinary(force bool) error {
 	check := "test -x " + binPath + " && " + binPath + ` web --help >/dev/null 2>&1 && echo yes`
 	if !force {
+		w.report(0.12, "Checking existing remote binary…")
 		if w.exec != nil && w.exec.RunQuiet(check) == "yes" {
+			w.report(0.50, "Remote binary already present")
 			return nil
 		}
 		if out, err := w.systemSSHOutput(check); err == nil && strings.TrimSpace(out) == "yes" {
+			w.report(0.50, "Remote binary already present")
 			return nil
 		}
 	}
@@ -384,15 +421,18 @@ func (w *WebPanel) ensureBinary(force bool) error {
 	var errs []string
 
 	// Prefer local cross-compile so unreleased fixes (and missing GitHub assets) still install.
+	w.report(0.15, "Cross-compiling binary for remote…")
 	if err := w.crossBuildAndUpload(); err == nil {
 		return nil
 	} else {
 		errs = append(errs, "cross-build: "+err.Error())
 	}
 
+	w.report(0.35, "Trying alternate binary upload…")
 	remoteArch := w.detectRemoteArch()
 	if runtime.GOOS == "linux" && remoteArch == runtime.GOARCH {
 		if err := w.uploadFile(mustExecutable()); err == nil {
+			w.report(0.50, "Uploaded local binary")
 			return nil
 		} else {
 			errs = append(errs, "upload local: "+err.Error())
@@ -402,12 +442,15 @@ func (w *WebPanel) ensureBinary(force bool) error {
 	// Published release installer — only when we cannot build from a checkout.
 	// install.sh often 404s when release assets don't match the expected name.
 	if _, modErr := findModuleRoot(); modErr != nil {
+		w.report(0.40, "Downloading via install.sh…")
 		install := "curl -fsSL https://raw.githubusercontent.com/lyracorp/xmanager/main/install.sh | bash 2>&1"
 		if err := w.run(install); err == nil {
 			if w.exec != nil && w.exec.RunQuiet("test -x "+binPath+" && echo yes") == "yes" {
+				w.report(0.50, "Installed via install.sh")
 				return nil
 			}
 			if out, err2 := w.systemSSHOutput("test -x " + binPath + " && echo yes"); err2 == nil && strings.TrimSpace(out) == "yes" {
+				w.report(0.50, "Installed via install.sh")
 				return nil
 			}
 			errs = append(errs, "install.sh ran but binary missing at "+binPath)
@@ -460,6 +503,7 @@ func (w *WebPanel) crossBuildAndUpload() error {
 		return err
 	}
 
+	w.report(0.18, "Detecting remote architecture…")
 	arch := w.detectRemoteArch()
 	if arch != "amd64" && arch != "arm64" {
 		return fmt.Errorf("unsupported remote arch %q", arch)
@@ -472,6 +516,7 @@ func (w *WebPanel) crossBuildAndUpload() error {
 	defer os.RemoveAll(tmpDir)
 
 	out := filepath.Join(tmpDir, "xmanager")
+	w.report(0.22, fmt.Sprintf("Building linux/%s binary…", arch))
 	cmd := execcmd.Command(goBin, "build", "-o", out, "./cmd/xmanager")
 	cmd.Dir = modRoot
 	cmd.Env = append(os.Environ(),
@@ -484,7 +529,12 @@ func (w *WebPanel) crossBuildAndUpload() error {
 		return fmt.Errorf("go build linux/%s: %w (%s)", arch, err, strings.TrimSpace(string(output)))
 	}
 
-	return w.uploadFile(out)
+	w.report(0.40, "Uploading binary to remote…")
+	if err := w.uploadFile(out); err != nil {
+		return err
+	}
+	w.report(0.52, "Binary uploaded")
+	return nil
 }
 
 func findModuleRoot() (string, error) {
@@ -632,11 +682,19 @@ func expandHome(path string) string {
 
 func (w *WebPanel) Disable(exec *ssh.Executor) error {
 	w.exec = exec
+	w.report(0.20, "Stopping xmanager-web…")
 	_ = w.run("systemctl disable --now xmanager-web 2>/dev/null || true")
+	w.report(0.50, "Removing systemd unit…")
 	_ = w.run("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true")
 	if exec != nil {
+		w.report(0.75, "Cleaning leftover containers…")
 		_ = w.ComposeDown(exec, installDir)
 		_, _ = exec.Run("docker rm -f xmanager-web 2>/dev/null || true")
 	}
-	return w.SaveInstance(w.serverID, ServiceType, "stopped", "")
+	w.report(0.95, "Updating service record…")
+	if err := w.SaveInstance(w.serverID, ServiceType, "stopped", ""); err != nil {
+		return err
+	}
+	w.report(1.0, "Web panel uninstalled")
+	return nil
 }

@@ -1,0 +1,106 @@
+package shared
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/tui/theme"
+)
+
+// WebPanelProgressMsg is emitted during install/upgrade/uninstall.
+type WebPanelProgressMsg struct {
+	Pct    float64
+	Detail string
+}
+
+// WebPanelDoneMsg is the final result of a web panel operation.
+type WebPanelDoneMsg struct {
+	ServerID  uint
+	Action    string
+	Installed bool
+	URL       string
+	Err       error
+}
+
+// WebPanelProgressState tracks live progress for the TUI.
+type WebPanelProgressState struct {
+	Active bool
+	Action string
+	Pct    float64
+	Detail string
+	Log    []string
+}
+
+const webPanelLogMax = 8
+
+func (p *WebPanelProgressState) Start(action string) {
+	*p = WebPanelProgressState{Active: true, Action: action, Pct: 0}
+}
+
+func (p *WebPanelProgressState) Apply(msg WebPanelProgressMsg) {
+	p.Pct = msg.Pct
+	p.Detail = msg.Detail
+	if msg.Detail == "" {
+		return
+	}
+	if n := len(p.Log); n > 0 && p.Log[n-1] == msg.Detail {
+		return
+	}
+	p.Log = append(p.Log, msg.Detail)
+	if len(p.Log) > webPanelLogMax {
+		p.Log = p.Log[len(p.Log)-webPanelLogMax:]
+	}
+}
+
+func (p *WebPanelProgressState) Reset() {
+	*p = WebPanelProgressState{}
+}
+
+// View renders a progress bar plus recent detail lines.
+func (p WebPanelProgressState) View(width int) string {
+	if !p.Active {
+		return ""
+	}
+	title := "Web panel"
+	switch p.Action {
+	case "upgrade":
+		title = "Upgrading web panel"
+	case "install":
+		title = "Installing web panel"
+	case "uninstall":
+		title = "Uninstalling web panel"
+	}
+	gW := width - 8
+	if gW < 20 {
+		gW = 20
+	}
+	if gW > 56 {
+		gW = 56
+	}
+	g := components.Gauge{Label: "PROG", Value: p.Pct, Width: gW, ShowPct: true}
+	lines := []string{
+		" " + theme.TitleStyle().Render(title),
+		" " + g.View(),
+	}
+	if p.Detail != "" {
+		lines = append(lines, " "+theme.WarningText().Render(p.Detail))
+	}
+	for _, d := range p.Log {
+		if d == p.Detail {
+			continue
+		}
+		lines = append(lines, " "+theme.MutedText().Render("• "+d))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// WaitMsg reads the next message from a progress channel (nil when closed).
+func WaitMsg(ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return msg
+	}
+}

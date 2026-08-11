@@ -40,12 +40,6 @@ type alertsLoadedMsg struct {
 	alerts []storage.ErrorEvent
 }
 
-type webPanelDashMsg struct {
-	installed bool
-	url       string
-	err       error
-}
-
 type Model struct {
 	ctx    *shared.AppContext
 	tab    dashTab
@@ -85,6 +79,8 @@ type Model struct {
 	webInstalled bool
 	webConfirm   int // 0 none, 1 install, 2 manage menu, 3 uninstall, 4 upgrade
 	webBusy      bool
+	webProgress  shared.WebPanelProgressState
+	webProgCh    <-chan tea.Msg
 	statusMsg    string
 }
 
@@ -264,20 +260,27 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m, nav
 		}
 
-	case webPanelDashMsg:
+	case shared.WebPanelProgressMsg:
+		m.webProgress.Apply(msg)
+		m.statusMsg = msg.Detail
+		return m, shared.WaitMsg(m.webProgCh)
+
+	case shared.WebPanelDoneMsg:
 		m.webBusy = false
-		if msg.err != nil {
-			m.statusMsg = fmt.Sprintf("Web panel failed: %v", msg.err)
+		m.webProgCh = nil
+		m.webProgress.Reset()
+		if msg.Err != nil {
+			m.statusMsg = fmt.Sprintf("Web panel failed: %v", msg.Err)
 			return m, nil
 		}
-		m.webInstalled = msg.installed
-		if msg.installed {
-			m.statusMsg = fmt.Sprintf("Node web panel ready — %s", msg.url)
+		m.webInstalled = msg.Installed
+		if msg.Installed {
+			m.statusMsg = fmt.Sprintf("Node web panel ready — %s", msg.URL)
 		} else {
 			m.statusMsg = "Web panel uninstalled"
 		}
 		m.refreshWebInstalled()
-		return m, nil
+		return m, shared.PlayFinishSound()
 	}
 
 	var cmd tea.Cmd
@@ -475,12 +478,15 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			m.webBusy = true
 			switch action {
 			case 1:
+				m.webProgress.Start("install")
 				m.statusMsg = "Installing node web panel…"
 				return m, m.runWebPanel("install")
 			case 4:
+				m.webProgress.Start("upgrade")
 				m.statusMsg = "Upgrading node web panel…"
 				return m, m.runWebPanel("upgrade")
 			default:
+				m.webProgress.Start("uninstall")
 				m.statusMsg = "Uninstalling web panel…"
 				return m, m.runWebPanel("uninstall")
 			}
@@ -495,10 +501,14 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 
 func (m *Model) runWebPanel(action string) tea.Cmd {
 	serverID := m.ctx.ServerID
-	return func() tea.Msg {
+	ch := make(chan tea.Msg, 16)
+	m.webProgCh = ch
+	go func() {
+		defer close(ch)
 		var srv storage.Server
 		if err := m.ctx.DB.First(&srv, serverID).Error; err != nil {
-			return webPanelDashMsg{err: err}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
+			return
 		}
 		cfg := ssh.ClientConfig{
 			Host:     srv.Host,
@@ -510,34 +520,43 @@ func (m *Model) runWebPanel(action string) tea.Cmd {
 		}
 		_, err := m.ctx.Pool.Reconnect(srv.ID, cfg)
 		if err != nil {
-			return webPanelDashMsg{err: fmt.Errorf("reconnect: %w", err)}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: fmt.Errorf("reconnect: %w", err)}
+			return
 		}
 		exec, ok := m.ctx.Pool.GetExecutor(srv.ID)
 		if !ok {
-			return webPanelDashMsg{err: fmt.Errorf("executor unavailable after reconnect")}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: fmt.Errorf("executor unavailable after reconnect")}
+			return
 		}
 		svc := webpanel.New(m.ctx.DB, serverID)
 		svc.SetHost(srv.Host)
 		svc.SetSSH(cfg)
 		svc.SetPool(m.ctx.Pool)
+		svc.SetProgress(func(pct float64, detail string) {
+			ch <- shared.WebPanelProgressMsg{Pct: pct, Detail: detail}
+		})
 		switch action {
 		case "install":
 			if err := svc.Enable(exec, map[string]string{"port": "8080"}); err != nil {
-				return webPanelDashMsg{err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
+				return
 			}
-			return webPanelDashMsg{installed: true, url: fmt.Sprintf("http://%s:8080", srv.Host)}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: fmt.Sprintf("http://%s:8080", srv.Host)}
 		case "upgrade":
 			if err := svc.Upgrade(exec, "8080"); err != nil {
-				return webPanelDashMsg{err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
+				return
 			}
-			return webPanelDashMsg{installed: true, url: fmt.Sprintf("http://%s:8080", srv.Host)}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: fmt.Sprintf("http://%s:8080", srv.Host)}
 		default:
 			if err := svc.Disable(exec); err != nil {
-				return webPanelDashMsg{err: err}
+				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
+				return
 			}
-			return webPanelDashMsg{installed: false}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: false}
 		}
-	}
+	}()
+	return shared.WaitMsg(ch)
 }
 
 func (m *Model) ensureExec(srv storage.Server) (*ssh.Executor, error) {
