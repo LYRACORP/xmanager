@@ -62,6 +62,7 @@ type pageData struct {
 	ServerCards    []serverCardData
 	ServerCard     serverCardData
 	Projects       []storage.Project
+	ProjectViews   []projectCardView
 	ProjectTypes   []string
 	AllServers     []storage.Server
 	Monitors       []storage.UptimeMonitor

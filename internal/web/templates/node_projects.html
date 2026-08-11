@@ -1,46 +1,91 @@
 {{define "node_projects"}}
 {{template "head" .}}
 {{template "nav" .}}
-<div class="xm-page space-y-6">
-  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+<div class="xm-page space-y-5">
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight">Projects</h1>
-      <p class="text-panel-muted text-sm mt-1">Apps and compose stacks on this host</p>
+      <h1 class="text-2xl font-bold tracking-tight">Projects</h1>
+      <p class="text-panel-muted text-xs mt-0.5">Apps and stacks on this server</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <a href="/oneclick" class="xm-btn xm-btn-ghost">One-click apps</a>
-      <a href="/projects/new" class="xm-btn xm-btn-primary">+ New</a>
+      <a href="/oneclick" class="xm-btn xm-btn-ghost text-xs">One-click apps</a>
+      <a href="/projects/new" class="xm-btn xm-btn-primary text-xs">+ New project</a>
     </div>
   </div>
 
   {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
 
-  {{if .Projects}}
-  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {{range .Projects}}
-    <a href="/projects/{{.ID}}" class="xm-card p-5 hover:border-emerald-800/60 transition-colors block">
-      <div class="flex items-start justify-between gap-2 mb-3">
-        <h2 class="font-semibold text-gray-100 truncate">{{.Name}}</h2>
-        <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border
-          {{if eq .DeployStatus "running"}}border-emerald-700 text-emerald-300 bg-emerald-950/40
-          {{else if eq .DeployStatus "failed"}}border-red-800 text-red-300 bg-red-950/30
-          {{else if eq .DeployStatus "building"}}border-sky-800 text-sky-300 bg-sky-950/30
-          {{else}}border-zinc-700 text-zinc-400{{end}}">{{.DeployStatus}}</span>
+  {{if .ProjectViews}}
+  <div class="space-y-2">
+    {{range .ProjectViews}}
+    <a href="/projects/{{.ID}}"
+       class="group flex flex-col sm:flex-row sm:items-center gap-3 xm-card px-4 py-3.5 hover:border-zinc-600 transition-colors no-underline">
+
+      {{/* Left: name + meta */}}
+      <div class="flex-1 min-w-0 space-y-1.5">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-gray-100 text-sm group-hover:text-white transition-colors">{{.Name}}</span>
+          {{/* Status badge */}}
+          <span class="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded-full border
+            {{if eq .DeployStatus "running"}}border-emerald-700/60 text-emerald-300 bg-emerald-950/40
+            {{else if eq .DeployStatus "failed"}}border-red-800/60 text-red-300 bg-red-950/30
+            {{else if eq .DeployStatus "building"}}border-sky-700/60 text-sky-300 bg-sky-950/30
+            {{else}}border-zinc-700 text-zinc-400{{end}}">
+            {{if eq .DeployStatus "running"}}<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>{{end}}
+            {{if eq .DeployStatus "building"}}<span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>{{end}}
+            {{.DeployStatus}}
+          </span>
+        </div>
+
+        {{/* Second row: type, branch, ports, domain */}}
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px]">{{.Type}}</span>
+          {{if .Branch}}
+          <span class="text-zinc-500">·</span>
+          <span class="text-panel-muted font-mono text-[11px] flex items-center gap-1">
+            <svg class="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            {{.Branch}}
+          </span>
+          {{end}}
+          {{if .Ports}}
+          <span class="text-zinc-500">·</span>
+          {{range .Ports}}<span class="font-mono text-[11px] text-zinc-400 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">:{{.}}</span>{{end}}
+          {{end}}
+          {{if .Domain}}
+          <span class="text-zinc-500">·</span>
+          <span class="text-sky-400 text-[11px] truncate max-w-[180px]">{{.Domain}}</span>
+          {{end}}
+        </div>
       </div>
-      <div class="flex flex-wrap gap-2 text-xs mb-2">
-        <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.Type}}</span>
-        {{if .PersistentData}}<span class="text-panel-muted">persistent</span>{{end}}
+
+      {{/* Right: deploy time + resource stats */}}
+      <div class="flex sm:flex-col items-center sm:items-end gap-3 sm:gap-1 shrink-0 text-right">
+        <span class="text-[11px] text-zinc-500">{{.LastDeployedAt}}</span>
+        {{if eq .DeployStatus "running"}}
+        <span id="stats-{{.ID}}"
+          class="text-[11px] text-zinc-500 font-mono"
+          hx-get="/api/projects/{{.ID}}/stats"
+          hx-trigger="load, every 15s"
+          hx-swap="innerHTML">
+          <span class="animate-pulse text-zinc-600">···</span>
+        </span>
+        {{end}}
       </div>
-      <p class="text-xs text-panel-muted truncate">{{if .Domain}}{{.Domain}}{{else if .Source}}{{.Source}}{{else}}—{{end}}</p>
+
+      {{/* Chevron */}}
+      <svg class="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 shrink-0 hidden sm:block transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
     </a>
     {{end}}
   </div>
+
   {{else}}
   <div class="xm-card">
     <div class="xm-empty">
       <div class="xm-empty-ico">▣</div>
       <h3>No projects yet</h3>
-      <p>Create from Git, Docker image, Compose, or install a CapRover one-click app.</p>
+      <p>Create from Git, Docker image, Compose, or install a one-click app.</p>
       <div class="flex flex-wrap gap-2 mt-2 justify-center">
         <a href="/projects/new" class="xm-btn xm-btn-primary">+ New project</a>
         <a href="/oneclick" class="xm-btn xm-btn-ghost">Browse templates</a>
@@ -49,5 +94,20 @@
   </div>
   {{end}}
 </div>
+
+<script>
+// Replace the JSON stats object with a readable CPU / mem string
+document.addEventListener('htmx:afterSwap', function(e) {
+  var el = e.detail.target;
+  if (!el || !el.id || !el.id.startsWith('stats-')) return;
+  try {
+    var d = JSON.parse(el.textContent.trim());
+    if (d.cpu && d.mem) {
+      el.textContent = d.cpu + ' · ' + d.mem.split(' /')[0];
+    }
+  } catch(_) {}
+});
+</script>
+
 {{template "foot" .}}
 {{end}}

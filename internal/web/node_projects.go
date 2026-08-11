@@ -7,12 +7,65 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lyracorp/xmanager/internal/apps"
 	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
+
+// projectCardView is the display-ready wrapper for a project on the list page.
+type projectCardView struct {
+	storage.Project
+	Branch         string
+	Ports          []string
+	LastDeployedAt string // human-readable, e.g. "2h ago"
+}
+
+func humanAgo(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Format("Jan 2")
+	}
+}
+
+// getAPIProjectStats returns live CPU/mem for a single running container as JSON.
+// Called by HTMX on the projects list page.
+func (h *handler) getAPIProjectStats(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	p, err := h.loadNodeProject(uint(id))
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.Write([]byte(`{"cpu":"—","mem":"—"}`))
+		return
+	}
+	if p.DeployStatus != project.StatusRunning {
+		w.Write([]byte(`{"cpu":"—","mem":"—"}`))
+		return
+	}
+	name := projectSlug(p.Name)
+	exec := h.localExec()
+	// docker stats format uses docker's own {{}} template syntax — not Go's
+	cmd := `docker stats --no-stream --format '{"cpu":"` + "{{.CPUPerc}}" + `","mem":"` + "{{.MemUsage}}" + `"}' ` + name + ` 2>/dev/null || echo '{"cpu":"—","mem":"—"}'`
+	out := strings.TrimSpace(exec.RunQuiet(cmd))
+	if out == "" {
+		out = `{"cpu":"—","mem":"—"}`
+	}
+	w.Write([]byte(out))
+}
 
 func (h *handler) appsLoader() *apps.Loader {
 	return apps.DefaultLoader()
@@ -101,6 +154,27 @@ func (h *handler) getNodeProjects(w http.ResponseWriter, r *http.Request) {
 	data := h.basePage(sess, "Projects")
 	data.ActiveNav = "projects"
 	data.Projects = projects
+	// build enriched views (branch, ports, last-deployed)
+	views := make([]projectCardView, len(projects))
+	for i, p := range projects {
+		var cfg project.Config
+		if p.ConfigJSON != "" {
+			_ = json.Unmarshal([]byte(p.ConfigJSON), &cfg)
+		}
+		var lastDeploy storage.DeployHistory
+		h.opts.DB.Where("project_id = ?", p.ID).Order("triggered_at desc").First(&lastDeploy)
+		ago := "never"
+		if !lastDeploy.TriggeredAt.IsZero() {
+			ago = humanAgo(lastDeploy.TriggeredAt)
+		}
+		views[i] = projectCardView{
+			Project:        p,
+			Branch:         cfg.Branch,
+			Ports:          cfg.Ports,
+			LastDeployedAt: ago,
+		}
+	}
+	data.ProjectViews = views
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}

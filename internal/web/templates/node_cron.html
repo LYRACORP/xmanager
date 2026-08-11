@@ -6,12 +6,104 @@
   <p class="text-gray-500 text-sm mb-6">Jobs on this host — next run, status, logs</p>
   {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
 
-  <form method="post" action="/cron" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 grid gap-3 md:grid-cols-4">
-    <input name="name" required placeholder="name" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-    <input name="expression" required placeholder="*/5 * * * *" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
-    <input name="command" required placeholder="command" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
-    <button type="submit" class="md:col-span-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">Add job</button>
+  <form method="post" action="/cron" id="human-cron-form" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+    <div class="mb-4">
+      <h2 class="text-sm font-semibold text-gray-200">Easy schedule</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Pick how often — no cron syntax needed</p>
+    </div>
+    <div class="grid gap-3 md:grid-cols-4">
+      <input name="name" required placeholder="name" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <select name="freq" id="cron-freq" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+        <option value="minutes">Every N minutes</option>
+        <option value="hours">Every N hours</option>
+        <option value="daily">Every day</option>
+        <option value="weekdays">Weekdays only</option>
+        <option value="weekly">Once a week</option>
+        <option value="monthly">Once a month</option>
+      </select>
+      <div id="cron-interval-wrap">
+        <input name="interval" id="cron-interval" type="number" min="1" max="59" value="5" placeholder="every N"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" title="Interval">
+      </div>
+      <div id="cron-time-wrap" class="hidden flex gap-2">
+        <select name="hour" id="cron-hour" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" title="Hour">
+          <option value="0">00:00</option>
+          <option value="1">01:00</option>
+          <option value="2" selected>02:00</option>
+          <option value="3">03:00</option>
+          <option value="4">04:00</option>
+          <option value="5">05:00</option>
+          <option value="6">06:00</option>
+          <option value="7">07:00</option>
+          <option value="8">08:00</option>
+          <option value="9">09:00</option>
+          <option value="10">10:00</option>
+          <option value="11">11:00</option>
+          <option value="12">12:00</option>
+          <option value="13">13:00</option>
+          <option value="14">14:00</option>
+          <option value="15">15:00</option>
+          <option value="16">16:00</option>
+          <option value="17">17:00</option>
+          <option value="18">18:00</option>
+          <option value="19">19:00</option>
+          <option value="20">20:00</option>
+          <option value="21">21:00</option>
+          <option value="22">22:00</option>
+          <option value="23">23:00</option>
+        </select>
+        <select name="minute" id="cron-minute" class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" title="Minute">
+          <option value="0" selected>:00</option>
+          <option value="15">:15</option>
+          <option value="30">:30</option>
+          <option value="45">:45</option>
+        </select>
+      </div>
+      <div id="cron-minute-only-wrap" class="hidden">
+        <select name="minute" id="cron-minute-only" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" title="Minute past the hour" disabled>
+          <option value="0" selected>at :00</option>
+          <option value="15">at :15</option>
+          <option value="30">at :30</option>
+          <option value="45">at :45</option>
+        </select>
+      </div>
+      <div id="cron-weekday-wrap" class="hidden">
+        <select name="weekday" id="cron-weekday" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+          <option value="1" selected>Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+          <option value="0">Sunday</option>
+        </select>
+      </div>
+      <div id="cron-monthday-wrap" class="hidden">
+        <input name="month_day" id="cron-monthday" type="number" min="1" max="28" value="1" placeholder="day of month"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" title="Day of month">
+      </div>
+      <input name="command" required placeholder="command" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+      <p id="cron-preview" class="md:col-span-4 text-xs text-gray-500 font-mono">→ */5 * * * *</p>
+      <button type="submit" class="md:col-span-4 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">Add job</button>
+    </div>
   </form>
+
+  <details class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 group">
+    <summary class="cursor-pointer list-none flex items-center justify-between">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-200">Advanced — cron expression</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Paste a raw 5-field schedule if you already know it</p>
+      </div>
+      <span class="text-gray-600 text-xs group-open:hidden">show</span>
+      <span class="text-gray-600 text-xs hidden group-open:inline">hide</span>
+    </summary>
+    <form method="post" action="/cron" class="grid gap-3 md:grid-cols-4 mt-4">
+      <input name="name" required placeholder="name" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <input name="expression" required placeholder="*/5 * * * *" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+      <input name="command" required placeholder="command" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono md:col-span-2">
+      <button type="submit" class="md:col-span-4 bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">Add job</button>
+    </form>
+  </details>
 
   {{if .CronJobs}}
   <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -48,6 +140,74 @@
   <p class="text-gray-600">No cron jobs yet</p>
   {{end}}
 </div>
+<script>
+(function () {
+  const freq = document.getElementById('cron-freq');
+  const intervalWrap = document.getElementById('cron-interval-wrap');
+  const timeWrap = document.getElementById('cron-time-wrap');
+  const minuteOnlyWrap = document.getElementById('cron-minute-only-wrap');
+  const weekdayWrap = document.getElementById('cron-weekday-wrap');
+  const monthdayWrap = document.getElementById('cron-monthday-wrap');
+  const interval = document.getElementById('cron-interval');
+  const hour = document.getElementById('cron-hour');
+  const minute = document.getElementById('cron-minute');
+  const minuteOnly = document.getElementById('cron-minute-only');
+  const weekday = document.getElementById('cron-weekday');
+  const monthday = document.getElementById('cron-monthday');
+  const preview = document.getElementById('cron-preview');
+
+  function sync() {
+    const f = freq.value;
+    const needsInterval = f === 'minutes' || f === 'hours';
+    const needsClock = f === 'daily' || f === 'weekdays' || f === 'weekly' || f === 'monthly';
+    const needsMinuteOnly = f === 'hours';
+    intervalWrap.classList.toggle('hidden', !needsInterval);
+    timeWrap.classList.toggle('hidden', !needsClock);
+    minuteOnlyWrap.classList.toggle('hidden', !needsMinuteOnly);
+    weekdayWrap.classList.toggle('hidden', f !== 'weekly');
+    monthdayWrap.classList.toggle('hidden', f !== 'monthly');
+    minute.disabled = !needsClock;
+    minuteOnly.disabled = !needsMinuteOnly;
+    if (f === 'minutes') {
+      interval.max = 59;
+      if (+interval.value > 59) interval.value = 5;
+    } else if (f === 'hours') {
+      interval.max = 23;
+      if (+interval.value > 23) interval.value = 1;
+    }
+    preview.textContent = '→ ' + buildExpr();
+  }
+
+  function minuteValue() {
+    if (freq.value === 'hours') return parseInt(minuteOnly.value || '0', 10);
+    return parseInt(minute.value || '0', 10);
+  }
+
+  function buildExpr() {
+    const f = freq.value;
+    const n = Math.max(1, parseInt(interval.value || '1', 10));
+    const h = parseInt(hour.value || '0', 10);
+    const m = minuteValue();
+    const w = parseInt(weekday.value || '1', 10);
+    const d = Math.min(28, Math.max(1, parseInt(monthday.value || '1', 10)));
+    switch (f) {
+      case 'minutes': return n === 1 ? '* * * * *' : '*/' + n + ' * * * *';
+      case 'hours': return n === 1 ? m + ' * * * *' : m + ' */' + n + ' * * *';
+      case 'daily': return m + ' ' + h + ' * * *';
+      case 'weekdays': return m + ' ' + h + ' * * 1-5';
+      case 'weekly': return m + ' ' + h + ' * * ' + w;
+      case 'monthly': return m + ' ' + h + ' ' + d + ' * *';
+      default: return '';
+    }
+  }
+
+  [freq, interval, hour, minute, minuteOnly, weekday, monthday].forEach(el => {
+    el.addEventListener('change', sync);
+    el.addEventListener('input', sync);
+  });
+  sync();
+})();
+</script>
 {{template "foot" .}}
 {{end}}
 

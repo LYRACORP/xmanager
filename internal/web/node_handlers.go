@@ -106,6 +106,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/git/{provider}/disconnect", h.requireAuth(h.postOAuthGitDisconnect))
 	mux.HandleFunc("GET /api/git/repos", h.requireAuth(h.getAPIGitRepos))
 	mux.HandleFunc("GET /api/git/device/start", h.requireAuth(h.getAPIGitDeviceStart))
+	mux.HandleFunc("GET /api/projects/{id}/stats", h.requireAuth(h.getAPIProjectStats))
 	mux.HandleFunc("POST /webhook/{project_id}", h.postNodeWebhook)
 }
 
@@ -194,7 +195,27 @@ func (h *handler) getNodeCron(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeCron(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	mgr := cron.NewManager(h.localExec(), h.opts.DB)
-	_, err := mgr.Add(h.localServerID(), r.FormValue("name"), r.FormValue("expression"), r.FormValue("command"))
+
+	expr := strings.TrimSpace(r.FormValue("expression"))
+	var err error
+	if expr == "" && r.FormValue("freq") != "" {
+		hs, perr := cron.ParseHumanForm(
+			r.FormValue("freq"),
+			r.FormValue("interval"),
+			r.FormValue("hour"),
+			r.FormValue("minute"),
+			r.FormValue("weekday"),
+			r.FormValue("month_day"),
+		)
+		if perr != nil {
+			err = perr
+		} else {
+			expr, err = cron.ExpressionFromHuman(hs)
+		}
+	}
+	if err == nil {
+		_, err = mgr.Add(h.localServerID(), r.FormValue("name"), expr, r.FormValue("command"))
+	}
 	if err != nil {
 		sess := sessionFromCtx(r.Context())
 		data := h.basePage(sess, "Cron")
