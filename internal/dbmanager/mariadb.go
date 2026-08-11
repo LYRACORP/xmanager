@@ -17,7 +17,14 @@ type MariaDBManager struct {
 
 func (m *MariaDBManager) Type() DBType { return MariaDB }
 
+func (m *MariaDBManager) useDocker() bool {
+	return dockerContainerRunning(m.exec, ContainerMariaDB)
+}
+
 func (m *MariaDBManager) IsAvailable() bool {
+	if m.useDocker() {
+		return true
+	}
 	return m.exec.RunQuiet("which mariadb || which mysql") != ""
 }
 
@@ -29,7 +36,12 @@ var mariaSystemDBs = map[string]bool{
 }
 
 func (m *MariaDBManager) mariaCmd(sql string) string {
-	// prefer mariadb binary, fall back to mysql
+	if m.useDocker() {
+		return fmt.Sprintf(
+			`mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -N -e %s`,
+			shellQuote(sql),
+		)
+	}
 	bin := "mariadb"
 	if m.exec.RunQuiet("which mariadb") == "" {
 		bin = "mysql"
@@ -37,8 +49,20 @@ func (m *MariaDBManager) mariaCmd(sql string) string {
 	return fmt.Sprintf(`%s -N -e %s`, bin, shellQuote(sql))
 }
 
+func (m *MariaDBManager) runSQL(sql string) (*ssh.ExecResult, error) {
+	if m.useDocker() {
+		// Official image sets MARIADB_ROOT_PASSWORD; fall back to MYSQL_*.
+		cmd := fmt.Sprintf(
+			`PASS="$MARIADB_ROOT_PASSWORD"; [ -n "$PASS" ] || PASS="$MYSQL_ROOT_PASSWORD"; mariadb -uroot -p"$PASS" -N -e %s`,
+			shellQuote(sql),
+		)
+		return dockerExec(m.exec, ContainerMariaDB, cmd)
+	}
+	return m.exec.Run(m.mariaCmd(sql))
+}
+
 func (m *MariaDBManager) ListDatabases() ([]Database, error) {
-	result, err := m.exec.Run(m.mariaCmd("SHOW DATABASES"))
+	result, err := m.runSQL("SHOW DATABASES")
 	if err := requireOK(result, err, "mariadb SHOW DATABASES failed"); err != nil {
 		return nil, err
 	}
@@ -55,17 +79,17 @@ func (m *MariaDBManager) ListDatabases() ([]Database, error) {
 }
 
 func (m *MariaDBManager) CreateDatabase(name string) error {
-	result, err := m.exec.Run(m.mariaCmd(fmt.Sprintf("CREATE DATABASE `%s`", name)))
+	result, err := m.runSQL(fmt.Sprintf("CREATE DATABASE `%s`", name))
 	return requireOK(result, err, "create database failed")
 }
 
 func (m *MariaDBManager) DropDatabase(name string) error {
-	result, err := m.exec.Run(m.mariaCmd(fmt.Sprintf("DROP DATABASE `%s`", name)))
+	result, err := m.runSQL(fmt.Sprintf("DROP DATABASE `%s`", name))
 	return requireOK(result, err, "drop database failed")
 }
 
 func (m *MariaDBManager) ListUsers() ([]DBUser, error) {
-	result, err := m.exec.Run(m.mariaCmd("SELECT user, host FROM mysql.user ORDER BY user, host"))
+	result, err := m.runSQL("SELECT user, host FROM mysql.user ORDER BY user, host")
 	if err := requireOK(result, err, "mariadb user list failed"); err != nil {
 		return nil, err
 	}
@@ -86,37 +110,53 @@ func (m *MariaDBManager) ListUsers() ([]DBUser, error) {
 }
 
 func (m *MariaDBManager) CreateUser(name, password string) error {
-	sql := fmt.Sprintf("CREATE USER '%s'@'localhost' IDENTIFIED BY '%s'", name, password)
-	result, err := m.exec.Run(m.mariaCmd(sql))
+	sql := fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", name, password)
+	result, err := m.runSQL(sql)
 	return requireOK(result, err, "create user failed")
 }
 
 // GrantUser grants all privileges on dbName to the given user.
 func (m *MariaDBManager) GrantUser(username, dbName string) error {
-	sql := fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'localhost'; FLUSH PRIVILEGES", dbName, username)
-	result, err := m.exec.Run(m.mariaCmd(sql))
+	sql := fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES", dbName, username)
+	result, err := m.runSQL(sql)
 	return requireOK(result, err, "grant failed")
 }
 
 // RevokeUser revokes all privileges on dbName from the given user.
 func (m *MariaDBManager) RevokeUser(username, dbName string) error {
-	sql := fmt.Sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM '%s'@'localhost'; FLUSH PRIVILEGES", dbName, username)
-	result, err := m.exec.Run(m.mariaCmd(sql))
+	sql := fmt.Sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM '%s'@'%%'; FLUSH PRIVILEGES", dbName, username)
+	result, err := m.runSQL(sql)
 	return requireOK(result, err, "revoke failed")
 }
 
 func (m *MariaDBManager) Backup(dbName, destPath string) error {
-	cmd := fmt.Sprintf("mariadb-dump %s 2>/dev/null || mysqldump %s | gzip > %s", dbName, dbName, destPath)
+	if m.useDocker() {
+		cmd := fmt.Sprintf(
+			`docker exec %s sh -c 'PASS="$MARIADB_ROOT_PASSWORD"; [ -n "$PASS" ] || PASS="$MYSQL_ROOT_PASSWORD"; mariadb-dump -uroot -p"$PASS" %s' | gzip > %s`,
+			ContainerMariaDB, shellQuote(dbName), shellQuote(destPath),
+		)
+		result, err := m.exec.Run(cmd)
+		return requireOK(result, err, "backup failed")
+	}
+	cmd := fmt.Sprintf("mariadb-dump %s 2>/dev/null || mysqldump %s | gzip > %s", shellQuote(dbName), shellQuote(dbName), shellQuote(destPath))
 	result, err := m.exec.Run(cmd)
 	return requireOK(result, err, "backup failed")
 }
 
 func (m *MariaDBManager) Restore(dbName, srcPath string) error {
+	if m.useDocker() {
+		cmd := fmt.Sprintf(
+			`gunzip -c %s | docker exec -i %s sh -c 'PASS="$MARIADB_ROOT_PASSWORD"; [ -n "$PASS" ] || PASS="$MYSQL_ROOT_PASSWORD"; mariadb -uroot -p"$PASS" %s'`,
+			shellQuote(srcPath), ContainerMariaDB, shellQuote(dbName),
+		)
+		result, err := m.exec.Run(cmd)
+		return requireOK(result, err, "restore failed")
+	}
 	bin := "mariadb"
 	if m.exec.RunQuiet("which mariadb") == "" {
 		bin = "mysql"
 	}
-	cmd := fmt.Sprintf("gunzip -c %s | %s %s", srcPath, bin, dbName)
+	cmd := fmt.Sprintf("gunzip -c %s | %s %s", shellQuote(srcPath), bin, shellQuote(dbName))
 	result, err := m.exec.Run(cmd)
 	return requireOK(result, err, "restore failed")
 }

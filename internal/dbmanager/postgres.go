@@ -14,7 +14,14 @@ type PostgresManager struct {
 
 func (p *PostgresManager) Type() DBType { return PostgreSQL }
 
+func (p *PostgresManager) useDocker() bool {
+	return dockerContainerRunning(p.exec, ContainerPostgres)
+}
+
 func (p *PostgresManager) IsAvailable() bool {
+	if p.useDocker() {
+		return true
+	}
 	return p.exec.RunQuiet("which psql") != ""
 }
 
@@ -22,10 +29,21 @@ func (p *PostgresManager) effectivePassword() string {
 	if p.serverPassword != "" {
 		return p.serverPassword
 	}
+	if p.useDocker() {
+		if pw := dockerEnv(p.exec, ContainerPostgres, "POSTGRES_PASSWORD"); pw != "" {
+			return pw
+		}
+	}
 	return p.discoverPostgresPassword()
 }
 
 func (p *PostgresManager) psqlQuery(sql string) (*ssh.ExecResult, error) {
+	if p.useDocker() {
+		// Official image: local peer auth as OS user postgres (no password needed).
+		inner := fmt.Sprintf(`psql -w -t -A -c %s`, shellQuote(sql))
+		return dockerExecUser(p.exec, ContainerPostgres, "postgres", inner)
+	}
+
 	password := p.effectivePassword()
 	psql := postgresPSQLArgs(password)
 	inner := fmt.Sprintf(`%s -c %s`, psql, shellQuote(sql))
@@ -77,6 +95,11 @@ func (p *PostgresManager) psqlQuery(sql string) (*ssh.ExecResult, error) {
 }
 
 func (p *PostgresManager) runAsPostgres(shellCmd string) error {
+	if p.useDocker() {
+		res, err := dockerExecUser(p.exec, ContainerPostgres, "postgres", shellCmd)
+		return requireOK(res, err, "postgres docker command failed")
+	}
+
 	password := p.effectivePassword()
 	env := postgresEnvPrefix(password)
 	attempts := []string{
@@ -107,6 +130,9 @@ func (p *PostgresManager) ListDatabases() ([]Database, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := requireOK(result, nil, "postgres list databases failed"); err != nil {
+		return nil, err
+	}
 
 	var dbs []Database
 	for _, line := range strings.Split(result.Stdout, "\n") {
@@ -124,16 +150,19 @@ func (p *PostgresManager) ListDatabases() ([]Database, error) {
 }
 
 func (p *PostgresManager) CreateDatabase(name string) error {
-	return p.runAsPostgres(fmt.Sprintf("createdb %s", name))
+	return p.runAsPostgres(fmt.Sprintf("createdb %s", shellQuote(name)))
 }
 
 func (p *PostgresManager) DropDatabase(name string) error {
-	return p.runAsPostgres(fmt.Sprintf("dropdb %s", name))
+	return p.runAsPostgres(fmt.Sprintf("dropdb %s", shellQuote(name)))
 }
 
 func (p *PostgresManager) ListUsers() ([]DBUser, error) {
 	result, err := p.psqlQuery(`SELECT rolname, CASE WHEN rolsuper THEN 'superuser' WHEN rolcanlogin THEN 'login' ELSE 'role' END FROM pg_roles WHERE rolcanlogin OR rolsuper ORDER BY rolname`)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireOK(result, nil, "postgres list users failed"); err != nil {
 		return nil, err
 	}
 
@@ -158,9 +187,19 @@ func (p *PostgresManager) CreateUser(name, password string) error {
 }
 
 func (p *PostgresManager) Backup(dbName, destPath string) error {
-	return p.runAsPostgres(fmt.Sprintf("pg_dump %s | gzip > %s", dbName, destPath))
+	if p.useDocker() {
+		cmd := fmt.Sprintf("docker exec -u postgres %s pg_dump %s | gzip > %s", ContainerPostgres, shellQuote(dbName), shellQuote(destPath))
+		res, err := p.exec.Run(cmd)
+		return requireOK(res, err, "backup failed")
+	}
+	return p.runAsPostgres(fmt.Sprintf("pg_dump %s | gzip > %s", shellQuote(dbName), shellQuote(destPath)))
 }
 
 func (p *PostgresManager) Restore(dbName, srcPath string) error {
-	return p.runAsPostgres(fmt.Sprintf("gunzip -c %s | psql -w %s", shellQuote(srcPath), dbName))
+	if p.useDocker() {
+		cmd := fmt.Sprintf("gunzip -c %s | docker exec -i -u postgres %s psql -w %s", shellQuote(srcPath), ContainerPostgres, shellQuote(dbName))
+		res, err := p.exec.Run(cmd)
+		return requireOK(res, err, "restore failed")
+	}
+	return p.runAsPostgres(fmt.Sprintf("gunzip -c %s | psql -w %s", shellQuote(srcPath), shellQuote(dbName)))
 }

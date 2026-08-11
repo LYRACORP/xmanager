@@ -300,6 +300,7 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 		availMap[string(t)] = avail[t]
 	}
 	var dbs []nodeDBView
+	var listErrs []string
 	for _, t := range []dbmanager.DBType{
 		dbmanager.PostgreSQL, dbmanager.MySQL, dbmanager.MariaDB,
 		dbmanager.MongoDB, dbmanager.ClickHouse, dbmanager.Redis,
@@ -308,7 +309,10 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		mgr := dbmanager.NewManager(t, exec)
-		list, _ := mgr.ListDatabases()
+		list, err := mgr.ListDatabases()
+		if err != nil {
+			listErrs = append(listErrs, string(t)+": "+err.Error())
+		}
 		users, _ := mgr.ListUsers()
 		dbs = append(dbs, nodeDBView{Type: string(t), Databases: list, Users: users})
 	}
@@ -326,17 +330,35 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
+	if len(listErrs) > 0 {
+		msg := "list error: " + strings.Join(listErrs, "; ")
+		if data.Flash != "" {
+			data.Flash += " · " + msg
+		} else {
+			data.Flash = msg
+		}
+	}
 	h.render(w, "node_databases", data)
 }
 
 func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	t := dbmanager.DBType(r.FormValue("db_type"))
-	mgr := dbmanager.NewManager(t, h.localExec())
-	if mgr != nil {
-		_ = mgr.CreateDatabase(r.FormValue("name"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("database name required"), http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/databases", http.StatusSeeOther)
+	mgr := dbmanager.NewManager(t, h.localExec())
+	if mgr == nil {
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("unknown db type: "+string(t)), http.StatusSeeOther)
+		return
+	}
+	if err := mgr.CreateDatabase(name); err != nil {
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("create failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(`database "`+name+`" created`), http.StatusSeeOther)
 }
 
 // postNodeDatabaseInstall installs a database engine as a Docker container
@@ -500,11 +522,18 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 	}
 
 	if dbName != "" {
-		_, _ = exec.Run("sleep 4")
 		mgr := dbmanager.NewManager(dbmanager.DBType(dbType), exec)
 		if mgr != nil {
-			if err := mgr.CreateDatabase(dbName); err != nil {
-				flash += " · db create failed: " + err.Error()
+			var createErr error
+			for attempt := 0; attempt < 8; attempt++ {
+				_, _ = exec.Run("sleep 3")
+				createErr = mgr.CreateDatabase(dbName)
+				if createErr == nil {
+					break
+				}
+			}
+			if createErr != nil {
+				flash += " · db create failed: " + createErr.Error()
 			} else {
 				flash += " · database \"" + dbName + "\" created"
 			}

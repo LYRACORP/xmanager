@@ -3,6 +3,7 @@ package dbmanager
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lyracorp/xmanager/internal/ssh"
 )
@@ -13,19 +14,41 @@ type MongoManager struct {
 
 func (m *MongoManager) Type() DBType { return MongoDB }
 
+func (m *MongoManager) useDocker() bool {
+	return dockerContainerRunning(m.exec, ContainerMongoDB)
+}
+
 func (m *MongoManager) IsAvailable() bool {
+	if m.useDocker() {
+		return true
+	}
 	return m.exec.RunQuiet("which mongosh 2>/dev/null || which mongo 2>/dev/null") != ""
 }
 
+func (m *MongoManager) mongosh(args string) string {
+	if m.useDocker() {
+		return fmt.Sprintf("mongosh %s", args)
+	}
+	return fmt.Sprintf("mongosh %s", args)
+}
+
+func (m *MongoManager) runMongo(args string) (*ssh.ExecResult, error) {
+	cmd := m.mongosh(args)
+	if m.useDocker() {
+		return dockerExec(m.exec, ContainerMongoDB, cmd)
+	}
+	return m.exec.Run(cmd)
+}
+
 func (m *MongoManager) ListDatabases() ([]Database, error) {
-	result, err := m.exec.Run("mongosh --quiet --eval 'JSON.stringify(db.adminCommand({listDatabases:1}))'")
+	result, err := m.runMongo("--quiet --eval 'JSON.stringify(db.adminCommand({listDatabases:1}))'")
 	if err := requireOK(result, err, "mongosh listDatabases failed"); err != nil {
 		return nil, err
 	}
 
 	var resp struct {
 		Databases []struct {
-			Name  string  `json:"name"`
+			Name       string  `json:"name"`
 			SizeOnDisk float64 `json:"sizeOnDisk"`
 		} `json:"databases"`
 	}
@@ -45,19 +68,19 @@ func (m *MongoManager) ListDatabases() ([]Database, error) {
 }
 
 func (m *MongoManager) CreateDatabase(name string) error {
-	cmd := fmt.Sprintf("mongosh %s --quiet --eval 'db.createCollection(\"init\")' 2>/dev/null", name)
-	_, err := m.exec.Run(cmd)
-	return err
+	cmd := fmt.Sprintf("%s --quiet --eval 'db.createCollection(\"init\")'", shellQuote(name))
+	result, err := m.runMongo(cmd)
+	return requireOK(result, err, "create database failed")
 }
 
 func (m *MongoManager) DropDatabase(name string) error {
-	cmd := fmt.Sprintf("mongosh %s --quiet --eval 'db.dropDatabase()' 2>/dev/null", name)
-	_, err := m.exec.Run(cmd)
-	return err
+	cmd := fmt.Sprintf("%s --quiet --eval 'db.dropDatabase()'", shellQuote(name))
+	result, err := m.runMongo(cmd)
+	return requireOK(result, err, "drop database failed")
 }
 
 func (m *MongoManager) ListUsers() ([]DBUser, error) {
-	result, err := m.exec.Run("mongosh admin --quiet --eval 'JSON.stringify(db.getUsers())'")
+	result, err := m.runMongo("admin --quiet --eval 'JSON.stringify(db.getUsers())'")
 	if err := requireOK(result, err, "mongosh getUsers failed"); err != nil {
 		return nil, err
 	}
@@ -89,21 +112,34 @@ func (m *MongoManager) ListUsers() ([]DBUser, error) {
 }
 
 func (m *MongoManager) CreateUser(name, password string) error {
-	cmd := fmt.Sprintf("mongosh admin --quiet --eval 'db.createUser({user:\"%s\",pwd:\"%s\",roles:[\"readWriteAnyDatabase\"]})' 2>/dev/null", name, password)
-	_, err := m.exec.Run(cmd)
-	return err
+	eval := fmt.Sprintf(`db.createUser({user:"%s",pwd:"%s",roles:["readWriteAnyDatabase"]})`,
+		strings.ReplaceAll(name, `"`, ``), strings.ReplaceAll(password, `"`, ``))
+	result, err := m.runMongo("admin --quiet --eval " + shellQuote(eval))
+	return requireOK(result, err, "create user failed")
 }
 
 func (m *MongoManager) Backup(dbName, destPath string) error {
-	cmd := fmt.Sprintf("mongodump --db %s --archive=%s --gzip 2>/dev/null", dbName, destPath)
-	_, err := m.exec.Run(cmd)
-	return err
+	if m.useDocker() {
+		cmd := fmt.Sprintf("docker exec %s mongodump --db %s --archive --gzip > %s",
+			ContainerMongoDB, shellQuote(dbName), shellQuote(destPath))
+		result, err := m.exec.Run(cmd)
+		return requireOK(result, err, "backup failed")
+	}
+	cmd := fmt.Sprintf("mongodump --db %s --archive=%s --gzip", shellQuote(dbName), shellQuote(destPath))
+	result, err := m.exec.Run(cmd)
+	return requireOK(result, err, "backup failed")
 }
 
 func (m *MongoManager) Restore(dbName, srcPath string) error {
-	cmd := fmt.Sprintf("mongorestore --db %s --archive=%s --gzip 2>/dev/null", dbName, srcPath)
-	_, err := m.exec.Run(cmd)
-	return err
+	if m.useDocker() {
+		cmd := fmt.Sprintf("docker exec -i %s mongorestore --db %s --archive --gzip < %s",
+			ContainerMongoDB, shellQuote(dbName), shellQuote(srcPath))
+		result, err := m.exec.Run(cmd)
+		return requireOK(result, err, "restore failed")
+	}
+	cmd := fmt.Sprintf("mongorestore --db %s --archive=%s --gzip", shellQuote(dbName), shellQuote(srcPath))
+	result, err := m.exec.Run(cmd)
+	return requireOK(result, err, "restore failed")
 }
 
 func formatBytes(b int64) string {

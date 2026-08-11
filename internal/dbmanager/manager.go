@@ -62,7 +62,8 @@ func NewManagerWithOptions(dbType DBType, exec *ssh.Executor, opts ManagerOption
 	}
 }
 
-// DetectAvailable reports which database clients are installed on the remote host.
+// DetectAvailable reports which engines are reachable: XManager Docker
+// containers (xm-postgres, …) or host-installed clients.
 func DetectAvailable(exec *ssh.Executor) map[DBType]bool {
 	return map[DBType]bool{
 		PostgreSQL: NewManager(PostgreSQL, exec).IsAvailable(),
