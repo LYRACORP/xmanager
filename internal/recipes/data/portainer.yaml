@@ -1,0 +1,26 @@
+id: portainer
+name: Portainer CE
+description: Portainer on :9443 (HTTPS) and :9028 (edge) — requires Docker
+requires:
+  - docker
+steps:
+  - name: Ensure Docker is running
+    commands:
+      - "command -v docker >/dev/null || { echo 'Docker is required. Install the Docker recipe first.'; exit 1; }"
+      - "systemctl start docker 2>/dev/null || true"
+      - "docker info >/dev/null"
+  - name: Install Portainer CE
+    commands:
+      - "docker volume create portainer_data"
+      - |
+        docker rm -f portainer 2>/dev/null || true
+        docker run -d \
+          -p 9028:8000 \
+          -p 9443:9443 \
+          --name portainer \
+          --restart=always \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v portainer_data:/data \
+          portainer/portainer-ce:latest
+      - "docker ps --filter name=portainer --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+      - "echo 'Portainer UI: https://HOST:9443'"

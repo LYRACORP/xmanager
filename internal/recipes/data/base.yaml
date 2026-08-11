@@ -1,0 +1,11 @@
+id: base
+name: Base packages
+description: Essential CLI tools (fish, curl, vim, tmux, btop, …)
+steps:
+  - name: Install base packages
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get update -y"
+      - "apt-get install -y fish wget curl vim tmux lsof lynx zip unzip cron net-tools rsync btop"
+      - "echo 'Base packages installed.'"
+      - "which fish curl vim tmux btop rsync || true"

@@ -1,0 +1,39 @@
+id: python
+name: Python 3.12 (native source)
+description: Build Python 3.12.0 from source into /opt and install pip/venv
+steps:
+  - name: Install build dependencies
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get update -y"
+      - "apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev liblzma-dev wget ca-certificates"
+  - name: Build and install Python 3.12.0
+    commands:
+      - |
+        set -e
+        PYTHON_VERSION="3.12.0"
+        INSTALL_DIR="/opt/python-$PYTHON_VERSION"
+        cd /tmp
+        rm -rf "Python-$PYTHON_VERSION" "Python-$PYTHON_VERSION.tar.xz"
+        wget -q "https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tar.xz"
+        tar -xf "Python-$PYTHON_VERSION.tar.xz"
+        cd "Python-$PYTHON_VERSION"
+        ./configure --prefix="$INSTALL_DIR" --enable-optimizations
+        make -j"$(nproc)"
+        make install
+        ln -sfn "$INSTALL_DIR/bin/python3" /usr/local/bin/python3.12
+        ln -sfn "$INSTALL_DIR/bin/pip3" /usr/local/bin/pip3.12 || true
+        grep -q "$INSTALL_DIR/bin" /etc/profile.d/python312.sh 2>/dev/null \
+          || echo "export PATH=\$PATH:$INSTALL_DIR/bin" > /etc/profile.d/python312.sh
+        export PATH="$PATH:$INSTALL_DIR/bin"
+        "$INSTALL_DIR/bin/python3" --version
+        "$INSTALL_DIR/bin/python3" -m ensurepip --upgrade || true
+        "$INSTALL_DIR/bin/python3" -m pip install --upgrade pip
+  - name: Install system venv helpers
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get install -y python3-pip python3.12-venv 2>/dev/null || apt-get install -y python3-pip python3-venv || true"
+      - "echo 'Python 3.12 installed under /opt/python-3.12.0 (also linked as python3.12).'"
+  - name: Cleanup build tree
+    commands:
+      - "rm -rf /tmp/Python-3.12.0 /tmp/Python-3.12.0.tar.xz"

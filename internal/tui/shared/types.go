@@ -31,6 +31,7 @@ const (
 	ScreenUptime
 	ScreenServices
 	ScreenRecon
+	ScreenPackages
 )
 
 // Backward-compatible aliases.
@@ -45,7 +46,7 @@ func (s ScreenID) String() string {
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
 		"Settings", "Projects", "Cron Jobs", "Scripts",
-		"Uptime", "Services", "Recon",
+		"Uptime", "Services", "Recon", "Install Packages",
 	}
 	if int(s) < len(names) {
 		return names[s]

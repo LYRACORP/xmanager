@@ -1,0 +1,75 @@
+id: postgres
+name: PostgreSQL (native source)
+description: Build PostgreSQL 16.1 from source on custom port (generates credentials)
+steps:
+  - name: Install build dependencies
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get update -y"
+      - "apt-get install -y build-essential zlib1g-dev libreadline-dev libicu-dev wget ca-certificates"
+  - name: Download and build PostgreSQL 16.1
+    commands:
+      - |
+        set -e
+        POSTGRES_VERSION="16.1"
+        cd /tmp
+        rm -rf "postgresql-$POSTGRES_VERSION" "postgresql-$POSTGRES_VERSION.tar.gz"
+        wget -q "https://ftp.postgresql.org/pub/source/v$POSTGRES_VERSION/postgresql-$POSTGRES_VERSION.tar.gz"
+        tar -xf "postgresql-$POSTGRES_VERSION.tar.gz"
+        cd "postgresql-$POSTGRES_VERSION"
+        ./configure --without-icu
+        make -j"$(nproc)"
+        make install
+  - name: Initialize cluster and users
+    commands:
+      - |
+        set -e
+        export PATH=/usr/local/pgsql/bin:$PATH
+        POSTGRES_USER='__XM_PG_SUPERUSER__'
+        POSTGRES_PASSWORD='__XM_PG_SUPERPASS__'
+        POSTGRES_PORT='9026'
+        LIMITED_USER='__XM_PG_APPUSER__'
+        LIMITED_USER_PASSWORD='__XM_PG_APPPASS__'
+        LIMITED_DATABASE='__XM_PG_DATABASE__'
+
+        id postgres >/dev/null 2>&1 || adduser --system --group --no-create-home postgres
+        mkdir -p /usr/local/pgsql/data
+        chown -R postgres:postgres /usr/local/pgsql
+
+        if [ ! -f /usr/local/pgsql/data/PG_VERSION ]; then
+          su -s /bin/bash postgres -c "/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data"
+        fi
+
+        # Listen settings (idempotent-ish append)
+        grep -q "^listen_addresses" /usr/local/pgsql/data/postgresql.conf \
+          && sed -i "s/^#\\?listen_addresses.*/listen_addresses = '*'/" /usr/local/pgsql/data/postgresql.conf \
+          || echo "listen_addresses = '*'" >> /usr/local/pgsql/data/postgresql.conf
+        grep -q "^port =" /usr/local/pgsql/data/postgresql.conf \
+          && sed -i "s/^#\\?port =.*/port = $POSTGRES_PORT/" /usr/local/pgsql/data/postgresql.conf \
+          || echo "port = $POSTGRES_PORT" >> /usr/local/pgsql/data/postgresql.conf
+        grep -q '0.0.0.0/0' /usr/local/pgsql/data/pg_hba.conf \
+          || echo 'host all all 0.0.0.0/0 md5' >> /usr/local/pgsql/data/pg_hba.conf
+
+        echo 'export PATH=/usr/local/pgsql/bin:$PATH' > /etc/profile.d/postgres.sh
+
+        su -s /bin/bash postgres -c "/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l /usr/local/pgsql/data/logfile restart" \
+          || su -s /bin/bash postgres -c "/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l /usr/local/pgsql/data/logfile start"
+
+        # Superuser (roles are global)
+        su -s /bin/bash postgres -c "psql -p $POSTGRES_PORT -v ON_ERROR_STOP=1 -c \"DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$POSTGRES_USER') THEN CREATE ROLE $POSTGRES_USER LOGIN SUPERUSER PASSWORD '$POSTGRES_PASSWORD'; ELSE ALTER ROLE $POSTGRES_USER WITH LOGIN SUPERUSER PASSWORD '$POSTGRES_PASSWORD'; END IF; END \\\$\\\$;\""
+
+        su -s /bin/bash postgres -c "psql -p $POSTGRES_PORT -v ON_ERROR_STOP=1 -c \"SELECT 1 FROM pg_database WHERE datname = '$LIMITED_DATABASE'\" | grep -q 1" \
+          || su -s /bin/bash postgres -c "createdb -p $POSTGRES_PORT $LIMITED_DATABASE"
+
+        su -s /bin/bash postgres -c "psql -p $POSTGRES_PORT -v ON_ERROR_STOP=1 -c \"DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$LIMITED_USER') THEN CREATE ROLE $LIMITED_USER LOGIN PASSWORD '$LIMITED_USER_PASSWORD'; ELSE ALTER ROLE $LIMITED_USER WITH LOGIN PASSWORD '$LIMITED_USER_PASSWORD'; END IF; END \\\$\\\$;\""
+        su -s /bin/bash postgres -c "psql -p $POSTGRES_PORT -v ON_ERROR_STOP=1 -c \"GRANT ALL PRIVILEGES ON DATABASE $LIMITED_DATABASE TO $LIMITED_USER;\""
+
+        echo "PostgreSQL 16.1 installed."
+        echo "port: $POSTGRES_PORT"
+        echo "superuser: $POSTGRES_USER / $POSTGRES_PASSWORD"
+        echo "app user: $LIMITED_USER / $LIMITED_USER_PASSWORD"
+        echo "database: $LIMITED_DATABASE"
+        echo "NOTE: remote access is open (0.0.0.0/0). Restrict pg_hba.conf for production."
+  - name: Cleanup build tree
+    commands:
+      - "rm -rf /tmp/postgresql-16.1 /tmp/postgresql-16.1.tar.gz"

@@ -1,0 +1,30 @@
+id: pgadmin4
+name: pgAdmin 4 (web)
+description: Install pgAdmin 4 web UI (listens via Apache after setup)
+steps:
+  - name: Add pgAdmin apt repository
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get update -y"
+      - "apt-get install -y curl ca-certificates gnupg lsb-release"
+      - "curl -fsS https://www.pgadmin.org/static/packages_pgadmin_org.pub | gpg --dearmor -o /usr/share/keyrings/packages-pgadmin-org.gpg"
+      - |
+        echo "deb [signed-by=/usr/share/keyrings/packages-pgadmin-org.gpg] https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/$(lsb_release -cs) pgadmin4 main" > /etc/apt/sources.list.d/pgadmin4.list
+      - "apt-get update -y"
+  - name: Install and configure pgAdmin web
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get install -y pgadmin4-web"
+      - |
+        export PGADMIN_SETUP_EMAIL='__XM_PGADMIN_EMAIL__'
+        export PGADMIN_SETUP_PASSWORD='__XM_PGADMIN_PASSWORD__'
+        # Non-interactive setup where supported; fall back to feeding prompts.
+        if /usr/pgadmin4/bin/setup-web.sh --help 2>&1 | grep -q -- '--yes'; then
+          /usr/pgadmin4/bin/setup-web.sh --yes
+        else
+          printf '%s\n%s\n%s\ny\n' "$PGADMIN_SETUP_EMAIL" "$PGADMIN_SETUP_PASSWORD" "$PGADMIN_SETUP_PASSWORD" | /usr/pgadmin4/bin/setup-web.sh || true
+        fi
+      - |
+        echo "pgAdmin setup email: __XM_PGADMIN_EMAIL__"
+        echo "pgAdmin setup password: __XM_PGADMIN_PASSWORD__"
+        echo "Open the host in a browser after Apache is up (often http://HOST/pgadmin4)."

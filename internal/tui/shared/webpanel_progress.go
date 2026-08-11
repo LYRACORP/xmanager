@@ -61,7 +61,10 @@ func (p WebPanelProgressState) View(width int) string {
 	if !p.Active {
 		return ""
 	}
-	title := "Web panel"
+	title := p.Action
+	if title == "" {
+		title = "Working…"
+	}
 	switch p.Action {
 	case "upgrade":
 		title = "Upgrading web panel"
