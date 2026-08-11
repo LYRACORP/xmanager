@@ -2,6 +2,7 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -44,6 +45,10 @@ func Run(opts Options) error {
 	funcMap := template.FuncMap{
 		"formatBytes":  nodemetrics.FormatBytes,
 		"formatUptime": nodemetrics.FormatUptime,
+		"json": func(v interface{}) (template.JS, error) {
+			b, err := json.Marshal(v)
+			return template.JS(b), err
+		},
 	}
 
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")

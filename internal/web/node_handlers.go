@@ -69,6 +69,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /databases", h.requireAuth(h.getNodeDatabases))
 	mux.HandleFunc("POST /databases", h.requireAuth(h.postNodeDatabases))
+	mux.HandleFunc("POST /databases/install", h.requireAuth(h.postNodeDatabaseInstall))
 	mux.HandleFunc("POST /databases/user", h.requireAuth(h.postNodeDatabaseUser))
 	mux.HandleFunc("POST /databases/backup", h.requireAuth(h.postNodeDatabaseBackup))
 	mux.HandleFunc("POST /databases/link", h.requireAuth(h.postNodeDatabaseLink))
@@ -291,6 +292,13 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	exec := h.localExec()
 	avail := dbmanager.DetectAvailable(exec)
+	availMap := map[string]bool{}
+	for _, t := range []dbmanager.DBType{
+		dbmanager.PostgreSQL, dbmanager.MySQL, dbmanager.MariaDB,
+		dbmanager.MongoDB, dbmanager.ClickHouse, dbmanager.Redis,
+	} {
+		availMap[string(t)] = avail[t]
+	}
 	var dbs []nodeDBView
 	for _, t := range []dbmanager.DBType{
 		dbmanager.PostgreSQL, dbmanager.MySQL, dbmanager.MariaDB,
@@ -311,8 +319,12 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	data := h.basePage(sess, "Databases")
 	data.ActiveNav = "databases"
 	data.NodeDBs = dbs
+	data.DBAvailable = availMap
 	data.ProjectDBs = links
 	data.Projects = projects
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
 	h.render(w, "node_databases", data)
 }
 
@@ -324,6 +336,71 @@ func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 		_ = mgr.CreateDatabase(r.FormValue("name"))
 	}
 	http.Redirect(w, r, "/databases", http.StatusSeeOther)
+}
+
+// postNodeDatabaseInstall installs a database engine as a Docker container,
+// then optionally creates the first database inside it.
+func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	dbType := strings.TrimSpace(r.FormValue("db_type"))
+	dbName := strings.TrimSpace(r.FormValue("name"))
+	exec := h.localExec()
+
+	// Generate a random root password for the new instance.
+	rootPass := randomToken()[:16]
+
+	var cmd string
+	switch dbType {
+	case "postgres":
+		cmd = fmt.Sprintf(
+			`docker run -d --name xm-postgres --restart unless-stopped -e POSTGRES_PASSWORD=%s -p 5432:5432 -v xm-postgres-data:/var/lib/postgresql/data postgres:16-alpine 2>&1`,
+			rootPass,
+		)
+	case "mysql":
+		cmd = fmt.Sprintf(
+			`docker run -d --name xm-mysql --restart unless-stopped -e MYSQL_ROOT_PASSWORD=%s -p 3306:3306 -v xm-mysql-data:/var/lib/mysql mysql:8 2>&1`,
+			rootPass,
+		)
+	case "mariadb":
+		cmd = fmt.Sprintf(
+			`docker run -d --name xm-mariadb --restart unless-stopped -e MARIADB_ROOT_PASSWORD=%s -p 3306:3306 -v xm-mariadb-data:/var/lib/mysql mariadb:11 2>&1`,
+			rootPass,
+		)
+	case "mongodb":
+		cmd = `docker run -d --name xm-mongodb --restart unless-stopped -p 27017:27017 -v xm-mongo-data:/data/db mongo:7 2>&1`
+	case "redis":
+		cmd = `docker run -d --name xm-redis --restart unless-stopped -p 6379:6379 -v xm-redis-data:/data redis:7-alpine redis-server --save 60 1 2>&1`
+	case "clickhouse":
+		cmd = `docker run -d --name xm-clickhouse --restart unless-stopped -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v xm-clickhouse-data:/var/lib/clickhouse clickhouse/clickhouse-server:24 2>&1`
+	default:
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("unknown db type: "+dbType), http.StatusSeeOther)
+		return
+	}
+
+	res, _ := exec.Run(cmd)
+	flash := dbType + " container started"
+	if res.ExitCode != 0 && res.Stdout != "" {
+		// Already running is fine
+		if !strings.Contains(res.Stdout, "already in use") {
+			flash = "install error: " + res.Stdout
+		}
+	}
+
+	// Wait a moment then create the initial database if requested.
+	if dbName != "" {
+		_, _ = exec.Run("sleep 3")
+		t := dbmanager.DBType(dbType)
+		mgr := dbmanager.NewManager(t, exec)
+		if mgr != nil {
+			if err := mgr.CreateDatabase(dbName); err != nil {
+				flash += " · db create: " + err.Error()
+			} else {
+				flash += " · database \"" + dbName + "\" created"
+			}
+		}
+	}
+
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeDatabaseUser(w http.ResponseWriter, r *http.Request) {
