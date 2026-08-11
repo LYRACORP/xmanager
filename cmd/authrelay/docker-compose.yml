@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8090:8090"   # Caddy reverse proxies this
+      - "80:8090"
     env_file: .env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/health"]
