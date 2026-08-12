@@ -318,26 +318,20 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pubHost := publicHost(r)
+	// Lightweight status only — never rebuild/reinstall tools on GET (that hung the page for minutes).
 	adminerOn := dbmanager.ContainerRunning(exec, dbmanager.AdminerName)
-	pgAdminOn := dbmanager.PgAdminReady(exec)
-	var pgAdminFlash string
-	if avail[dbmanager.PostgreSQL] && (dbmanager.ContainerRunning(exec, dbmanager.PgAdminName) || pgAdminOn) {
-		if dbmanager.PgAdminNeedsUpgrade(exec) || dbmanager.PgAdminNeedsRepair(exec) {
-			if _, err := dbmanager.InstallPgAdmin(exec, "", ""); err != nil {
-				pgAdminFlash = "pgAdmin repair: " + err.Error()
-			} else {
-				pgAdminOn = dbmanager.PgAdminReady(exec)
-			}
-		} else if dbmanager.PgAdminConfigStale(exec) {
-			if err := dbmanager.EnsurePgAdminConfig(exec, "", ""); err != nil {
-				pgAdminFlash = "pgAdmin reconfig: " + err.Error()
-			} else {
-				pgAdminOn = dbmanager.PgAdminReady(exec)
-			}
-		}
-	}
+	pgAdminOn := dbmanager.ContainerRunning(exec, dbmanager.PgAdminName)
+	var toolHints []string
 	if adminerOn && dbmanager.AdminerNeedsUpgrade(exec) {
-		_, _ = dbmanager.InstallAdminer(exec)
+		toolHints = append(toolHints, "Adminer image is outdated — click ↻ next to Adminer to rebuild")
+	}
+	if pgAdminOn {
+		if dbmanager.PgAdminNeedsUpgrade(exec) || dbmanager.PgAdminNeedsRepair(exec) {
+			toolHints = append(toolHints, "pgAdmin needs repair — click ↻ next to pgAdmin")
+			pgAdminOn = false // don't show Open link until UI is actually usable
+		} else if dbmanager.PgAdminConfigStale(exec) {
+			toolHints = append(toolHints, "pgAdmin config stale — click ↻ next to pgAdmin to reload servers")
+		}
 	}
 	adminerURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.AdminerPort)
 	pgAdminURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.PgAdminPort)
@@ -423,11 +417,12 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
-	if pgAdminFlash != "" {
+	if len(toolHints) > 0 {
+		hint := strings.Join(toolHints, " · ")
 		if data.Flash != "" {
-			data.Flash += " · " + pgAdminFlash
+			data.Flash += " · " + hint
 		} else {
-			data.Flash = pgAdminFlash
+			data.Flash = hint
 		}
 	}
 	if len(listErrs) > 0 {

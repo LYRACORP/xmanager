@@ -102,7 +102,7 @@ func PgAdminReady(exec *ssh.Executor) bool {
 		return false
 	}
 	code := strings.TrimSpace(exec.RunQuiet(fmt.Sprintf(
-		`curl -sf -o /dev/null -w '%%{http_code}' http://127.0.0.1:%s/misc/ping 2>/dev/null || echo 000`,
+		`curl -sf --max-time 2 -o /dev/null -w '%%{http_code}' http://127.0.0.1:%s/misc/ping 2>/dev/null || echo 000`,
 		PgAdminPort,
 	)))
 	return code == "200"
@@ -114,25 +114,22 @@ func PgAdminNeedsRepair(exec *ssh.Executor) bool {
 	if state == "restarting" || state == "exited" || state == "dead" {
 		return true
 	}
-	if ContainerRunning(exec, PgAdminName) && !PgAdminReady(exec) {
-		// Give a slow first boot up to ~45s before declaring broken.
-		started := strings.TrimSpace(exec.RunQuiet(fmt.Sprintf(
-			`docker inspect -f '{{.State.StartedAt}}' %s 2>/dev/null`, PgAdminName,
-		)))
-		if started == "" {
-			return true
-		}
-		// If started more than 60s ago and still not pinging, repair.
-		if exec.RunQuiet(fmt.Sprintf(
-			`started=$(docker inspect -f '{{.State.StartedAt}}' %s 2>/dev/null); `+
-				`[ -n "$started" ] && [ $(($(date +%%s) - $(date -d "$started" +%%s 2>/dev/null || echo 0))) -gt 60 ] && `+
-				`! curl -sf http://127.0.0.1:%s/misc/ping >/dev/null 2>&1 && echo repair`,
-			PgAdminName, PgAdminPort,
-		)) == "repair" {
-			return true
-		}
+	if !ContainerRunning(exec, PgAdminName) {
+		return false
 	}
-	return false
+	if PgAdminReady(exec) {
+		return false
+	}
+	// Not ready yet — only treat as broken if started > 60s ago.
+	age := strings.TrimSpace(exec.RunQuiet(fmt.Sprintf(
+		`started=$(docker inspect -f '{{.State.StartedAt}}' %s 2>/dev/null); `+
+			`[ -n "$started" ] || { echo 999; exit 0; }; `+
+			`echo $(($(date +%%s) - $(date -d "$started" +%%s 2>/dev/null || echo 0)))`,
+		PgAdminName,
+	)))
+	sec := 0
+	fmt.Sscanf(age, "%d", &sec)
+	return sec > 60
 }
 
 // PgAdminNeedsUpgrade reports whether the running container uses an outdated image tag.
