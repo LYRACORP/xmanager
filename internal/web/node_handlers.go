@@ -322,6 +322,9 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	if pgAdminOn && avail[dbmanager.PostgreSQL] {
 		_ = dbmanager.EnsurePgAdminConfig(exec, "", "")
 	}
+	if adminerOn && dbmanager.AdminerNeedsUpgrade(exec) {
+		_, _ = dbmanager.InstallAdminer(exec)
+	}
 	adminerURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.AdminerPort)
 	pgAdminURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.PgAdminPort)
 	dbTools := []nodeDBToolView{

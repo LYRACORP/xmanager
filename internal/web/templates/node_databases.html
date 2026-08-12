@@ -211,6 +211,9 @@
           {{end}}
           {{if .AdminerOn}}
           <a href="{{.AdminerURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Adminer</a>
+          <form method="post" action="/databases/tools/adminer" class="inline">
+            <button type="submit" class="xm-btn xm-btn-ghost text-xs text-zinc-600" title="Rebuild Adminer image">↻</button>
+          </form>
           {{else}}
           <form method="post" action="/databases/tools/adminer" class="inline">
             <button type="submit" class="xm-btn xm-btn-ghost text-xs">Install Adminer</button>

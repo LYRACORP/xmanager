@@ -12,7 +12,7 @@ import (
 const (
 	AdminerPort    = "8081"
 	AdminerName    = "xm-adminer"
-	AdminerImage   = "xm-adminer:6.0.0"
+	AdminerImage   = "xm-adminer:6.0.1"
 	PgAdminPort    = "5050"
 	PgAdminName    = "xm-pgadmin"
 	DBNetwork      = "xm-db"
@@ -24,17 +24,10 @@ func EnsureDBNetwork(exec *ssh.Executor) {
 	_, _ = exec.Run(fmt.Sprintf(`docker network create %s 2>/dev/null || true`, DBNetwork))
 }
 
-// InstallAdminer builds and starts Adminer 6 with mongo/redis/elastic/clickhouse drivers.
-// Safe to call repeatedly — skips rebuild if container is already running.
+// InstallAdminer builds and starts Adminer 6 with drivers for all supported engines.
+// Rebuilds the image and recreates the container (safe to call repeatedly).
 func InstallAdminer(exec *ssh.Executor) (string, error) {
 	EnsureDBNetwork(exec)
-
-	running := strings.TrimSpace(exec.RunQuiet(
-		fmt.Sprintf(`docker ps --filter name=^/%s$ --format '{{.Names}}'`, AdminerName),
-	))
-	if running == AdminerName || ContainerRunning(exec, AdminerName) {
-		return fmt.Sprintf("Adminer already running at :%s", AdminerPort), nil
-	}
 
 	// Write Dockerfile on the host
 	dockerfile := adminerDockerfile()
@@ -74,14 +67,28 @@ func InstallAdminer(exec *ssh.Executor) (string, error) {
 	return fmt.Sprintf("Adminer 6 at :%s (drivers: pgsql/mysql/mongo/redis/elastic/clickhouse)", AdminerPort), nil
 }
 
+// AdminerNeedsUpgrade reports whether the running container uses an outdated image tag.
+func AdminerNeedsUpgrade(exec *ssh.Executor) bool {
+	if !ContainerRunning(exec, AdminerName) {
+		return false
+	}
+	img := strings.TrimSpace(exec.RunQuiet(
+		fmt.Sprintf(`docker inspect %s --format '{{.Config.Image}}' 2>/dev/null`, AdminerName),
+	))
+	return img != AdminerImage
+}
+
 func adminerDockerfile() string {
-	return `# XManager Adminer — Adminer 6 + mongo/redis/elastic/clickhouse drivers
+	return `# XManager Adminer — Adminer 6 + all DB drivers
 FROM php:8.3-apache-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libssl-dev pkg-config curl \
-    && pecl install mongodb \
-    && docker-php-ext-enable mongodb \
+      libpq-dev \
+      default-libmysqlclient-dev \
+    && docker-php-ext-install pdo pdo_mysql mysqli pgsql pdo_pgsql \
+    && pecl install mongodb redis \
+    && docker-php-ext-enable mongodb redis \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
