@@ -222,7 +222,10 @@
           {{if eq .Type "postgres"}}
             {{if .PgAdminOn}}
             <a href="{{.PgAdminURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">pgAdmin</a>
-            {{else}}
+            <form method="post" action="/databases/tools/pgadmin" class="inline">
+              <button type="submit" class="xm-btn xm-btn-ghost text-xs text-zinc-600" title="Reinstall pgAdmin">↻</button>
+            </form>
+            {{else if .Container}}
             <form method="post" action="/databases/tools/pgadmin" class="inline">
               <button type="submit" class="xm-btn xm-btn-ghost text-xs">Install pgAdmin</button>
             </form>

@@ -13,6 +13,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/cron"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/docker"
+	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/notify"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
@@ -318,9 +319,22 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 
 	pubHost := publicHost(r)
 	adminerOn := dbmanager.ContainerRunning(exec, dbmanager.AdminerName)
-	pgAdminOn := dbmanager.ContainerRunning(exec, dbmanager.PgAdminName)
-	if pgAdminOn && avail[dbmanager.PostgreSQL] {
-		_ = dbmanager.EnsurePgAdminConfig(exec, "", "")
+	pgAdminOn := dbmanager.PgAdminReady(exec)
+	var pgAdminFlash string
+	if avail[dbmanager.PostgreSQL] && (dbmanager.ContainerRunning(exec, dbmanager.PgAdminName) || pgAdminOn) {
+		if dbmanager.PgAdminNeedsUpgrade(exec) || dbmanager.PgAdminNeedsRepair(exec) {
+			if _, err := dbmanager.InstallPgAdmin(exec, "", ""); err != nil {
+				pgAdminFlash = "pgAdmin repair: " + err.Error()
+			} else {
+				pgAdminOn = dbmanager.PgAdminReady(exec)
+			}
+		} else if dbmanager.PgAdminConfigStale(exec) {
+			if err := dbmanager.EnsurePgAdminConfig(exec, "", ""); err != nil {
+				pgAdminFlash = "pgAdmin reconfig: " + err.Error()
+			} else {
+				pgAdminOn = dbmanager.PgAdminReady(exec)
+			}
+		}
 	}
 	if adminerOn && dbmanager.AdminerNeedsUpgrade(exec) {
 		_, _ = dbmanager.InstallAdminer(exec)
@@ -408,6 +422,13 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	data.Projects = projects
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
+	}
+	if pgAdminFlash != "" {
+		if data.Flash != "" {
+			data.Flash += " · " + pgAdminFlash
+		} else {
+			data.Flash = pgAdminFlash
+		}
 	}
 	if len(listErrs) > 0 {
 		msg := "list error: " + strings.Join(listErrs, "; ")
@@ -586,6 +607,7 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 
 	if pgadmin && dbType == "postgres" {
 		msg, err := dbmanager.InstallPgAdmin(exec, pgaEmail, pgaPass)
+		_ = hostfirewall.Allow([]int{5050}, "tcp")
 		if err != nil {
 			flash += " · pgAdmin: " + err.Error()
 		} else {
@@ -660,6 +682,7 @@ func (h *handler) postNodeDatabaseLink(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) postNodeDatabaseToolAdminer(w http.ResponseWriter, r *http.Request) {
 	msg, err := dbmanager.InstallAdminer(h.localExec())
+	_ = hostfirewall.Allow([]int{8081}, "tcp")
 	if err != nil {
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("Adminer: "+err.Error()), http.StatusSeeOther)
 		return
@@ -670,6 +693,7 @@ func (h *handler) postNodeDatabaseToolAdminer(w http.ResponseWriter, r *http.Req
 func (h *handler) postNodeDatabaseToolPgAdmin(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	msg, err := dbmanager.InstallPgAdmin(h.localExec(), strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("password")))
+	_ = hostfirewall.Allow([]int{5050}, "tcp")
 	if err != nil {
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("pgAdmin: "+err.Error()), http.StatusSeeOther)
 		return
