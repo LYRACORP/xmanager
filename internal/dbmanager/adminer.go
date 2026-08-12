@@ -110,34 +110,6 @@ func NetworkFlag() string {
 	return "--network " + DBNetwork
 }
 
-// InstallPgAdmin starts pgAdmin 4 on the shared DB network. Safe to call repeatedly.
-func InstallPgAdmin(exec *ssh.Executor, email, password string) (string, error) {
-	EnsureDBNetwork(exec)
-	if ContainerRunning(exec, PgAdminName) {
-		return fmt.Sprintf("pgAdmin already running at :%s", PgAdminPort), nil
-	}
-	if email == "" {
-		email = "admin@xmanager.local"
-	}
-	if password == "" {
-		password = randomPassword(12)
-	}
-	run := fmt.Sprintf(
-		`docker run -d --name %s --restart unless-stopped --network %s`+
-			` -e PGADMIN_DEFAULT_EMAIL=%s -e PGADMIN_DEFAULT_PASSWORD=%s`+
-			` -p %s:80 dpage/pgadmin4:latest 2>&1`,
-		PgAdminName, DBNetwork, email, password, PgAdminPort,
-	)
-	res, err := exec.Run(run)
-	if err != nil {
-		return "", fmt.Errorf("start pgadmin: %w", err)
-	}
-	if res.ExitCode != 0 && !strings.Contains(res.Stdout+res.Stderr, "already in use") {
-		return "", fmt.Errorf("start pgadmin: %s", res.Stdout+res.Stderr)
-	}
-	return fmt.Sprintf("pgAdmin4 at :%s (%s / %s)", PgAdminPort, email, password), nil
-}
-
 func randomPassword(n int) string {
 	if n <= 0 {
 		n = 12

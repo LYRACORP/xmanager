@@ -174,7 +174,7 @@
     {{if .NodeDBs}}
     <div class="space-y-3 mt-2">
       <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Running engines</p>
-      {{range .NodeDBs}}
+      {{range $engine := .NodeDBs}}
       <div class="xm-card p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2 min-w-0">
@@ -231,8 +231,11 @@
             <p class="text-[11px] text-panel-muted uppercase tracking-wide mb-2">Databases</p>
             <ul class="space-y-1">
               {{range .Databases}}
-              <li class="flex items-center justify-between font-mono text-xs text-gray-300 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5">
-                <span>{{.Name}}</span>{{if .Size}}<span class="text-zinc-600 text-[10px]">{{.Size}}</span>{{end}}
+              <li>
+                <a href="/databases/{{$engine.Type}}/{{.Name}}"
+                   class="flex items-center justify-between font-mono text-xs text-gray-300 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 hover:border-indigo-600 hover:bg-indigo-950/20 transition-colors">
+                  <span>{{.Name}}</span>{{if .Size}}<span class="text-zinc-600 text-[10px]">{{.Size}}</span>{{end}}
+                </a>
               </li>
               {{else}}<li class="text-xs text-panel-muted">No databases yet</li>{{end}}
             </ul>

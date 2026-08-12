@@ -1,0 +1,169 @@
+{{define "node_database_detail"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <a href="/databases" class="text-xs text-panel-muted hover:text-gray-300">← Databases</a>
+      <h1 class="text-2xl font-bold tracking-tight mt-1 font-mono">{{.DBDetail.Name}}</h1>
+      <p class="text-panel-muted text-xs mt-0.5">{{.DBDetail.Type}} · {{.DBDetail.Engine.Container}} · :{{.DBDetail.Engine.Port}}</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      {{if .DBDetail.Engine.LogsURL}}
+      <a href="{{.DBDetail.Engine.LogsURL}}" class="xm-btn xm-btn-ghost text-xs">Engine logs</a>
+      {{end}}
+      {{if .DBDetail.Engine.AdminerOn}}
+      <a href="{{.DBDetail.AdminerURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Open in Adminer</a>
+      {{end}}
+      {{if and (eq .DBDetail.Type "postgres") .DBDetail.PgAdminOn}}
+      <a href="{{.DBDetail.PgAdminURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Open pgAdmin</a>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="xm-card p-4">
+      <div class="text-xs text-panel-muted uppercase mb-1">Size</div>
+      <div class="text-xl font-mono font-bold text-gray-200">{{if .DBDetail.Size}}{{.DBDetail.Size}}{{else}}—{{end}}</div>
+    </div>
+    <div class="xm-card p-4">
+      <div class="text-xs text-panel-muted uppercase mb-1">Owner</div>
+      <div class="text-xl font-mono font-bold text-gray-200">{{if .DBDetail.Owner}}{{.DBDetail.Owner}}{{else}}—{{end}}</div>
+    </div>
+    <div class="xm-card p-4">
+      <div class="text-xs text-panel-muted uppercase mb-1">Connections</div>
+      <div class="text-xl font-mono font-bold text-sky-300">{{.DBDetail.Connections}}</div>
+    </div>
+    <div class="xm-card p-4">
+      <div class="text-xs text-panel-muted uppercase mb-1">Tables / collections</div>
+      <div class="text-xl font-mono font-bold text-emerald-300">{{.DBDetail.Tables}}</div>
+    </div>
+  </div>
+
+  <div class="xm-card p-5 space-y-4">
+    <div class="flex items-center justify-between gap-2">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Engine resource usage</p>
+      <span class="text-[10px] text-zinc-600">live · 3s</span>
+    </div>
+    <div id="db-metrics"
+         hx-get="/api/databases/{{.DBDetail.Type}}/{{.DBDetail.Name}}/metrics"
+         hx-trigger="every 3s"
+         hx-swap="innerHTML">
+      {{template "node_database_metrics" .}}
+    </div>
+    <canvas id="db-cpu-chart" height="56" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+    <canvas id="db-mem-chart" height="56" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="xm-card p-4 space-y-2">
+      <h3 class="text-sm font-semibold text-gray-300">Connection</h3>
+      <dl class="text-xs font-mono space-y-1 text-gray-400">
+        <div class="flex justify-between gap-2"><dt>Host (Docker)</dt><dd class="text-gray-200">{{.DBDetail.Engine.Host}}</dd></div>
+        <div class="flex justify-between gap-2"><dt>Port</dt><dd class="text-gray-200">:{{.DBDetail.Engine.Port}}</dd></div>
+        <div class="flex justify-between gap-2"><dt>Database</dt><dd class="text-gray-200">{{.DBDetail.Name}}</dd></div>
+        {{if .DBDetail.Engine.Image}}<div class="flex justify-between gap-2"><dt>Image</dt><dd class="text-gray-200 truncate">{{.DBDetail.Engine.Image}}</dd></div>{{end}}
+      </dl>
+    </div>
+    <div class="xm-card p-4 space-y-3">
+      <h3 class="text-sm font-semibold text-gray-300">Actions</h3>
+      <form method="post" action="/databases/backup" class="flex flex-wrap gap-2 items-end">
+        <input type="hidden" name="db_type" value="{{.DBDetail.Type}}">
+        <input type="hidden" name="name" value="{{.DBDetail.Name}}">
+        <button type="submit" class="xm-btn xm-btn-ghost text-xs">Backup → /opt/xmanager/backups</button>
+      </form>
+      <form method="post" action="/databases/link" class="flex flex-wrap gap-2 items-end">
+        <input type="hidden" name="db_type" value="{{.DBDetail.Type}}">
+        <input type="hidden" name="db_name" value="{{.DBDetail.Name}}">
+        <select name="project_id" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
+          {{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>
+          {{else}}<option value="0">— no projects —</option>{{end}}
+        </select>
+        <input name="username" placeholder="username" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs"/>
+        <button type="submit" class="xm-btn xm-btn-ghost text-xs">Link to project</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var dbType = "{{.DBDetail.Type}}";
+  var cpuHist = [], memHist = [], maxPts = 40;
+
+  function parsePct(s) {
+    var n = parseFloat(String(s).replace('%',''));
+    return isNaN(n) ? 0 : n;
+  }
+  function parseMemMB(s) {
+    if (!s || s === '—') return 0;
+    var m = String(s).match(/([\d.]+)\s*MiB/);
+    if (m) return parseFloat(m[1]);
+    m = String(s).match(/([\d.]+)\s*GiB/);
+    if (m) return parseFloat(m[1]) * 1024;
+    return 0;
+  }
+  function drawChart(canvasId, data, color, label) {
+    var c = document.getElementById(canvasId);
+    if (!c) return;
+    var ctx = c.getContext('2d');
+    var w = c.width = c.offsetWidth * (window.devicePixelRatio || 1);
+    var h = c.height = 56 * (window.devicePixelRatio || 1);
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    var cw = c.offsetWidth, ch = 56;
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = '#71717a';
+    ctx.font = '10px monospace';
+    ctx.fillText(label, 8, 12);
+    if (!data.length) return;
+    var max = Math.max.apply(null, data.concat([1]));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    data.forEach(function(v, i) {
+      var x = 8 + (i / Math.max(data.length - 1, 1)) * (cw - 16);
+      var y = ch - 8 - (v / max) * (ch - 20);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+  function poll() {
+    fetch('/api/databases/' + encodeURIComponent(dbType) + '/stats')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        cpuHist.push(parsePct(d.cpu));
+        memHist.push(parseMemMB(d.mem));
+        if (cpuHist.length > maxPts) cpuHist.shift();
+        if (memHist.length > maxPts) memHist.shift();
+        drawChart('db-cpu-chart', cpuHist, '#818cf8', 'CPU %');
+        drawChart('db-mem-chart', memHist, '#38bdf8', 'Memory');
+      }).catch(function() {});
+  }
+  poll();
+  setInterval(poll, 3000);
+  window.addEventListener('resize', function() {
+    drawChart('db-cpu-chart', cpuHist, '#818cf8', 'CPU %');
+    drawChart('db-mem-chart', memHist, '#38bdf8', 'Memory');
+  });
+})();
+</script>
+{{template "foot" .}}
+{{end}}
+
+{{define "node_database_metrics"}}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div>
+    <div class="text-xs text-panel-muted uppercase mb-1">CPU</div>
+    <div class="text-2xl font-mono font-bold text-indigo-300" id="db-cpu-val">{{if .DBDetail.EngineCPUPct}}{{.DBDetail.EngineCPUPct}}{{else}}—{{end}}</div>
+    <div class="mt-2 bg-zinc-800 rounded-full h-2">
+      <div class="h-2 rounded-full bg-indigo-500" style="width: {{if .DBDetail.EngineCPUPct}}{{.DBDetail.EngineCPUPct}}{{else}}0{{end}}"></div>
+    </div>
+  </div>
+  <div>
+    <div class="text-xs text-panel-muted uppercase mb-1">Memory</div>
+    <div class="text-2xl font-mono font-bold text-sky-300" id="db-mem-val">{{if .DBDetail.EngineMem}}{{.DBDetail.EngineMem}}{{else}}—{{end}}</div>
+    <div class="text-xs text-panel-muted mt-1 font-mono">container {{.DBDetail.Engine.Container}}</div>
+  </div>
+</div>
+{{end}}

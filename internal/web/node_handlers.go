@@ -68,6 +68,9 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /projects/{id}/delete", h.requireAuth(h.postNodeProjectDelete))
 
 	mux.HandleFunc("GET /databases", h.requireAuth(h.getNodeDatabases))
+	mux.HandleFunc("GET /databases/{type}/{name}", h.requireAuth(h.getNodeDatabaseDetail))
+	mux.HandleFunc("GET /api/databases/{type}/stats", h.requireAuth(h.getAPIDatabaseEngineStats))
+	mux.HandleFunc("GET /api/databases/{type}/{name}/metrics", h.requireAuth(h.getAPIDatabaseDetailMetrics))
 	mux.HandleFunc("POST /databases", h.requireAuth(h.postNodeDatabases))
 	mux.HandleFunc("POST /databases/install", h.requireAuth(h.postNodeDatabaseInstall))
 	mux.HandleFunc("POST /databases/user", h.requireAuth(h.postNodeDatabaseUser))
@@ -316,6 +319,9 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	pubHost := publicHost(r)
 	adminerOn := dbmanager.ContainerRunning(exec, dbmanager.AdminerName)
 	pgAdminOn := dbmanager.ContainerRunning(exec, dbmanager.PgAdminName)
+	if pgAdminOn && avail[dbmanager.PostgreSQL] {
+		_ = dbmanager.EnsurePgAdminConfig(exec, "", "")
+	}
 	adminerURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.AdminerPort)
 	pgAdminURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.PgAdminPort)
 	dbTools := []nodeDBToolView{

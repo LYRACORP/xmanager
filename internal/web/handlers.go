@@ -73,6 +73,21 @@ type nodeDBToolView struct {
 	Running   bool
 }
 
+type nodeDBDetailView struct {
+	Type         string
+	Name         string
+	Owner        string
+	Size         string
+	Connections  int
+	Tables       int
+	Engine       nodeDBView
+	AdminerURL   string
+	PgAdminURL   string
+	PgAdminOn    bool
+	EngineCPUPct string
+	EngineMem    string
+}
+
 // pageData is the common template context passed to all pages.
 type pageData struct {
 	Title          string
@@ -100,6 +115,7 @@ type pageData struct {
 	CronRuns       []storage.CronRun
 	CronJobID      uint
 	NodeDBs        []nodeDBView
+	DBDetail       nodeDBDetailView
 	DBTools        []nodeDBToolView
 	DBAvailable    map[string]bool
 	DBEngines      []string
