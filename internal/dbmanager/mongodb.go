@@ -15,7 +15,7 @@ type MongoManager struct {
 func (m *MongoManager) Type() DBType { return MongoDB }
 
 func (m *MongoManager) useDocker() bool {
-	return dockerContainerRunning(m.exec, ContainerMongoDB)
+	return ContainerRunning(m.exec, ContainerMongoDB)
 }
 
 func (m *MongoManager) IsAvailable() bool {

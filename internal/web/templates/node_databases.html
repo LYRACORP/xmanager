@@ -176,17 +176,55 @@
       <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Running engines</p>
       {{range .NodeDBs}}
       <div class="xm-card p-4 space-y-3">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-mono font-bold text-white uppercase px-2 py-0.5 rounded
-            {{if eq .Type "postgres"}}bg-[#336791]/60
-            {{else if eq .Type "mysql"}}bg-[#E48E00]/60
-            {{else if eq .Type "mariadb"}}bg-[#C0765A]/60
-            {{else if eq .Type "mongodb"}}bg-[#13AA52]/60
-            {{else if eq .Type "redis"}}bg-[#DC382D]/60
-            {{else}}bg-[#FAAD1C]/60{{end}}">{{.Type}}</span>
-          <span class="flex items-center gap-1 text-[10px] text-emerald-300">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>running
-          </span>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span class="text-xs font-mono font-bold text-white uppercase px-2 py-0.5 rounded
+              {{if eq .Type "postgres"}}bg-[#336791]/60
+              {{else if eq .Type "mysql"}}bg-[#E48E00]/60
+              {{else if eq .Type "mariadb"}}bg-[#C0765A]/60
+              {{else if eq .Type "mongodb"}}bg-[#13AA52]/60
+              {{else if eq .Type "redis"}}bg-[#DC382D]/60
+              {{else}}bg-[#FAAD1C]/60{{end}}">{{.Type}}</span>
+            {{if .Running}}
+            <span class="flex items-center gap-1 text-[10px] text-emerald-300">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>running
+            </span>
+            {{else}}
+            <span class="text-[10px] text-zinc-500">stopped</span>
+            {{end}}
+            {{if .Container}}
+            <span class="text-[10px] font-mono text-zinc-500">{{.Container}}</span>
+            {{end}}
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-[10px] font-mono text-zinc-400">
+            {{if .Port}}<span>:{{.Port}}</span>{{end}}
+            {{if .CPUPct}}<span>CPU {{.CPUPct}}</span>{{end}}
+            {{if .MemUsage}}<span>{{.MemUsage}}</span>{{end}}
+          </div>
+        </div>
+        {{if .Image}}
+        <p class="text-[10px] text-zinc-600 font-mono truncate">{{.Image}}{{if .Ports}} · {{.Ports}}{{end}}</p>
+        {{end}}
+        <div class="flex flex-wrap gap-2">
+          {{if .LogsURL}}
+          <a href="{{.LogsURL}}" class="xm-btn xm-btn-ghost text-xs">Logs</a>
+          {{end}}
+          {{if .AdminerOn}}
+          <a href="{{.AdminerURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Adminer</a>
+          {{else}}
+          <form method="post" action="/databases/tools/adminer" class="inline">
+            <button type="submit" class="xm-btn xm-btn-ghost text-xs">Install Adminer</button>
+          </form>
+          {{end}}
+          {{if eq .Type "postgres"}}
+            {{if .PgAdminOn}}
+            <a href="{{.PgAdminURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">pgAdmin</a>
+            {{else}}
+            <form method="post" action="/databases/tools/pgadmin" class="inline">
+              <button type="submit" class="xm-btn xm-btn-ghost text-xs">Install pgAdmin</button>
+            </form>
+            {{end}}
+          {{end}}
         </div>
         <div class="grid sm:grid-cols-2 gap-4">
           <div>

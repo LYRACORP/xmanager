@@ -23,7 +23,7 @@ func newRedisManager(exec *ssh.Executor) *RedisManager {
 func (r *RedisManager) Type() DBType { return Redis }
 
 func (r *RedisManager) useDocker() bool {
-	return dockerContainerRunning(r.exec, ContainerRedis)
+	return ContainerRunning(r.exec, ContainerRedis)
 }
 
 func (r *RedisManager) IsAvailable() bool {

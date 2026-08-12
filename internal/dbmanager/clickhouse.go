@@ -24,7 +24,7 @@ func newClickHouseManager(exec *ssh.Executor) *ClickHouseManager {
 func (c *ClickHouseManager) Type() DBType { return ClickHouse }
 
 func (c *ClickHouseManager) useDocker() bool {
-	return dockerContainerRunning(c.exec, ContainerClickHouse)
+	return ContainerRunning(c.exec, ContainerClickHouse)
 }
 
 func (c *ClickHouseManager) IsAvailable() bool {

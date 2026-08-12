@@ -17,7 +17,8 @@ const (
 	ContainerClickHouse = "xm-clickhouse"
 )
 
-func containerFor(t DBType) string {
+// ContainerName returns the Docker container name for a database engine type.
+func ContainerName(t DBType) string {
 	switch t {
 	case PostgreSQL:
 		return ContainerPostgres
@@ -36,7 +37,26 @@ func containerFor(t DBType) string {
 	}
 }
 
-func dockerContainerRunning(exec *ssh.Executor, name string) bool {
+// DefaultPort returns the default published port for an engine when docker ps has no mapping.
+func DefaultPort(t DBType) string {
+	switch t {
+	case PostgreSQL:
+		return "5432"
+	case MySQL, MariaDB:
+		return "3306"
+	case MongoDB:
+		return "27017"
+	case Redis:
+		return "6379"
+	case ClickHouse:
+		return "8123"
+	default:
+		return ""
+	}
+}
+
+// ContainerRunning reports whether a named container is up.
+func ContainerRunning(exec *ssh.Executor, name string) bool {
 	if exec == nil || name == "" {
 		return false
 	}
@@ -75,6 +95,20 @@ func redisContainerPassword(exec *ssh.Executor, container string) string {
 	for i := 0; i+1 < len(fields); i++ {
 		if fields[i] == "--requirepass" {
 			return fields[i+1]
+		}
+	}
+	return ""
+}
+
+// ParseHostPort extracts the host-published port from docker ps Ports output.
+func ParseHostPort(ports string) string {
+	for _, part := range strings.Split(ports, ",") {
+		part = strings.TrimSpace(part)
+		if i := strings.Index(part, "->"); i > 0 {
+			left := part[:i]
+			if j := strings.LastIndex(left, ":"); j >= 0 {
+				return left[j+1:]
+			}
 		}
 	}
 	return ""

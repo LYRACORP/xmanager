@@ -18,7 +18,7 @@ type MariaDBManager struct {
 func (m *MariaDBManager) Type() DBType { return MariaDB }
 
 func (m *MariaDBManager) useDocker() bool {
-	return dockerContainerRunning(m.exec, ContainerMariaDB)
+	return ContainerRunning(m.exec, ContainerMariaDB)
 }
 
 func (m *MariaDBManager) IsAvailable() bool {

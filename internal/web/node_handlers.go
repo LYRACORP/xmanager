@@ -73,6 +73,8 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /databases/user", h.requireAuth(h.postNodeDatabaseUser))
 	mux.HandleFunc("POST /databases/backup", h.requireAuth(h.postNodeDatabaseBackup))
 	mux.HandleFunc("POST /databases/link", h.requireAuth(h.postNodeDatabaseLink))
+	mux.HandleFunc("POST /databases/tools/adminer", h.requireAuth(h.postNodeDatabaseToolAdminer))
+	mux.HandleFunc("POST /databases/tools/pgadmin", h.requireAuth(h.postNodeDatabaseToolPgAdmin))
 
 	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeServices))
 	mux.HandleFunc("POST /services/{name}/enable", h.requireAuth(h.postNodeServiceEnable))
@@ -288,6 +290,17 @@ func (h *handler) postNodeWebhook(w http.ResponseWriter, r *http.Request) {
 
 // --- Databases ---
 
+func publicHost(r *http.Request) string {
+	host := r.Host
+	if i := strings.Index(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	if host == "" {
+		return "localhost"
+	}
+	return host
+}
+
 func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	exec := h.localExec()
@@ -299,6 +312,29 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	} {
 		availMap[string(t)] = avail[t]
 	}
+
+	pubHost := publicHost(r)
+	adminerOn := dbmanager.ContainerRunning(exec, dbmanager.AdminerName)
+	pgAdminOn := dbmanager.ContainerRunning(exec, dbmanager.PgAdminName)
+	adminerURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.AdminerPort)
+	pgAdminURL := fmt.Sprintf("http://%s:%s", pubHost, dbmanager.PgAdminPort)
+	dbTools := []nodeDBToolView{
+		{Name: "adminer", Container: dbmanager.AdminerName, Port: dbmanager.AdminerPort, URL: adminerURL, Running: adminerOn},
+		{Name: "pgadmin", Container: dbmanager.PgAdminName, Port: dbmanager.PgAdminPort, URL: pgAdminURL, Running: pgAdminOn},
+	}
+
+	dockerMgr := docker.NewManager(exec)
+	allContainers, _ := dockerMgr.ListContainers()
+	byName := map[string]docker.Container{}
+	statNames := []string{}
+	for _, c := range allContainers {
+		byName[c.Name] = c
+		if c.State == "running" && strings.HasPrefix(c.Name, "xm-") {
+			statNames = append(statNames, c.Name)
+		}
+	}
+	stats := dockerMgr.Stats(statNames)
+
 	var dbs []nodeDBView
 	var listErrs []string
 	for _, t := range []dbmanager.DBType{
@@ -314,7 +350,40 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 			listErrs = append(listErrs, string(t)+": "+err.Error())
 		}
 		users, _ := mgr.ListUsers()
-		dbs = append(dbs, nodeDBView{Type: string(t), Databases: list, Users: users})
+
+		containerName := dbmanager.ContainerName(t)
+		view := nodeDBView{
+			Type:       string(t),
+			Container:  containerName,
+			Host:       containerName,
+			Port:       dbmanager.DefaultPort(t),
+			Running:    true,
+			AdminerURL: adminerURL,
+			AdminerOn:  adminerOn,
+			Databases:  list,
+			Users:      users,
+		}
+		if t == dbmanager.PostgreSQL {
+			view.PgAdminURL = pgAdminURL
+			view.PgAdminOn = pgAdminOn
+		}
+		if c, ok := byName[containerName]; ok {
+			view.Image = c.Image
+			view.Ports = c.Ports
+			view.ContainerID = c.ID
+			view.Running = c.State == "running"
+			if p := dbmanager.ParseHostPort(c.Ports); p != "" {
+				view.Port = p
+			}
+			if c.ID != "" {
+				view.LogsURL = "/docker/" + c.ID + "/logs"
+			}
+			if st, ok := stats[containerName]; ok {
+				view.CPUPct = st.CPUPct
+				view.MemUsage = st.MemUsage
+			}
+		}
+		dbs = append(dbs, view)
 	}
 	var links []storage.ProjectDatabase
 	h.opts.DB.Where("server_id = ?", h.localServerID()).Find(&links)
@@ -323,6 +392,7 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	data := h.basePage(sess, "Databases")
 	data.ActiveNav = "databases"
 	data.NodeDBs = dbs
+	data.DBTools = dbTools
 	data.DBAvailable = availMap
 	data.DBEngines = []string{"postgres", "mysql", "mariadb", "mongodb", "redis", "clickhouse"}
 	data.ProjectDBs = links
@@ -415,22 +485,6 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 			flash += " + PostGIS"
 		}
 
-		if pgadmin {
-			if pgaEmail == "" {
-				pgaEmail = "admin@xmanager.local"
-			}
-			if pgaPass == "" {
-				pgaPass = randomToken()[:12]
-			}
-			cmds = append(cmds, fmt.Sprintf(
-				`docker run -d --name xm-pgadmin --restart unless-stopped %s`+
-					` -e PGADMIN_DEFAULT_EMAIL=%s -e PGADMIN_DEFAULT_PASSWORD=%s`+
-					` -p 5050:80 dpage/pgadmin4:latest 2>&1`,
-				net, pgaEmail, pgaPass,
-			))
-			flash += fmt.Sprintf(" · pgAdmin4 :5050 (%s / %s)", pgaEmail, pgaPass)
-		}
-
 	case "mysql":
 		if version == "" {
 			version = "9.0"
@@ -521,6 +575,15 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	if pgadmin && dbType == "postgres" {
+		msg, err := dbmanager.InstallPgAdmin(exec, pgaEmail, pgaPass)
+		if err != nil {
+			flash += " · pgAdmin: " + err.Error()
+		} else {
+			flash += " · " + msg
+		}
+	}
+
 	if dbName != "" {
 		mgr := dbmanager.NewManager(dbmanager.DBType(dbType), exec)
 		if mgr != nil {
@@ -584,6 +647,25 @@ func (h *handler) postNodeDatabaseLink(w http.ResponseWriter, r *http.Request) {
 		Username:  r.FormValue("username"),
 	}).Error
 	http.Redirect(w, r, "/databases", http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDatabaseToolAdminer(w http.ResponseWriter, r *http.Request) {
+	msg, err := dbmanager.InstallAdminer(h.localExec())
+	if err != nil {
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("Adminer: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDatabaseToolPgAdmin(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	msg, err := dbmanager.InstallPgAdmin(h.localExec(), strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("password")))
+	if err != nil {
+		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("pgAdmin: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(msg), http.StatusSeeOther)
 }
 
 // --- Services ---

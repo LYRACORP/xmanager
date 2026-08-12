@@ -14,7 +14,7 @@ type MySQLManager struct {
 func (m *MySQLManager) Type() DBType { return MySQL }
 
 func (m *MySQLManager) useDocker() bool {
-	return dockerContainerRunning(m.exec, ContainerMySQL)
+	return ContainerRunning(m.exec, ContainerMySQL)
 }
 
 func (m *MySQLManager) IsAvailable() bool {

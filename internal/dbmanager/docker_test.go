@@ -2,7 +2,7 @@ package dbmanager
 
 import "testing"
 
-func TestContainerFor(t *testing.T) {
+func TestContainerName(t *testing.T) {
 	cases := map[DBType]string{
 		PostgreSQL: ContainerPostgres,
 		MySQL:      ContainerMySQL,
@@ -12,9 +12,18 @@ func TestContainerFor(t *testing.T) {
 		ClickHouse: ContainerClickHouse,
 	}
 	for typ, want := range cases {
-		if got := containerFor(typ); got != want {
+		if got := ContainerName(typ); got != want {
 			t.Fatalf("%s: got %q want %q", typ, got, want)
 		}
+	}
+}
+
+func TestParseHostPort(t *testing.T) {
+	if got := ParseHostPort("0.0.0.0:5432->5432/tcp"); got != "5432" {
+		t.Fatalf("got %q", got)
+	}
+	if got := ParseHostPort(""); got != "" {
+		t.Fatalf("got %q", got)
 	}
 }
 

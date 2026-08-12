@@ -15,7 +15,7 @@ type PostgresManager struct {
 func (p *PostgresManager) Type() DBType { return PostgreSQL }
 
 func (p *PostgresManager) useDocker() bool {
-	return dockerContainerRunning(p.exec, ContainerPostgres)
+	return ContainerRunning(p.exec, ContainerPostgres)
 }
 
 func (p *PostgresManager) IsAvailable() bool {

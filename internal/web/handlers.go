@@ -46,9 +46,31 @@ type serverCardData struct {
 }
 
 type nodeDBView struct {
-	Type      string
-	Databases []dbmanager.Database
-	Users     []dbmanager.DBUser
+	Type        string
+	Container   string
+	Image       string
+	Ports       string
+	Port        string
+	Host        string
+	ContainerID string
+	CPUPct      string
+	MemUsage    string
+	Running     bool
+	LogsURL     string
+	AdminerURL  string
+	AdminerOn   bool
+	PgAdminURL  string
+	PgAdminOn   bool
+	Databases   []dbmanager.Database
+	Users       []dbmanager.DBUser
+}
+
+type nodeDBToolView struct {
+	Name      string
+	Container string
+	Port      string
+	URL       string
+	Running   bool
 }
 
 // pageData is the common template context passed to all pages.
@@ -78,6 +100,7 @@ type pageData struct {
 	CronRuns       []storage.CronRun
 	CronJobID      uint
 	NodeDBs        []nodeDBView
+	DBTools        []nodeDBToolView
 	DBAvailable    map[string]bool
 	DBEngines      []string
 	ProjectDBs     []storage.ProjectDatabase

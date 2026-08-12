@@ -14,6 +14,12 @@ type Container struct {
 	State  string
 }
 
+// ContainerStats holds live resource usage from docker stats.
+type ContainerStats struct {
+	CPUPct   string
+	MemUsage string
+}
+
 func (m *Manager) ListContainers() ([]Container, error) {
 	result, err := m.exec.Run("docker ps -a --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.State}}'")
 	if err != nil {
@@ -35,6 +41,31 @@ func (m *Manager) ListContainers() ([]Container, error) {
 		})
 	}
 	return containers, nil
+}
+
+// Stats returns CPU and memory usage for the given container names (one docker stats call).
+func (m *Manager) Stats(names []string) map[string]ContainerStats {
+	out := make(map[string]ContainerStats, len(names))
+	if len(names) == 0 {
+		return out
+	}
+	args := strings.Join(names, " ")
+	cmd := fmt.Sprintf(
+		`docker stats --no-stream --format '{{.Name}}	{{.CPUPerc}}	{{.MemUsage}}' %s 2>/dev/null`,
+		args,
+	)
+	result, err := m.exec.Run(cmd)
+	if err != nil || result == nil || result.ExitCode != 0 || result.Stdout == "" {
+		return out
+	}
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "\t", 3)
+		if len(parts) < 3 || parts[0] == "" {
+			continue
+		}
+		out[parts[0]] = ContainerStats{CPUPct: parts[1], MemUsage: parts[2]}
+	}
+	return out
 }
 
 func (m *Manager) StartContainer(id string) error {
