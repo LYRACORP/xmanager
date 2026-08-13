@@ -98,8 +98,16 @@ func (m *MySQLManager) ListUsers() ([]DBUser, error) {
 }
 
 func (m *MySQLManager) CreateUser(name, password string) error {
-	result, err := m.runSQL(fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", name, password))
+	result, err := m.runSQL(fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", sqlString(name), sqlString(password)))
 	return requireOK(result, err, "create user failed")
+}
+
+// GrantUser grants all privileges on dbName to the user from any host.
+func (m *MySQLManager) GrantUser(username, dbName string) error {
+	sql := fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES",
+		strings.ReplaceAll(dbName, "`", "``"), sqlString(username))
+	result, err := m.runSQL(sql)
+	return requireOK(result, err, "grant failed")
 }
 
 func (m *MySQLManager) Backup(dbName, destPath string) error {

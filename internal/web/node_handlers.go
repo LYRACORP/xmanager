@@ -442,6 +442,8 @@ func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	t := dbmanager.DBType(r.FormValue("db_type"))
 	name := strings.TrimSpace(r.FormValue("name"))
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := strings.TrimSpace(r.FormValue("password"))
 	if name == "" {
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("database name required"), http.StatusSeeOther)
 		return
@@ -451,11 +453,25 @@ func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("unknown db type: "+string(t)), http.StatusSeeOther)
 		return
 	}
-	if err := mgr.CreateDatabase(name); err != nil {
+	user, err := dbmanager.ProvisionDatabase(mgr, name, username, password)
+	if err != nil {
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("create failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(`database "`+name+`" created`), http.StatusSeeOther)
+	flash := `database "` + name + `" created`
+	if password != "" && user != "" {
+		flash += fmt.Sprintf(" · user %s / %s (host: %s)", user, password, dbmanager.ContainerName(t))
+		_ = h.opts.DB.Create(&storage.DatabaseUser{
+			ServerID:  h.localServerID(),
+			DBType:    string(t),
+			Username:  user,
+			Databases: name,
+			Host:      "%",
+		}).Error
+	} else if password == "" {
+		flash += " · no login user (password was empty)"
+	}
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 // postNodeDatabaseInstall installs a database engine as a Docker container
@@ -464,6 +480,8 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 	_ = r.ParseForm()
 	dbType := strings.TrimSpace(r.FormValue("db_type"))
 	dbName := strings.TrimSpace(r.FormValue("name"))
+	dbUser := strings.TrimSpace(r.FormValue("username"))
+	dbPass := strings.TrimSpace(r.FormValue("password"))
 	version := strings.TrimSpace(r.FormValue("version"))
 	pgvector := r.FormValue("ext_pgvector") == "1"
 	postgis := r.FormValue("ext_postgis") == "1"
@@ -619,9 +637,10 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 		mgr := dbmanager.NewManager(dbmanager.DBType(dbType), exec)
 		if mgr != nil {
 			var createErr error
+			var user string
 			for attempt := 0; attempt < 8; attempt++ {
 				_, _ = exec.Run("sleep 3")
-				createErr = mgr.CreateDatabase(dbName)
+				user, createErr = dbmanager.ProvisionDatabase(mgr, dbName, dbUser, dbPass)
 				if createErr == nil {
 					break
 				}
@@ -630,6 +649,16 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 				flash += " · db create failed: " + createErr.Error()
 			} else {
 				flash += " · database \"" + dbName + "\" created"
+				if dbPass != "" && user != "" {
+					flash += fmt.Sprintf(" · user %s / %s", user, dbPass)
+					_ = h.opts.DB.Create(&storage.DatabaseUser{
+						ServerID:  h.localServerID(),
+						DBType:    dbType,
+						Username:  user,
+						Databases: dbName,
+						Host:      "%",
+					}).Error
+				}
 			}
 		}
 	}

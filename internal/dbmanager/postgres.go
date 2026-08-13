@@ -182,8 +182,55 @@ func (p *PostgresManager) ListUsers() ([]DBUser, error) {
 }
 
 func (p *PostgresManager) CreateUser(name, password string) error {
-	cmd := fmt.Sprintf(`psql -w -c %s`, shellQuote(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", name, password)))
-	return p.runAsPostgres(cmd)
+	var sql string
+	if isSimpleIdent(name) {
+		sql = fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", name, sqlString(password))
+	} else {
+		sql = fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", sqlIdent(name), sqlString(password))
+	}
+	return p.runAsPostgres(fmt.Sprintf(`psql -w -c %s`, shellQuote(sql)))
+}
+
+// GrantUser makes username owner of dbName and grants schema rights.
+func (p *PostgresManager) GrantUser(username, dbName string) error {
+	u, d := username, dbName
+	if !isSimpleIdent(username) {
+		u = sqlIdent(username)
+	}
+	if !isSimpleIdent(dbName) {
+		d = sqlIdent(dbName)
+	}
+	sql := fmt.Sprintf("ALTER DATABASE %s OWNER TO %s", d, u)
+	if err := p.runAsPostgres(fmt.Sprintf(`psql -w -c %s`, shellQuote(sql))); err != nil {
+		return err
+	}
+	// Schema grants inside the target database.
+	inner := fmt.Sprintf(
+		`psql -w -d %s -c %s`,
+		shellQuote(dbName),
+		shellQuote(fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s", u)),
+	)
+	if p.useDocker() {
+		res, err := dockerExecUser(p.exec, ContainerPostgres, "postgres", inner)
+		return requireOK(res, err, "grant schema failed")
+	}
+	return p.runAsPostgres(inner)
+}
+
+func isSimpleIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_' {
+			continue
+		}
+		if i > 0 && r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (p *PostgresManager) Backup(dbName, destPath string) error {

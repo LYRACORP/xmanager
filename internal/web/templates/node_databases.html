@@ -137,22 +137,40 @@
           This engine is already running. We'll just create a new database inside it.
         </div>
 
-        <div>
-          <label class="text-xs text-panel-muted block mb-1">Database name <span class="text-zinc-600">(optional — leave blank to only install the engine)</span></label>
-          <input id="db-name-input" placeholder="my_database"
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-panel-muted block mb-1">Database name <span class="text-zinc-600">(optional — leave blank to only install the engine)</span></label>
+            <input id="db-name-input" placeholder="my_database"
+              class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-panel-muted block mb-1">Username <span class="text-zinc-600">(defaults to DB name)</span></label>
+              <input id="db-user-input" placeholder="my_user"
+                class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+            </div>
+            <div>
+              <label class="text-xs text-panel-muted block mb-1">Password <span class="text-amber-500/80">required to create a login</span></label>
+              <input id="db-pass-input" type="password" placeholder="••••••••" autocomplete="new-password"
+                class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+            </div>
+          </div>
         </div>
 
         {{/* Hidden forms — switched based on running state */}}
         <form id="db-create-form" method="post" action="/databases" class="hidden">
           <input type="hidden" name="db_type" id="dc-type">
           <input type="hidden" name="name" id="dc-name">
+          <input type="hidden" name="username" id="dc-user">
+          <input type="hidden" name="password" id="dc-pass">
           <button type="submit" class="xm-btn xm-btn-primary">Create database</button>
         </form>
 
         <form id="db-install-form" method="post" action="/databases/install">
           <input type="hidden" name="db_type" id="di-type">
           <input type="hidden" name="name" id="di-name">
+          <input type="hidden" name="username" id="di-user">
+          <input type="hidden" name="password" id="di-pass">
           <input type="hidden" name="version" id="di-version">
           <input type="hidden" name="ext_pgvector" id="di-pgvector" value="0">
           <input type="hidden" name="ext_postgis" id="di-postgis" value="0">
@@ -300,6 +318,8 @@
           <option>mongodb</option><option>clickhouse</option><option>redis</option>
         </select>
         <input name="name" required placeholder="db name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="username" placeholder="username (default: db name)" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
+        <input name="password" type="password" placeholder="password" autocomplete="new-password" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"/>
         <button class="xm-btn xm-btn-primary text-xs">+ Create</button>
       </form>
       <form method="post" action="/databases/user" class="xm-card p-4 space-y-2">
@@ -464,7 +484,11 @@ function xmTogglePgAdmin(on) {
 // Sync name + extension inputs into hidden form fields on submit
 document.getElementById('db-install-form').addEventListener('submit', function() {
   document.getElementById('di-name').value  = document.getElementById('db-name-input').value;
+  document.getElementById('di-user').value  = document.getElementById('db-user-input').value;
+  document.getElementById('di-pass').value  = document.getElementById('db-pass-input').value;
   document.getElementById('dc-name').value  = document.getElementById('db-name-input').value;
+  document.getElementById('dc-user').value  = document.getElementById('db-user-input').value;
+  document.getElementById('dc-pass').value  = document.getElementById('db-pass-input').value;
   var pgv = document.getElementById('ext-pgvector');
   var pgs = document.getElementById('ext-postgis');
   var pga = document.getElementById('ext-pgadmin');
@@ -479,6 +503,8 @@ document.getElementById('db-install-form').addEventListener('submit', function()
 
 document.getElementById('db-create-form').addEventListener('submit', function() {
   document.getElementById('dc-name').value = document.getElementById('db-name-input').value;
+  document.getElementById('dc-user').value = document.getElementById('db-user-input').value;
+  document.getElementById('dc-pass').value = document.getElementById('db-pass-input').value;
 });
 
 ['ext-pgvector','ext-postgis'].forEach(function(id) {
