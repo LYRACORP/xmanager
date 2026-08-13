@@ -91,6 +91,14 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /domains/mailbox", h.requireAuth(h.postNodeMailbox))
 	mux.HandleFunc("POST /domains/mailbox/{id}/delete", h.requireAuth(h.postNodeMailboxDelete))
 
+	mux.HandleFunc("GET /dns", h.requireAuth(h.getNodeDNS))
+	mux.HandleFunc("POST /dns/zones", h.requireAuth(h.postNodeDNSZone))
+	mux.HandleFunc("POST /dns/zones/{zone}/delete", h.requireAuth(h.postNodeDNSZoneDelete))
+	mux.HandleFunc("GET /dns/zones/{zone}", h.requireAuth(h.getNodeDNSZoneDetail))
+	mux.HandleFunc("POST /dns/zones/{zone}/records", h.requireAuth(h.postNodeDNSRecord))
+	mux.HandleFunc("POST /dns/zones/{zone}/records/delete", h.requireAuth(h.postNodeDNSRecordDelete))
+	mux.HandleFunc("POST /dns/zones/{zone}/link", h.requireAuth(h.postNodeDNSZoneLink))
+
 	mux.HandleFunc("GET /alerts", h.requireAuth(h.getNodeAlerts))
 	mux.HandleFunc("POST /alerts/channel", h.requireAuth(h.postNodeAlertChannel))
 	mux.HandleFunc("POST /alerts/channel/{id}/delete", h.requireAuth(h.postNodeAlertChannelDelete))

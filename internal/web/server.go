@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -45,6 +46,13 @@ func Run(opts Options) error {
 	funcMap := template.FuncMap{
 		"formatBytes":  nodemetrics.FormatBytes,
 		"formatUptime": nodemetrics.FormatUptime,
+		"pathEscape":   url.PathEscape,
+		"trimDot": func(s string) string {
+			for len(s) > 0 && s[len(s)-1] == '.' {
+				s = s[:len(s)-1]
+			}
+			return s
+		},
 		"json": func(v interface{}) (template.JS, error) {
 			b, err := json.Marshal(v)
 			return template.JS(b), err

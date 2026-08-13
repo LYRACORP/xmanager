@@ -20,6 +20,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
@@ -129,6 +130,9 @@ type pageData struct {
 	MailAPIMode       string
 	PowerDNSReady     bool
 	MailAPIReady      bool
+	DNSZones          []powerdns.Zone
+	DNSZone           *powerdns.Zone
+	DNSZoneName       string
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int

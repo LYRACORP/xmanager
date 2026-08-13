@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,19 +17,17 @@ import (
 
 // Config holds runtime API settings loaded from ServiceInstance.ConfigJSON.
 type Config struct {
-	DNSPort    string `json:"dns_port"`
-	APIPort    string `json:"api_port"`
-	APIKey     string `json:"api_key"`
-	DBPassword string `json:"db_password"`
-	BaseURL    string `json:"base_url"` // optional override, default http://127.0.0.1:{api_port}
+	DNSPort string `json:"dns_port"`
+	APIPort string `json:"api_port"`
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url"` // optional override, default http://127.0.0.1:{api_port}
 }
 
 func DefaultConfig() Config {
 	return Config{
-		DNSPort:    "53",
-		APIPort:    "8081",
-		APIKey:     randomHex(16),
-		DBPassword: randomHex(12),
+		DNSPort: "53",
+		APIPort: "8081",
+		APIKey:  randomHex(16),
 	}
 }
 
@@ -77,6 +76,29 @@ func LoadConfig(db *gorm.DB, serverID uint) Config {
 		return DefaultConfig()
 	}
 	return ParseConfig(inst.ConfigJSON)
+}
+
+// Zone is a PowerDNS zone summary or detail.
+type Zone struct {
+	Name       string  `json:"name"`
+	Kind       string  `json:"kind"`
+	Serial     int     `json:"serial"`
+	RRSets     []RRSet `json:"rrsets,omitempty"`
+	RecordCount int    `json:"-"`
+}
+
+// RRSet is a resource record set within a zone.
+type RRSet struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	TTL     int      `json:"ttl"`
+	Records []Record `json:"records"`
+}
+
+// Record is a single DNS record value.
+type Record struct {
+	Content  string `json:"content"`
+	Disabled bool   `json:"disabled"`
 }
 
 // Client talks to the PowerDNS Authoritative HTTP API.
@@ -135,6 +157,10 @@ func fqdn(name string) string {
 	return name
 }
 
+func zonePath(domain string) string {
+	return "/api/v1/servers/localhost/zones/" + url.PathEscape(fqdn(domain))
+}
+
 // EnsureZone creates a Native zone if missing and upserts A (+ optional MX) records.
 func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
 	zone := fqdn(domain)
@@ -143,7 +169,7 @@ func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
 	}
 	ns1 := "ns1." + zone
 
-	_, code, err := c.do("GET", "/api/v1/servers/localhost/zones/"+zone, nil)
+	_, code, err := c.do("GET", zonePath(domain), nil)
 	exists := err == nil && code < 400
 	if !exists {
 		payload := map[string]any{
@@ -204,7 +230,121 @@ func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
 	if len(rrsets) == 0 {
 		return nil
 	}
-	_, _, err = c.do("PATCH", "/api/v1/servers/localhost/zones/"+zone, map[string]any{"rrsets": rrsets})
+	_, _, err = c.do("PATCH", zonePath(domain), map[string]any{"rrsets": rrsets})
+	return err
+}
+
+// ListZones returns all zones (without full RRSets).
+func (c *Client) ListZones() ([]Zone, error) {
+	data, _, err := c.do("GET", "/api/v1/servers/localhost/zones", nil)
+	if err != nil {
+		return nil, err
+	}
+	var zones []Zone
+	if err := json.Unmarshal(data, &zones); err != nil {
+		return nil, fmt.Errorf("decode zones: %w", err)
+	}
+	for i := range zones {
+		zones[i].Name = strings.TrimSuffix(zones[i].Name, ".")
+		zones[i].RecordCount = len(zones[i].RRSets)
+	}
+	return zones, nil
+}
+
+// GetZone returns a zone with its RRSets.
+func (c *Client) GetZone(domain string) (*Zone, error) {
+	data, _, err := c.do("GET", zonePath(domain), nil)
+	if err != nil {
+		return nil, err
+	}
+	var z Zone
+	if err := json.Unmarshal(data, &z); err != nil {
+		return nil, fmt.Errorf("decode zone: %w", err)
+	}
+	z.Name = strings.TrimSuffix(z.Name, ".")
+	count := 0
+	for _, rr := range z.RRSets {
+		count += len(rr.Records)
+		if len(rr.Records) == 0 {
+			count++
+		}
+	}
+	z.RecordCount = count
+	return &z, nil
+}
+
+// DeleteZone removes a zone.
+func (c *Client) DeleteZone(domain string) error {
+	_, _, err := c.do("DELETE", zonePath(domain), nil)
+	return err
+}
+
+// UpsertRecord replaces a single RRSet (changetype REPLACE).
+func (c *Client) UpsertRecord(zone, name, rtype string, ttl int, contents []string) error {
+	zone = fqdn(zone)
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" || name == "@" {
+		name = zone
+	} else if !strings.HasSuffix(name, ".") {
+		// Relative name → absolute under zone.
+		if strings.HasSuffix(name, "."+strings.TrimSuffix(zone, ".")) {
+			name = fqdn(name)
+		} else {
+			name = fqdn(name + "." + strings.TrimSuffix(zone, "."))
+		}
+	}
+	rtype = strings.ToUpper(strings.TrimSpace(rtype))
+	if rtype == "" {
+		return fmt.Errorf("record type required")
+	}
+	if ttl <= 0 {
+		ttl = 300
+	}
+	var records []map[string]any
+	for _, content := range contents {
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		records = append(records, map[string]any{"content": content, "disabled": false})
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("record content required")
+	}
+	payload := map[string]any{
+		"rrsets": []map[string]any{{
+			"name":       name,
+			"type":       rtype,
+			"ttl":        ttl,
+			"changetype": "REPLACE",
+			"records":    records,
+		}},
+	}
+	_, _, err := c.do("PATCH", zonePath(zone), payload)
+	return err
+}
+
+// DeleteRecord removes a single RRSet (changetype DELETE).
+func (c *Client) DeleteRecord(zone, name, rtype string) error {
+	zone = fqdn(zone)
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" || name == "@" {
+		name = zone
+	} else if !strings.HasSuffix(name, ".") {
+		name = fqdn(name)
+	}
+	rtype = strings.ToUpper(strings.TrimSpace(rtype))
+	if rtype == "" {
+		return fmt.Errorf("record type required")
+	}
+	payload := map[string]any{
+		"rrsets": []map[string]any{{
+			"name":       name,
+			"type":       rtype,
+			"changetype": "DELETE",
+		}},
+	}
+	_, _, err := c.do("PATCH", zonePath(zone), payload)
 	return err
 }
 

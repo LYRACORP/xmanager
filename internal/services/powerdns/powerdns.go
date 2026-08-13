@@ -2,6 +2,7 @@ package powerdns
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -39,9 +40,6 @@ func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
 		if v := cfg["api_key"]; v != "" {
 			c.APIKey = v
 		}
-		if v := cfg["db_password"]; v != "" {
-			c.DBPassword = v
-		}
 		if v := cfg["base_url"]; v != "" {
 			c.BaseURL = v
 		}
@@ -54,13 +52,6 @@ func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
 			c.APIKey = randomHex(16)
 		}
 	}
-	if c.DBPassword == "" || c.DBPassword == "pdnspassword" {
-		if existing.DBPassword != "" && existing.DBPassword != "pdnspassword" {
-			c.DBPassword = existing.DBPassword
-		} else {
-			c.DBPassword = randomHex(12)
-		}
-	}
 	if c.DNSPort == "" {
 		c.DNSPort = "53"
 	}
@@ -69,43 +60,94 @@ func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
 	}
 
 	compose := fmt.Sprintf(`services:
-  mariadb:
-    image: mariadb:11
-    restart: unless-stopped
-    environment:
-      - MARIADB_ROOT_PASSWORD=%s
-      - MARIADB_DATABASE=pdns
-      - MARIADB_USER=pdns
-      - MARIADB_PASSWORD=%s
-    volumes:
-      - pdns_db:/var/lib/mysql
   pdns-auth:
     image: powerdns/pdns-auth-48:latest
     container_name: pdns-auth
     restart: unless-stopped
-    depends_on:
-      - mariadb
     environment:
       - PDNS_AUTH_API=yes
       - PDNS_AUTH_API_KEY=%s
-      - PDNS_AUTH_LAUNCH=gmysql
-      - PDNS_AUTH_GMYSQL_HOST=mariadb
-      - PDNS_AUTH_GMYSQL_DBNAME=pdns
-      - PDNS_AUTH_GMYSQL_USER=pdns
-      - PDNS_AUTH_GMYSQL_PASSWORD=%s
+      - PDNS_AUTH_LAUNCH=gsqlite3
+      - PDNS_AUTH_GSQLITE3_DATABASE=/var/lib/powerdns/pdns.sqlite3
       - PDNS_AUTH_WEBSERVER=yes
       - PDNS_AUTH_WEBSERVER_ADDRESS=0.0.0.0
       - PDNS_AUTH_WEBSERVER_PORT=8081
+      - PDNS_AUTH_WEBSERVER_ALLOW_FROM=0.0.0.0/0
     ports:
       - "%s:53/tcp"
       - "%s:53/udp"
       - "%s:8081"
+    volumes:
+      - pdns_data:/var/lib/powerdns
+      - ./init-and-run.sh:/init-and-run.sh:ro
+    entrypoint: ["/bin/sh", "/init-and-run.sh"]
 volumes:
-  pdns_db:
-`, c.DBPassword, c.DBPassword, c.APIKey, c.DBPassword, c.DNSPort, c.DNSPort, c.APIPort)
+  pdns_data:
+`, c.APIKey, c.DNSPort, c.DNSPort, c.APIPort)
 
-	if err := p.WriteCompose(exec, dir, compose); err != nil {
+	initScript := `#!/bin/sh
+set -e
+DB=/var/lib/powerdns/pdns.sqlite3
+if [ ! -f "$DB" ]; then
+  SCHEMA=""
+  for s in \
+    /usr/share/doc/pdns/schema.sqlite3.sql \
+    /usr/share/doc/pdns-backend-sqlite3/schema.sqlite3.sql \
+    /usr/share/pdns-backend-sqlite3/schema/schema.sqlite3.sql \
+    /usr/share/doc/pdns-backend-sqlite/schema.sqlite3.sql
+  do
+    if [ -f "$s" ]; then SCHEMA="$s"; break; fi
+  done
+  if [ -z "$SCHEMA" ]; then
+    SCHEMA=$(find /usr -name schema.sqlite3.sql 2>/dev/null | head -1 || true)
+  fi
+  if [ -z "$SCHEMA" ] || [ ! -f "$SCHEMA" ]; then
+    echo "powerdns: schema.sqlite3.sql not found in image" >&2
+    exit 1
+  fi
+  sqlite3 "$DB" < "$SCHEMA"
+  chown pdns:pdns "$DB" 2>/dev/null || true
+fi
+# Official image entrypoint (env → pdns.conf); fall back to pdns_server.
+if [ -x /usr/local/sbin/start.sh ]; then
+  exec /usr/local/sbin/start.sh
+fi
+if [ -x /entrypoint.sh ]; then
+  exec /entrypoint.sh
+fi
+exec pdns_server --daemon=no
+`
+
+	if _, err := exec.Run("mkdir -p " + dir); err != nil {
 		return fmt.Errorf("powerdns enable: %w", err)
+	}
+	// Tear down legacy MariaDB stack if present so SQLite compose can take over.
+	_, _ = exec.Run("cd " + dir + " && docker compose down 2>/dev/null || true")
+	_, _ = exec.Run("docker rm -f pdns-auth 2>/dev/null || true")
+
+	writeFile := func(path, body string) error {
+		cmd := "cat > " + path + " << 'XEOF'\n" + body + "\nXEOF\nchmod +x " + path + " 2>/dev/null || true"
+		res, err := exec.Run(cmd)
+		if err != nil {
+			return err
+		}
+		if res.ExitCode != 0 {
+			return fmt.Errorf("write %s failed: %s", path, strings.TrimSpace(res.Stdout+res.Stderr))
+		}
+		return nil
+	}
+	if err := writeFile(dir+"/init-and-run.sh", initScript); err != nil {
+		return fmt.Errorf("powerdns enable: %w", err)
+	}
+	if err := writeFile(dir+"/docker-compose.yml", compose); err != nil {
+		return fmt.Errorf("powerdns enable: %w", err)
+	}
+	upRes, err := exec.Run("cd " + dir + " && docker compose up -d 2>&1")
+	if err != nil {
+		return fmt.Errorf("powerdns enable: %w", err)
+	}
+	if upRes.ExitCode != 0 {
+		return fmt.Errorf("powerdns enable: %s", strings.TrimSpace(upRes.Stdout+upRes.Stderr))
 	}
 	return p.SaveInstance(p.serverID, serviceType, "running", c.JSON())
 }

@@ -1,0 +1,79 @@
+{{define "node_dns"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-4">
+  <div>
+    <h1 class="text-3xl font-bold tracking-tight">DNS</h1>
+    <p class="text-panel-muted text-sm mt-1">PowerDNS zones and records (SQLite backend)</p>
+  </div>
+
+  <div class="flex flex-wrap gap-3 text-xs mb-2 items-center">
+    <span class="px-2 py-1 rounded border {{if .PowerDNSReady}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">
+      PowerDNS API {{if .PowerDNSReady}}ready{{else}}offline{{end}}
+    </span>
+    {{if not .PowerDNSReady}}
+    <a href="/services" class="text-indigo-400 hover:underline">Enable PowerDNS under Services</a>
+    <span class="text-gray-600">— if upgrading from MariaDB, disable then re-enable once</span>
+    {{end}}
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 mb-4 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <form method="post" action="/dns/zones" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 grid md:grid-cols-3 gap-3">
+    <div class="md:col-span-3 text-sm font-semibold text-gray-300">Add zone</div>
+    <input name="zone" required placeholder="example.com" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" {{if not .PowerDNSReady}}disabled{{end}}>
+    <input name="public_ip" placeholder="public IP (auto if empty)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" {{if not .PowerDNSReady}}disabled{{end}}>
+    <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-40" {{if not .PowerDNSReady}}disabled{{end}}>Create zone</button>
+  </form>
+
+  <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Zones</h2>
+  {{if not .PowerDNSReady}}
+  <p class="text-gray-600 text-sm">PowerDNS is offline. Enable it to manage zones.</p>
+  {{else if not .DNSZones}}
+  <p class="text-gray-600 text-sm">No zones yet — create one above.</p>
+  {{else}}
+  <ul class="space-y-3">
+    {{range .DNSZones}}
+    <li class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <button type="button"
+                  class="font-mono text-indigo-300 hover:text-indigo-200 text-left"
+                  hx-get="/dns/zones/{{pathEscape .Name}}"
+                  hx-target="closest li find .zone-panel"
+                  hx-swap="innerHTML">
+            {{trimDot .Name}}
+          </button>
+          <div class="text-[11px] text-gray-500 mt-0.5">
+            {{.Kind}}{{if .Serial}} · serial {{.Serial}}{{end}}
+            <span class="text-gray-600">· click name to load records</span>
+          </div>
+        </div>
+        <form method="post" action="/dns/zones/{{pathEscape .Name}}/delete"
+              onsubmit="return confirm('Delete zone {{trimDot .Name}}?')">
+          <button class="text-xs text-red-400 border border-red-900/60 rounded px-2 py-1">Delete</button>
+        </form>
+      </div>
+      <div class="zone-panel"></div>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  {{if .ConnectedDomains}}
+  <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3 mt-8">Domain links</h2>
+  <ul class="space-y-2 text-sm">
+    {{range .ConnectedDomains}}
+    <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 flex flex-wrap gap-3 items-center">
+      <span class="font-mono text-gray-200">{{.Domain}}</span>
+      {{if .ProjectID}}<span class="text-xs text-gray-500">project #{{.ProjectID}}</span>{{end}}
+      {{if .DBName}}<span class="text-xs text-gray-500">{{.DBType}}/{{.DBName}}</span>{{end}}
+      {{if .Upstream}}<span class="text-xs text-gray-600 truncate max-w-xs">{{.Upstream}}</span>{{end}}
+      <span class="text-[11px] {{if .DNSReady}}text-emerald-400{{else}}text-gray-600{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}
