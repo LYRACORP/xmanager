@@ -20,6 +20,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -133,6 +134,11 @@ type pageData struct {
 	DNSZones          []powerdns.Zone
 	DNSZone           *powerdns.Zone
 	DNSZoneName       string
+	MailDomains       []mailinbox.MailDomain
+	MailDomainList    []string
+	MailAPIConfig     mailinbox.Config // password cleared before render
+	WebmailURL        string
+	MailAdminURL      string
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int

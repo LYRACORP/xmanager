@@ -57,6 +57,9 @@ func (m *MailInbox) Enable(exec *ssh.Executor, cfg map[string]string) error {
 		if v := cfg["api_base"]; v != "" {
 			c.APIBase = v
 		}
+		if v := cfg["webmail_url"]; v != "" {
+			c.WebmailURL = v
+		}
 		if v := cfg["mode"]; v != "" {
 			c.Mode = v
 		}

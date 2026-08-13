@@ -32,7 +32,7 @@
           <p class="text-xs text-gray-600 mt-2">Self-hosted error tracking (Sentry SDK compatible) on <span class="font-mono text-gray-400">:8000</span> — default login <span class="font-mono">admin</span> · <a class="text-indigo-400" href="https://www.bugsink.com/" target="_blank" rel="noopener">bugsink.com</a></p>
           {{end}}
           {{if eq .Name "mailinbox"}}
-          <p class="text-xs text-gray-600 mt-2">Stalwart admin on <span class="font-mono text-gray-400">:8085</span>, or set mode=<span class="font-mono">mailinabox</span> to use a Mail-in-a-Box <span class="font-mono">/admin</span> API. Domains panel creates mailboxes via API.</p>
+          <p class="text-xs text-gray-600 mt-2">Mail stack — use <span class="font-mono">mode=mailinabox</span> and point at a MiaB <span class="font-mono">/admin</span> API for the <a class="text-indigo-400" href="/email">Email</a> panel (domains, accounts, webmail). Stalwart admin on <span class="font-mono text-gray-400">:8085</span> is optional.</p>
           {{end}}
           {{if eq .Name "powerdns"}}
           <p class="text-xs text-gray-600 mt-2">Authoritative DNS (SQLite) API on <span class="font-mono text-gray-400">:8081</span>. Manage zones &amp; records in the <a class="text-indigo-400" href="/dns">DNS</a> panel.</p>

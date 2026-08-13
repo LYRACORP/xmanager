@@ -1,0 +1,110 @@
+{{define "node_email"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">Email</h1>
+      <p class="text-panel-muted text-sm mt-1">Mail-in-a-Box domains, accounts, and webmail</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      {{if .WebmailURL}}
+      <a href="{{.WebmailURL}}" target="_blank" rel="noopener" class="text-sm bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg">Open webmail</a>
+      {{end}}
+      {{if .MailAdminURL}}
+      <a href="{{.MailAdminURL}}" target="_blank" rel="noopener" class="text-sm border border-gray-700 text-gray-300 hover:border-gray-500 px-3 py-1.5 rounded-lg">MiaB admin</a>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-3 text-xs items-center">
+    <span class="px-2 py-1 rounded border {{if .MailAPIReady}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">
+      Mail API {{if .MailAPIReady}}ready{{else}}offline{{end}}
+      {{if .MailAPIMode}} · {{.MailAPIMode}}{{end}}
+    </span>
+    {{if ne .MailAPIMode "mailinabox"}}
+    <span class="text-amber-400/90">Email panel requires mode=mailinabox — configure below</span>
+    {{end}}
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 mb-2 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <details class="bg-gray-900 border border-gray-800 rounded-xl p-4" {{if not .MailAPIReady}}open{{end}}>
+    <summary class="text-sm font-semibold text-gray-300 cursor-pointer">Mail-in-a-Box connection</summary>
+    <form method="post" action="/email/config" class="mt-3 grid md:grid-cols-2 gap-3">
+      <input name="api_base" placeholder="https://box.example.com/admin" value="{{.MailAPIConfig.APIBase}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="hostname" placeholder="mail hostname (MX)" value="{{.MailAPIConfig.Hostname}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="admin_user" placeholder="admin email" value="{{.MailAPIConfig.AdminUser}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="admin_password" type="password" placeholder="admin password (leave blank to keep)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="webmail_url" placeholder="webmail URL override (optional)" value="{{.MailAPIConfig.WebmailURL}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm md:col-span-2">
+      <div class="md:col-span-2">
+        <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Save as mailinabox</button>
+        <span class="text-xs text-gray-500 ml-2">Stores credentials on this node; does not install MiaB</span>
+      </div>
+    </form>
+  </details>
+
+  {{if .MailAPIReady}}
+  <div class="grid lg:grid-cols-2 gap-4">
+    <form method="post" action="/email/domains" class="bg-gray-900 border border-gray-800 rounded-xl p-4 grid gap-3">
+      <div class="text-sm font-semibold text-gray-300">Add mail domain</div>
+      <input name="domain" required placeholder="example.com" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <input name="public_ip" placeholder="public IP for DNS (auto if empty)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg w-fit">Add domain</button>
+      <p class="text-[11px] text-gray-500">Creates DNS MX/A via PowerDNS when available. MiaB creates the mail domain when you add the first account.</p>
+    </form>
+
+    <form method="post" action="/email/accounts" class="bg-gray-900 border border-gray-800 rounded-xl p-4 grid gap-3">
+      <div class="text-sm font-semibold text-gray-300">Add email account</div>
+      <div class="flex gap-2">
+        <input name="local_part" required placeholder="local-part" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm flex-1">
+        <span class="self-center text-gray-500">@</span>
+        <input name="domain" required list="mail-domains" placeholder="domain.com" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm flex-1">
+        <datalist id="mail-domains">
+          {{range .MailDomainList}}<option value="{{.}}"></option>{{end}}
+          {{range .MailDomains}}<option value="{{.Domain}}"></option>{{end}}
+        </datalist>
+      </div>
+      <input name="password" type="password" required placeholder="password" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <button class="bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg w-fit">Create account</button>
+    </form>
+  </div>
+
+  <h2 class="text-sm font-semibold text-gray-400 uppercase mt-4">Domains &amp; accounts</h2>
+  {{if not .MailDomains}}
+  <p class="text-gray-600 text-sm">No accounts on the box yet — add a domain and create an account above.</p>
+  {{else}}
+  <div class="space-y-4">
+    {{range .MailDomains}}
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+        <span class="font-mono text-indigo-300">{{.Domain}}</span>
+        <span class="text-[11px] text-gray-500">{{len .Users}} account{{if ne (len .Users) 1}}s{{end}}</span>
+      </div>
+      <ul class="divide-y divide-gray-800/80">
+        {{range .Users}}
+        <li class="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div>
+            <span class="font-mono text-emerald-300">{{.Email}}</span>
+            <span class="text-[11px] text-gray-500 ml-2">{{.Status}}</span>
+            {{range .Privileges}}<span class="text-[10px] ml-1 px-1 rounded border border-gray-700 text-gray-400">{{.}}</span>{{end}}
+          </div>
+          <form method="post" action="/email/accounts/delete" onsubmit="return confirm('Delete {{.Email}}?')">
+            <input type="hidden" name="email" value="{{.Email}}">
+            <button class="text-xs text-red-400">Delete</button>
+          </form>
+        </li>
+        {{else}}
+        <li class="px-4 py-3 text-gray-600 text-sm">No users on this domain</li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  {{else}}
+  <p class="text-gray-600 text-sm">Connect a Mail-in-a-Box admin API above to manage domains and accounts.</p>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

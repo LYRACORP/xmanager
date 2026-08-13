@@ -30,8 +30,22 @@ type Config struct {
 	Hostname      string `json:"hostname"`
 	AdminUser     string `json:"admin_user"`
 	AdminPassword string `json:"admin_password"`
-	APIBase       string `json:"api_base"` // e.g. http://127.0.0.1:8085 or https://box/admin
-	Mode          string `json:"mode"`     // stalwart | mailinabox
+	APIBase       string `json:"api_base"`     // e.g. http://127.0.0.1:8085 or https://box/admin
+	WebmailURL    string `json:"webmail_url"` // optional override; else derived from APIBase/Hostname
+	Mode          string `json:"mode"`         // stalwart | mailinabox
+}
+
+// MailUser is one mailbox on a Mail-in-a-Box domain.
+type MailUser struct {
+	Email      string   `json:"email"`
+	Status     string   `json:"status"`
+	Privileges []string `json:"privileges"`
+}
+
+// MailDomain groups users under one mail domain (MiaB list response shape).
+type MailDomain struct {
+	Domain string     `json:"domain"`
+	Users  []MailUser `json:"users"`
 }
 
 func DefaultConfig() Config {
@@ -89,6 +103,34 @@ func (c Config) BaseURL() string {
 		return "https://127.0.0.1/admin"
 	}
 	return fmt.Sprintf("http://127.0.0.1:%s", c.HTTPSPort)
+}
+
+// AdminURL is the mail admin panel (MiaB /admin or Stalwart base).
+func (c Config) AdminURL() string {
+	return c.BaseURL()
+}
+
+// ResolvedWebmailURL returns Roundcube (/mail) or an explicit override.
+func (c Config) ResolvedWebmailURL() string {
+	if u := strings.TrimSpace(c.WebmailURL); u != "" {
+		return strings.TrimRight(u, "/")
+	}
+	base := c.BaseURL()
+	// MiaB: https://box.example/admin → https://box.example/mail
+	if strings.HasSuffix(base, "/admin") {
+		return strings.TrimSuffix(base, "/admin") + "/mail"
+	}
+	host := strings.TrimSpace(c.Hostname)
+	if host != "" && host != "mail.example.com" {
+		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+			host = "https://" + host
+		}
+		return strings.TrimRight(host, "/") + "/mail"
+	}
+	if u, err := url.Parse(base); err == nil && u.Scheme != "" && u.Host != "" {
+		return u.Scheme + "://" + u.Host + "/mail"
+	}
+	return ""
 }
 
 func LoadConfig(db *gorm.DB, serverID uint) Config {
@@ -293,6 +335,89 @@ func (c *Client) DeleteMailbox(address string) error {
 	}
 	_, _, err := c.doJSON("DELETE", "/api/principal/"+url.PathEscape(local), nil)
 	return err
+}
+
+// ListUsers returns mail users grouped by domain (Mail-in-a-Box only).
+func (c *Client) ListUsers() ([]MailDomain, error) {
+	if c.Cfg.Mode != ModeMiaB {
+		return nil, fmt.Errorf("list requires mailinabox mode")
+	}
+	data, _, err := c.doJSON("GET", "/mail/users?format=json", nil)
+	if err != nil {
+		return nil, err
+	}
+	var domains []MailDomain
+	if err := json.Unmarshal(data, &domains); err != nil {
+		return nil, fmt.Errorf("decode mail users: %w", err)
+	}
+	for i := range domains {
+		domains[i].Domain = strings.ToLower(strings.TrimSpace(domains[i].Domain))
+		for j := range domains[i].Users {
+			domains[i].Users[j].Email = strings.ToLower(strings.TrimSpace(domains[i].Users[j].Email))
+			if domains[i].Users[j].Status == "" {
+				domains[i].Users[j].Status = "active"
+			}
+		}
+	}
+	return domains, nil
+}
+
+// ListDomains returns hosted mail domain names (Mail-in-a-Box only).
+func (c *Client) ListDomains() ([]string, error) {
+	if c.Cfg.Mode != ModeMiaB {
+		return nil, fmt.Errorf("list requires mailinabox mode")
+	}
+	req, err := http.NewRequest("GET", c.Cfg.BaseURL()+"/mail/domains", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.authHeader())
+	req.Header.Set("Accept", "text/plain, text/html, application/json")
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 400 {
+		// Fall back to domains from user list.
+		grouped, err2 := c.ListUsers()
+		if err2 != nil {
+			return nil, fmt.Errorf("mail domains: %s", res.Status)
+		}
+		out := make([]string, 0, len(grouped))
+		for _, d := range grouped {
+			if d.Domain != "" {
+				out = append(out, d.Domain)
+			}
+		}
+		return out, nil
+	}
+	raw := strings.TrimSpace(string(data))
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if line == "" || strings.HasPrefix(line, "<") {
+			continue
+		}
+		if !seen[line] {
+			seen[line] = true
+			out = append(out, line)
+		}
+	}
+	if len(out) == 0 {
+		grouped, err2 := c.ListUsers()
+		if err2 == nil {
+			for _, d := range grouped {
+				if d.Domain != "" && !seen[d.Domain] {
+					seen[d.Domain] = true
+					out = append(out, d.Domain)
+				}
+			}
+		}
+	}
+	return out, nil
 }
 
 // Ping checks admin API reachability (best-effort).
