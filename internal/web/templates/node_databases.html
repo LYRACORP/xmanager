@@ -210,7 +210,13 @@
           <a href="{{.LogsURL}}" class="xm-btn xm-btn-ghost text-xs">Logs</a>
           {{end}}
           {{if .AdminerOn}}
+          {{if eq .Type "postgres"}}
+          <a href="{{.AdminerURL}}/?pgsql={{.Host}}&username=postgres&db=postgres" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Adminer</a>
+          {{else if or (eq .Type "mysql") (eq .Type "mariadb")}}
+          <a href="{{.AdminerURL}}/?server={{.Host}}&username=root" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Adminer</a>
+          {{else}}
           <a href="{{.AdminerURL}}" target="_blank" rel="noopener" class="xm-btn xm-btn-ghost text-xs">Adminer</a>
+          {{end}}
           <form method="post" action="/databases/tools/adminer" class="inline">
             <button type="submit" class="xm-btn xm-btn-ghost text-xs text-zinc-600" title="Rebuild Adminer image">↻</button>
           </form>
@@ -232,6 +238,14 @@
             {{end}}
           {{end}}
         </div>
+        {{if or .AdminerOn .PgAdminOn}}
+        <p class="text-[10px] text-zinc-600">
+          Adminer/pgAdmin connect via Docker DNS —
+          <span class="font-mono text-zinc-400">{{.Host}}:{{.Port}}</span>
+          (user <span class="font-mono">postgres</span>, password from install flash).
+          In pgAdmin open <span class="font-mono">XManager PostgreSQL</span> → Databases to see every DB.
+        </p>
+        {{end}}
         <div class="grid sm:grid-cols-2 gap-4">
           <div>
             <p class="text-[11px] text-panel-muted uppercase tracking-wide mb-2">Databases</p>
@@ -245,6 +259,9 @@
               </li>
               {{else}}<li class="text-xs text-panel-muted">No databases yet</li>{{end}}
             </ul>
+            {{if and (eq $engine.Type "postgres") $engine.AdminerOn}}
+            <p class="text-[10px] text-zinc-600 mt-2">Tip: open a DB above, then use “Open in Adminer” for that database.</p>
+            {{end}}
           </div>
           <div>
             <p class="text-[11px] text-panel-muted uppercase tracking-wide mb-2">Users</p>

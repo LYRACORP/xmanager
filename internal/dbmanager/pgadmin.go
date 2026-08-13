@@ -33,7 +33,9 @@ func writePgAdminConfig(exec *ssh.Executor) error {
       "Port": 5432,
       "MaintenanceDB": "postgres",
       "Username": "postgres",
-      "SSLMode": "prefer"
+      "PassFile": ".pgpass",
+      "SSLMode": "prefer",
+      "Shared": true
     }
   }
 }`, ContainerPostgres)
@@ -234,5 +236,7 @@ func InstallPgAdmin(exec *ssh.Executor, email, password string) (string, error) 
 		return "", fmt.Errorf("pgadmin did not become ready on :%s — %s", PgAdminPort, strings.TrimSpace(logs))
 	}
 
-	return fmt.Sprintf("pgAdmin4 at :%s (%s / %s) — server %s pre-configured", PgAdminPort, email, password, ContainerPostgres), nil
+	EnsureDBToolNetworking(exec)
+
+	return fmt.Sprintf("pgAdmin4 at :%s (%s / %s) — server %s pre-configured (all DBs listed under it)", PgAdminPort, email, password, ContainerPostgres), nil
 }

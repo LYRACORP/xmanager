@@ -318,7 +318,9 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pubHost := publicHost(r)
-	// Lightweight status only — never rebuild/reinstall tools on GET (that hung the page for minutes).
+	// Lightweight: attach tools/engines to xm-db so Adminer/pgAdmin can resolve xm-postgres.
+	// Never rebuild/reinstall on GET (that hung the page).
+	dbmanager.EnsureDBToolNetworking(exec)
 	adminerOn := dbmanager.ContainerRunning(exec, dbmanager.AdminerName)
 	pgAdminOn := dbmanager.ContainerRunning(exec, dbmanager.PgAdminName)
 	var toolHints []string
@@ -593,6 +595,7 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 
 	if adminer {
 		msg, err := dbmanager.InstallAdminer(exec)
+		_ = hostfirewall.Allow([]int{8081}, "tcp")
 		if err != nil {
 			flash += " · Adminer: " + err.Error()
 		} else {
@@ -609,6 +612,8 @@ func (h *handler) postNodeDatabaseInstall(w http.ResponseWriter, r *http.Request
 			flash += " · " + msg
 		}
 	}
+
+	dbmanager.EnsureDBToolNetworking(exec)
 
 	if dbName != "" {
 		mgr := dbmanager.NewManager(dbmanager.DBType(dbType), exec)

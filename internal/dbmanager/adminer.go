@@ -24,6 +24,32 @@ func EnsureDBNetwork(exec *ssh.Executor) {
 	_, _ = exec.Run(fmt.Sprintf(`docker network create %s 2>/dev/null || true`, DBNetwork))
 }
 
+// JoinDBNetwork attaches a running container to xm-db (no-op if already connected).
+func JoinDBNetwork(exec *ssh.Executor, name string) {
+	if exec == nil || name == "" {
+		return
+	}
+	_, _ = exec.Run(fmt.Sprintf(
+		`docker network connect %s %s 2>/dev/null || true`,
+		DBNetwork, name,
+	))
+}
+
+// EnsureDBToolNetworking puts Adminer, pgAdmin, and all xm-* engines on xm-db
+// so container DNS names (xm-postgres, …) resolve between them.
+func EnsureDBToolNetworking(exec *ssh.Executor) {
+	EnsureDBNetwork(exec)
+	for _, name := range []string{
+		ContainerPostgres, ContainerMySQL, ContainerMariaDB,
+		ContainerMongoDB, ContainerRedis, ContainerClickHouse,
+		AdminerName, PgAdminName,
+	} {
+		if ContainerRunning(exec, name) {
+			JoinDBNetwork(exec, name)
+		}
+	}
+}
+
 // InstallAdminer builds and starts Adminer 6 with drivers for all supported engines.
 // Rebuilds the image and recreates the container (safe to call repeatedly).
 func InstallAdminer(exec *ssh.Executor) (string, error) {
@@ -64,7 +90,10 @@ func InstallAdminer(exec *ssh.Executor) (string, error) {
 		return "", fmt.Errorf("start adminer: %s", res.Stdout+res.Stderr)
 	}
 
-	return fmt.Sprintf("Adminer 6 at :%s (drivers: pgsql/mysql/mongo/redis/elastic/clickhouse)", AdminerPort), nil
+	// Engines installed earlier may still be on the default bridge — attach them.
+	EnsureDBToolNetworking(exec)
+
+	return fmt.Sprintf("Adminer 6 at :%s (drivers: pgsql/mysql/mongo/redis/elastic/clickhouse · use host xm-postgres etc.)", AdminerPort), nil
 }
 
 // AdminerNeedsUpgrade reports whether the running container uses an outdated image tag.
