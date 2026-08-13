@@ -90,6 +90,21 @@ type nodeDBDetailView struct {
 	EngineMem    string
 }
 
+type projectFileEntry struct {
+	Name      string
+	RelPath   string
+	Mode      string
+	IsDir     bool
+	Size      int64
+	SizeHuman string
+	Mod       string
+}
+
+type projectFileCrumb struct {
+	Name string
+	Path string
+}
+
 // pageData is the common template context passed to all pages.
 type pageData struct {
 	Title          string
@@ -154,6 +169,13 @@ type pageData struct {
 	DeployHistory      []storage.DeployHistory
 	ActiveTab          string
 	CreateType         string
+	FilePath           string
+	FileEntries        []projectFileEntry
+	FileEditPath       string
+	FileEditBody       string
+	FileRoot           string
+	FileCrumbs         []projectFileCrumb
+	FileParent         string
 	TemplateSummaries  []apps.Summary
 	TemplateApp        *apps.App
 	TemplateQuery      string

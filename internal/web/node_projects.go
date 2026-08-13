@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -426,6 +427,41 @@ func (h *handler) getNodeProjectDetail(w http.ResponseWriter, r *http.Request) {
 
 	if tab == "logs" {
 		data.LogText = h.projectLogs(p)
+	}
+	if tab == "files" {
+		rel := r.URL.Query().Get("path")
+		if r.URL.Query().Get("edit") == "1" {
+			root, err := h.ensureProjectRoot(p)
+			if err != nil {
+				data.Flash = err.Error()
+			} else {
+				data.FileRoot = root
+				data.FileEditPath = strings.Trim(rel, "/")
+				data.FilePath = filepath.ToSlash(filepath.Dir(data.FileEditPath))
+				if data.FilePath == "." {
+					data.FilePath = ""
+				}
+				data.FileCrumbs = fileCrumbs(data.FilePath)
+				data.FileParent = ""
+				if data.FilePath != "" {
+					parent := filepath.ToSlash(filepath.Dir(data.FilePath))
+					if parent == "." {
+						parent = ""
+					}
+					data.FileParent = parent
+				}
+				body, err := loadFileForEdit(root, rel)
+				if err != nil {
+					data.Flash = err.Error()
+				} else {
+					data.FileEditBody = body
+				}
+			}
+		} else if err := h.fillProjectFiles(&data, p, rel); err != nil {
+			data.Flash = err.Error()
+			data.FileRoot = h.projectFileRoot(p)
+			data.FilePath = strings.Trim(rel, "/")
+		}
 	}
 	h.render(w, "node_project_detail", data)
 }

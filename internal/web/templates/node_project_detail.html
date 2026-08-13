@@ -33,6 +33,7 @@
     <a href="/projects/{{$id}}?tab=deploy" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "deploy"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Deploy</a>
     <a href="/projects/{{$id}}?tab=env" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "env"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Environment</a>
     <a href="/projects/{{$id}}?tab=domains" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "domains"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Domains</a>
+    <a href="/projects/{{$id}}?tab=files" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "files"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Files</a>
     <a href="/projects/{{$id}}?tab=logs" class="px-3 py-2 text-sm rounded-t-lg {{if eq $tab "logs"}}bg-zinc-900 text-white border border-zinc-800 border-b-transparent{{else}}text-panel-muted hover:text-gray-200{{end}}">Logs</a>
   </div>
 
@@ -127,6 +128,10 @@
     <p class="text-panel-muted text-sm">No domains attached</p>
     {{end}}
   </div>
+  {{end}}
+
+  {{if eq $.ActiveTab "files"}}
+  {{template "node_project_files" $}}
   {{end}}
 
   {{if eq $.ActiveTab "logs"}}
