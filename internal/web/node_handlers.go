@@ -20,6 +20,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/proxy"
 	svcs "github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/services/bugsink"
+	"github.com/lyracorp/xmanager/internal/services/databasus"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -30,6 +31,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/registry"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
 	"github.com/lyracorp/xmanager/internal/services/umami"
+	"github.com/lyracorp/xmanager/internal/services/uptimekuma"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
@@ -802,6 +804,10 @@ func (h *handler) lookupNodeService(name string) svcs.Service {
 		return mailinbox.New(db, sid)
 	case "netdata":
 		return netdata.New(db, sid)
+	case "uptimekuma":
+		return uptimekuma.New(db, sid)
+	case "databasus":
+		return databasus.New(db, sid)
 	default:
 		return nil
 	}
@@ -812,6 +818,7 @@ func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
 	names := []string{
 		"registry", "gitea", "rustfs", "rabbitmq", "kafka",
 		"mattermost", "bugsink", "umami", "powerdns", "mailinbox", "netdata",
+		"uptimekuma", "databasus",
 	}
 	exec := h.localExec()
 	var list []nodeServiceView

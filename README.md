@@ -16,7 +16,7 @@
 - **PaaS projects** — image, compose, Dockerfile, git, one-click apps, archive, functions, and more
 - **Scripts & cron** — run bash/python/node on one / many / all servers; manage remote cron jobs
 - **Databases** — MySQL, MariaDB, PostgreSQL, MongoDB, ClickHouse, Redis + backups
-- **Optional services** — Docker Registry, Gitea, RustFS, RabbitMQ, Kafka, Mattermost, GlitchTip, Netdata (+auth), Umami, PowerDNS, mail, Kubernetes (kubespray)
+- **Optional services** — Docker Registry, Gitea, RustFS, RabbitMQ, Kafka, Mattermost, Bugsink, Netdata (+auth), Umami, PowerDNS, mail, Uptime Kuma, Databasus, Kubernetes (kubespray)
 - **Uptime monitoring** — HTTP/TCP checks with Telegram / email / webhook / SMS alerts
 - **MCP server** — `xmanager mcp` exposes management tools for AI agents
 - **AI chat / recon** — OpenAI, Anthropic, or Ollama

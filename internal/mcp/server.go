@@ -16,6 +16,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/recon"
 	"github.com/lyracorp/xmanager/internal/scripts"
 	bugsinksvc "github.com/lyracorp/xmanager/internal/services/bugsink"
+	databasussvc "github.com/lyracorp/xmanager/internal/services/databasus"
 	giteasvc "github.com/lyracorp/xmanager/internal/services/gitea"
 	k8ssvc "github.com/lyracorp/xmanager/internal/services/k8s"
 	kafkasvc "github.com/lyracorp/xmanager/internal/services/kafka"
@@ -27,6 +28,7 @@ import (
 	registrysvc "github.com/lyracorp/xmanager/internal/services/registry"
 	rustfssvc "github.com/lyracorp/xmanager/internal/services/rustfs"
 	umamisvc "github.com/lyracorp/xmanager/internal/services/umami"
+	uptimekumasvc "github.com/lyracorp/xmanager/internal/services/uptimekuma"
 	webpanelsvc "github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -630,6 +632,10 @@ func lookupService(serviceType string, db *gorm.DB, serverID uint) togglable {
 		return powerdnssvc.New(db, serverID)
 	case "mailinbox", "mail":
 		return mailinboxsvc.New(db, serverID)
+	case "uptimekuma", "uptime-kuma":
+		return uptimekumasvc.New(db, serverID)
+	case "databasus":
+		return databasussvc.New(db, serverID)
 	case "k8s", "kubernetes":
 		return k8ssvc.New(db, serverID)
 	case "webpanel", "web":

@@ -40,6 +40,12 @@
           {{if eq .Name "netdata"}}
           <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
           {{end}}
+          {{if eq .Name "uptimekuma"}}
+          <p class="text-xs text-gray-600 mt-2">Uptime monitoring UI on <span class="font-mono text-gray-400">:3001</span> — <a class="text-indigo-400" href="https://github.com/louislam/uptime-kuma" target="_blank" rel="noopener">Uptime Kuma</a></p>
+          {{end}}
+          {{if eq .Name "databasus"}}
+          <p class="text-xs text-gray-600 mt-2">Database backups (PostgreSQL, MySQL, MariaDB, MongoDB) on <span class="font-mono text-gray-400">:4005</span> — <a class="text-indigo-400" href="https://databasus.com/" target="_blank" rel="noopener">databasus.com</a></p>
+          {{end}}
         </div>
         <div class="shrink-0">
           {{if .Enabled}}

@@ -236,7 +236,7 @@ type ServiceInstance struct {
 	gorm.Model
 	ServerID    uint   `gorm:"index;not null" json:"server_id"`
 	Server      Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	ServiceType string `gorm:"not null;index" json:"service_type"` // registry, gitea, rustfs, rabbitmq, kafka, mattermost, bugsink, netdata, umami, powerdns, mailinbox, k8s
+	ServiceType string `gorm:"not null;index" json:"service_type"` // registry, gitea, rustfs, rabbitmq, kafka, mattermost, bugsink, netdata, umami, powerdns, mailinbox, uptimekuma, databasus, k8s
 	Enabled     bool   `gorm:"default:false" json:"enabled"`
 	ConfigJSON  string `gorm:"type:text" json:"config_json"`
 	Status      string `gorm:"default:stopped" json:"status"`

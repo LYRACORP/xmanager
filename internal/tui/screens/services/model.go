@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	svcs "github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/services/bugsink"
+	"github.com/lyracorp/xmanager/internal/services/databasus"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -18,6 +19,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/registry"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
 	"github.com/lyracorp/xmanager/internal/services/umami"
+	"github.com/lyracorp/xmanager/internal/services/uptimekuma"
 	"github.com/lyracorp/xmanager/internal/services/webpanel"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -30,7 +32,7 @@ var optionalServices = []string{
 	"webpanel",
 	"registry", "gitea", "rustfs", "rabbitmq", "kafka",
 	"mattermost", "bugsink", "netdata", "umami", "powerdns",
-	"mailinbox",
+	"mailinbox", "uptimekuma", "databasus",
 }
 
 type instancesLoadedMsg struct{ instances []storage.ServiceInstance }
@@ -258,6 +260,10 @@ func lookupService(svcType string, ctx *shared.AppContext, serverID uint) svcs.S
 		return powerdns.New(db, serverID)
 	case "mailinbox":
 		return mailinbox.New(db, serverID)
+	case "uptimekuma":
+		return uptimekuma.New(db, serverID)
+	case "databasus":
+		return databasus.New(db, serverID)
 	default:
 		return nil
 	}
