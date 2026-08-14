@@ -29,6 +29,9 @@
             <form action="/docker/{{.ID}}/stop" method="post" class="inline"><button class="text-xs text-amber-400 hover:underline">Stop</button></form>
             <form action="/docker/{{.ID}}/restart" method="post" class="inline"><button class="text-xs text-sky-400 hover:underline">Restart</button></form>
             <a href="/docker/{{.ID}}/logs" class="text-xs text-indigo-400 hover:underline">Logs</a>
+            {{if eq .State "running"}}
+            <a href="/docker/{{.ID}}/terminal" class="text-xs text-emerald-400 hover:underline">Terminal</a>
+            {{end}}
           </td>
         </tr>
         {{end}}

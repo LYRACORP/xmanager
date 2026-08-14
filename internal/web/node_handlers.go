@@ -44,6 +44,8 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /docker/{id}/stop", h.requireAuth(h.postNodeDockerStop))
 	mux.HandleFunc("POST /docker/{id}/restart", h.requireAuth(h.postNodeDockerRestart))
 	mux.HandleFunc("GET /docker/{id}/logs", h.requireAuth(h.getNodeDockerLogs))
+	mux.HandleFunc("GET /docker/{id}/terminal", h.requireAuth(h.getNodeDockerTerminal))
+	mux.HandleFunc("GET /docker/{id}/terminal/ws", h.requireAuthWS(h.getNodeDockerTerminalWS))
 
 	mux.HandleFunc("GET /cron", h.requireAuth(h.getNodeCron))
 	mux.HandleFunc("POST /cron", h.requireAuth(h.postNodeCron))
@@ -68,6 +70,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /projects/{id}/files/rename", h.requireAuth(h.postNodeProjectFilesRename))
 	mux.HandleFunc("POST /projects/{id}/files/delete", h.requireAuth(h.postNodeProjectFilesDelete))
 	mux.HandleFunc("POST /projects/{id}/files/chmod", h.requireAuth(h.postNodeProjectFilesChmod))
+	mux.HandleFunc("GET /projects/{id}/terminal/ws", h.requireAuthWS(h.getNodeProjectTerminalWS))
 	mux.HandleFunc("POST /projects/{id}/deploy", h.requireAuth(h.postNodeProjectDeploy))
 	mux.HandleFunc("POST /projects/{id}/stop", h.requireAuth(h.postNodeProjectStop))
 	mux.HandleFunc("POST /projects/{id}/restart", h.requireAuth(h.postNodeProjectRestart))

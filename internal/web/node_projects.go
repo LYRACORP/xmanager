@@ -428,6 +428,27 @@ func (h *handler) getNodeProjectDetail(w http.ResponseWriter, r *http.Request) {
 	if tab == "logs" {
 		data.LogText = h.projectLogs(p)
 	}
+	if tab == "terminal" {
+		cands := projectContainerCandidates(p)
+		var running []string
+		for _, c := range cands {
+			if containerRunning(c) {
+				running = append(running, c)
+			}
+		}
+		data.TermContainers = running
+		if prefer := r.URL.Query().Get("container"); prefer != "" {
+			for _, c := range running {
+				if c == prefer {
+					data.TermContainer = c
+					break
+				}
+			}
+		}
+		if data.TermContainer == "" && len(running) > 0 {
+			data.TermContainer = running[0]
+		}
+	}
 	if tab == "files" {
 		rel := r.URL.Query().Get("path")
 		if r.URL.Query().Get("edit") == "1" {

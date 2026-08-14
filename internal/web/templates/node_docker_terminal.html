@@ -1,0 +1,72 @@
+{{define "node_docker_terminal"}}
+{{template "head" .}}
+{{template "nav" .}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<div class="xm-page space-y-3">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <a href="/docker" class="text-xs text-panel-muted hover:text-gray-300">← Docker</a>
+      <h1 class="text-2xl font-bold mt-1">Terminal</h1>
+      <p class="text-sm text-panel-muted font-mono">{{.ContainerID}}</p>
+    </div>
+    <button type="button" id="term-reconnect" class="xm-btn xm-btn-ghost text-xs">Reconnect</button>
+  </div>
+  {{if .Flash}}<p class="text-amber-300 text-sm bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2">{{.Flash}}</p>{{end}}
+  <div id="terminal" class="bg-black rounded-xl border border-zinc-800 overflow-hidden" style="height: min(70vh, 560px); padding: 8px;"></div>
+  <p class="text-[11px] text-zinc-600">Interactive <span class="font-mono">docker exec</span> session. Type commands as on the host shell.</p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<script>
+(function () {
+  const containerId = {{json .ContainerID}};
+  const term = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    theme: { background: '#000000', foreground: '#e5e7eb' }
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('terminal'));
+  fit.fit();
+
+  let ws;
+  function connect() {
+    if (ws) { try { ws.close(); } catch (e) {} }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/docker/' + encodeURIComponent(containerId) + '/terminal/ws');
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = function () {
+      term.writeln('\x1b[90mconnected\x1b[0m');
+      sendResize();
+      term.focus();
+    };
+    ws.onclose = function (ev) {
+      term.writeln('\r\n\x1b[90mdisconnected' + (ev.code ? ' (' + ev.code + ')' : '') + '\x1b[0m');
+    };
+    ws.onerror = function () {
+      term.writeln('\r\n\x1b[31mwebsocket error — check panel logs / container shell\x1b[0m');
+    };
+    ws.onmessage = function (ev) {
+      if (ev.data instanceof ArrayBuffer) {
+        term.write(new Uint8Array(ev.data));
+      } else {
+        term.write(ev.data);
+      }
+    };
+  }
+  function sendResize() {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+  }
+  term.onData(function (data) {
+    if (ws && ws.readyState === 1) ws.send(data);
+  });
+  window.addEventListener('resize', function () { fit.fit(); sendResize(); });
+  document.getElementById('term-reconnect').addEventListener('click', connect);
+  connect();
+})();
+</script>
+{{template "foot" .}}
+{{end}}

@@ -94,12 +94,13 @@ func Run(opts Options) error {
 	h.register(mux)
 
 	fmt.Printf("XManager web listening on http://%s (role=%s)\n", addr, opts.Config.Web.Role)
+	// No WriteTimeout/ReadTimeout: WebSocket terminals are long-lived hijacked
+	// connections; header timeout still bounds slowloris on new requests.
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	return srv.ListenAndServe()
 }
