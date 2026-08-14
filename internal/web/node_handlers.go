@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -95,6 +96,16 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /services/{name}/enable", h.requireAuth(h.postNodeServiceEnable))
 	mux.HandleFunc("POST /services/{name}/disable", h.requireAuth(h.postNodeServiceDisable))
 	mux.HandleFunc("POST /services/rustfs/bucket", h.requireAuth(h.postNodeRustfsBucket))
+
+	mux.HandleFunc("GET /storage", h.requireAuth(h.getNodeStorage))
+	mux.HandleFunc("POST /storage/buckets", h.requireAuth(h.postNodeStorageBucketCreate))
+	mux.HandleFunc("POST /storage/buckets/delete", h.requireAuth(h.postNodeStorageBucketDelete))
+	mux.HandleFunc("GET /storage/buckets/{bucket}", h.requireAuth(h.getNodeStorageBucket))
+	mux.HandleFunc("GET /storage/buckets/{bucket}/download", h.requireAuth(h.getNodeStorageDownload))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/upload", h.requireAuth(h.postNodeStorageUpload))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/mkdir", h.requireAuth(h.postNodeStorageMkdir))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/delete", h.requireAuth(h.postNodeStorageDelete))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/rename", h.requireAuth(h.postNodeStorageRename))
 
 	mux.HandleFunc("GET /domains", h.requireAuth(h.getNodeDomains))
 	mux.HandleFunc("POST /domains", h.requireAuth(h.postNodeDomains))
@@ -886,14 +897,22 @@ func (h *handler) postNodeServiceDisable(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeRustfsBucket(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	name := strings.TrimSpace(r.FormValue("bucket"))
-	if name != "" {
-		// Best-effort: rustfs/minio-compatible mc inside the container or host.
-		_, _ = h.localExec().Run(fmt.Sprintf(
-			`docker exec rustfs mc mb local/%s 2>/dev/null || docker exec rustfs mkdir -p /data/%s 2>/dev/null || mkdir -p /opt/xmanager/services/rustfs/data/%s`,
-			name, name, name,
-		))
+	if name == "" {
+		http.Redirect(w, r, "/storage?flash="+url.QueryEscape("bucket required"), http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/services", http.StatusSeeOther)
+	cli, _, err := h.rustfsReady(r.Context())
+	if err != nil {
+		http.Redirect(w, r, "/storage?flash="+url.QueryEscape("RustFS offline"), http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := cli.CreateBucket(ctx, name); err != nil {
+		http.Redirect(w, r, "/storage?flash="+url.QueryEscape("Create failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/storage?flash="+url.QueryEscape("Bucket "+name+" created"), http.StatusSeeOther)
 }
 
 // --- Domains & mailboxes (PowerDNS + mail APIs) ---

@@ -76,11 +76,10 @@
     {{end}}
   </div>
 
-  <form method="post" action="/services/rustfs/bucket" class="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-wrap gap-2 items-end">
-    <div class="w-full text-sm text-gray-400 mb-1">RustFS bucket (when rustfs is enabled)</div>
-    <input name="bucket" required placeholder="bucket-name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
-    <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Create bucket</button>
-  </form>
+  <div class="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-2">
+    <div class="text-sm text-gray-400">RustFS object storage</div>
+    <p class="text-xs text-gray-500">Create buckets, browse objects, upload and rename files in the <a class="text-indigo-400" href="/storage">Storage</a> panel.</p>
+  </div>
 </div>
 {{template "foot" .}}
 {{end}}

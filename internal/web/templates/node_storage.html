@@ -1,0 +1,93 @@
+{{define "node_storage"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Storage</h1>
+      <p class="text-panel-muted text-xs mt-0.5">RustFS object storage · S3-compatible buckets</p>
+    </div>
+    {{if .StorageConsoleURL}}
+    <a href="{{.StorageConsoleURL}}" target="_blank" rel="noopener"
+       class="text-xs text-indigo-300 hover:underline">Console →</a>
+    {{end}}
+  </div>
+
+  {{if .Flash}}
+  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  {{end}}
+
+  {{if not .StorageReady}}
+  <div class="xm-card p-5 space-y-3">
+    <p class="text-sm text-panel-muted">RustFS is not reachable on this node.</p>
+    <a href="/services" class="xm-btn xm-btn-primary text-xs inline-block">Enable RustFS in Services</a>
+  </div>
+  {{else}}
+
+  <div class="grid sm:grid-cols-3 gap-3">
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Buckets</p>
+      <p class="text-2xl font-semibold mt-1">{{len .StorageBuckets}}</p>
+    </div>
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Objects</p>
+      <p class="text-2xl font-semibold mt-1">{{.StorageTotalObjects}}</p>
+    </div>
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Total size</p>
+      <p class="text-2xl font-semibold mt-1">{{.StorageTotalHuman}}</p>
+    </div>
+  </div>
+
+  <div class="xm-card p-4 space-y-3">
+    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Create bucket</p>
+    <form method="post" action="/storage/buckets" class="flex flex-wrap gap-2 items-end">
+      <input name="name" required placeholder="my-bucket"
+             pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+             class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono w-56">
+      <button class="xm-btn xm-btn-primary text-xs">Create</button>
+    </form>
+    <p class="text-[11px] text-zinc-500">Lowercase letters, digits, dots and hyphens · 3–63 characters · endpoint <span class="font-mono text-zinc-400">{{.StorageEndpoint}}</span></p>
+  </div>
+
+  <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+    <table class="w-full text-xs text-left">
+      <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+        <tr>
+          <th class="py-2 px-3 font-medium">Bucket</th>
+          <th class="py-2 px-3 font-medium">Objects</th>
+          <th class="py-2 px-3 font-medium">Size</th>
+          <th class="py-2 px-3 font-medium">Created</th>
+          <th class="py-2 px-3 font-medium">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-800/80">
+        {{range .StorageBuckets}}
+        <tr class="hover:bg-zinc-900/40">
+          <td class="py-2.5 px-3 font-mono">
+            <a href="/storage/buckets/{{pathEscape .Name}}" class="text-indigo-300 hover:underline">{{.Name}}</a>
+          </td>
+          <td class="py-2.5 px-3 text-panel-muted">{{.ObjectCount}}</td>
+          <td class="py-2.5 px-3 text-panel-muted">{{.SizeHuman}}</td>
+          <td class="py-2.5 px-3 text-panel-muted whitespace-nowrap">{{.CreatedHuman}}</td>
+          <td class="py-2.5 px-3">
+            <div class="flex gap-3 items-center">
+              <a href="/storage/buckets/{{pathEscape .Name}}" class="text-emerald-400 hover:underline">Browse</a>
+              <form method="post" action="/storage/buckets/delete" onsubmit="return confirm('Delete bucket {{.Name}} and all objects?')">
+                <input type="hidden" name="name" value="{{.Name}}">
+                <button class="text-red-400 hover:underline">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="py-8 px-3 text-center text-panel-muted">No buckets yet — create one above</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

@@ -22,6 +22,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/proxy"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
+	"github.com/lyracorp/xmanager/internal/services/rustfs"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
@@ -201,6 +202,19 @@ type pageData struct {
 	BootstrapTokenURL string
 	BootstrapHint     string
 	BootstrapNext     string
+	// Storage (RustFS)
+	StorageReady        bool
+	StorageEndpoint     string
+	StorageConsoleURL   string
+	StorageBuckets      []rustfs.BucketInfo
+	StorageBucket       string
+	StoragePrefix       string
+	StorageParent       string
+	StorageObjects      []rustfs.ObjectEntry
+	StorageCrumbs       []projectFileCrumb
+	StorageTotalObjects int64
+	StorageTotalBytes   int64
+	StorageTotalHuman   string
 }
 
 func (h *handler) register(mux *http.ServeMux) {

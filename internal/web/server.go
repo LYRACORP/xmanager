@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/config"
@@ -47,6 +48,9 @@ func Run(opts Options) error {
 		"formatBytes":  nodemetrics.FormatBytes,
 		"formatUptime": nodemetrics.FormatUptime,
 		"pathEscape":   url.PathEscape,
+		"trimSlash": func(s string) string {
+			return strings.Trim(s, "/")
+		},
 		"trimDot": func(s string) string {
 			for len(s) > 0 && s[len(s)-1] == '.' {
 				s = s[:len(s)-1]

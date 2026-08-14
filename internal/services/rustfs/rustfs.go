@@ -11,7 +11,7 @@ import (
 const serviceType = "rustfs"
 const dir = "/opt/xmanager/services/rustfs"
 
-// RustFS is an S3-compatible object storage server (MinIO-compatible API).
+// RustFS is an S3-compatible object storage server.
 type RustFS struct {
 	services.BaseDeployer
 	serverID uint
@@ -28,30 +28,41 @@ func (r *RustFS) IsEnabled(exec *ssh.Executor) bool {
 }
 
 func (r *RustFS) Enable(exec *ssh.Executor, cfg map[string]string) error {
-	port := cfg["port"]
-	if port == "" {
-		port = "9000"
+	c := LoadConfig(r.DB, r.serverID)
+	if p := cfg["port"]; p != "" {
+		c.Port = p
 	}
-	consolePort := cfg["console_port"]
-	if consolePort == "" {
-		consolePort = "9001"
+	if p := cfg["console_port"]; p != "" {
+		c.ConsolePort = p
 	}
-	accessKey := cfg["access_key"]
-	if accessKey == "" {
-		accessKey = "minioadmin"
+	if k := cfg["access_key"]; k != "" {
+		c.AccessKey = k
 	}
-	secretKey := cfg["secret_key"]
-	if secretKey == "" {
-		secretKey = "minioadmin"
+	if k := cfg["secret_key"]; k != "" {
+		c.SecretKey = k
 	}
+	if c.Port == "" {
+		c.Port = "9000"
+	}
+	if c.ConsolePort == "" {
+		c.ConsolePort = "9001"
+	}
+	if c.AccessKey == "" {
+		c.AccessKey = "rustfsadmin"
+	}
+	if c.SecretKey == "" {
+		c.SecretKey = "rustfsadmin"
+	}
+	c.Endpoint = "http://127.0.0.1:" + c.Port
 
 	compose := fmt.Sprintf(`services:
   rustfs:
     image: rustfs/rustfs:latest
     container_name: rustfs
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
+      - RUSTFS_ACCESS_KEY=%s
+      - RUSTFS_SECRET_KEY=%s
       - RUSTFS_ROOT_USER=%s
       - RUSTFS_ROOT_PASSWORD=%s
     ports:
@@ -61,13 +72,12 @@ func (r *RustFS) Enable(exec *ssh.Executor, cfg map[string]string) error {
       - rustfs_data:/data
 volumes:
   rustfs_data:
-`, accessKey, secretKey, port, consolePort)
+`, c.AccessKey, c.SecretKey, c.AccessKey, c.SecretKey, c.Port, c.ConsolePort)
 
 	if err := r.WriteCompose(exec, dir, compose); err != nil {
 		return fmt.Errorf("rustfs enable: %w", err)
 	}
-	return r.SaveInstance(r.serverID, serviceType, "running",
-		fmt.Sprintf(`{"port":"%s","console_port":"%s"}`, port, consolePort))
+	return r.SaveInstance(r.serverID, serviceType, "running", c.JSON())
 }
 
 func (r *RustFS) Disable(exec *ssh.Executor) error {
