@@ -176,6 +176,8 @@ type pageData struct {
 	FileRoot           string
 	FileCrumbs         []projectFileCrumb
 	FileParent         string
+	FileScope          string // host | container
+	FileContainer      string
 	TermContainer      string
 	TermContainers     []string
 	TemplateSummaries  []apps.Summary

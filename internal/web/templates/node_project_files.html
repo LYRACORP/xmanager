@@ -1,25 +1,55 @@
 {{define "node_project_files"}}
 {{with .Project}}
+{{$scope := $.FileScope}}{{if not $scope}}{{$scope = "host"}}{{end}}
+{{$qs := printf "scope=%s" $scope}}{{if $.FileContainer}}{{$qs = printf "%s&container=%s" $qs (pathEscape $.FileContainer)}}{{end}}
 <div class="xm-card p-4 space-y-4">
   <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-    <div class="flex flex-wrap items-center gap-1 text-panel-muted font-mono">
-      <a href="/projects/{{.ID}}?tab=files" class="text-indigo-300 hover:underline">root</a>
-      {{range $.FileCrumbs}}
-      <span class="text-zinc-600">/</span>
-      <a href="/projects/{{$.Project.ID}}?tab=files&path={{pathEscape .Path}}" class="text-indigo-300 hover:underline">{{.Name}}</a>
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="inline-flex rounded-lg border border-zinc-800 overflow-hidden">
+        <a href="/projects/{{.ID}}?tab=files&scope=container{{if $.FileContainer}}&container={{pathEscape $.FileContainer}}{{end}}"
+           class="px-3 py-1.5 {{if eq $.FileScope "container"}}bg-indigo-600 text-white{{else}}text-panel-muted hover:text-gray-200{{end}}">Container</a>
+        <a href="/projects/{{.ID}}?tab=files&scope=host"
+           class="px-3 py-1.5 border-l border-zinc-800 {{if ne $.FileScope "container"}}bg-indigo-600 text-white{{else}}text-panel-muted hover:text-gray-200{{end}}">Host</a>
+      </div>
+      {{if and (eq $.FileScope "container") $.TermContainers}}
+      <form method="get" action="/projects/{{.ID}}" class="inline-flex items-center gap-1">
+        <input type="hidden" name="tab" value="files">
+        <input type="hidden" name="scope" value="container">
+        <select name="container" onchange="this.form.submit()" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono">
+          {{range $.TermContainers}}
+          <option value="{{.}}" {{if eq . $.FileContainer}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </form>
       {{end}}
     </div>
-    <span class="text-[11px] text-zinc-600 truncate max-w-md" title="{{$.FileRoot}}">{{$.FileRoot}}</span>
+    <span class="text-[11px] text-zinc-500 truncate max-w-md font-mono" title="{{$.FileRoot}}">{{$.FileRoot}}</span>
+  </div>
+
+  {{if eq $.FileScope "container"}}
+  <p class="text-[11px] text-panel-muted">Browsing the <span class="text-emerald-400">running container</span> (same filesystem as Terminal). Switch to Host for <span class="font-mono">/opt/xmanager/projects/…</span> source files.</p>
+  {{else}}
+  <p class="text-[11px] text-panel-muted">Browsing <span class="text-amber-300">host project directory</span> (git checkout / build context). Runtime files like <span class="font-mono">node_modules</span> / <span class="font-mono">.next</span> live in the container.</p>
+  {{end}}
+
+  <div class="flex flex-wrap items-center gap-1 text-panel-muted font-mono text-xs">
+    <a href="/projects/{{.ID}}?tab=files&{{$qs}}" class="text-indigo-300 hover:underline">root</a>
+    {{range $.FileCrumbs}}
+    <span class="text-zinc-600">/</span>
+    <a href="/projects/{{$.Project.ID}}?tab=files&{{$qs}}&path={{pathEscape .Path}}" class="text-indigo-300 hover:underline">{{.Name}}</a>
+    {{end}}
   </div>
 
   {{if $.FileEditPath}}
   <div class="space-y-3">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-gray-200 font-mono">{{$.FileEditPath}}</h2>
-      <a href="/projects/{{.ID}}?tab=files&path={{pathEscape $.FilePath}}" class="text-xs text-panel-muted hover:text-gray-200">← Back</a>
+      <a href="/projects/{{.ID}}?tab=files&{{$qs}}&path={{pathEscape $.FilePath}}" class="text-xs text-panel-muted hover:text-gray-200">← Back</a>
     </div>
     <form method="post" action="/projects/{{.ID}}/files/save" class="space-y-3">
       <input type="hidden" name="path" value="{{$.FileEditPath}}">
+      <input type="hidden" name="scope" value="{{$scope}}">
+      {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
       <textarea name="content" rows="24" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-gray-200 leading-relaxed">{{$.FileEditBody}}</textarea>
       <button class="xm-btn xm-btn-primary text-xs">Save</button>
     </form>
@@ -29,16 +59,22 @@
   <div class="flex flex-wrap gap-2 items-end">
     <form method="post" action="/projects/{{.ID}}/files/upload" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-end">
       <input type="hidden" name="path" value="{{$.FilePath}}">
+      <input type="hidden" name="scope" value="{{$scope}}">
+      {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
       <input type="file" name="file" required class="text-xs text-panel-muted max-w-[14rem]">
       <button class="xm-btn xm-btn-primary text-xs">Upload</button>
     </form>
     <form method="post" action="/projects/{{.ID}}/files/mkdir" class="flex gap-2 items-end">
       <input type="hidden" name="path" value="{{$.FilePath}}">
+      <input type="hidden" name="scope" value="{{$scope}}">
+      {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
       <input name="name" required placeholder="new-folder" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono w-32">
       <button class="xm-btn xm-btn-ghost text-xs">New folder</button>
     </form>
     <form method="post" action="/projects/{{.ID}}/files/create" class="flex gap-2 items-end">
       <input type="hidden" name="path" value="{{$.FilePath}}">
+      <input type="hidden" name="scope" value="{{$scope}}">
+      {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
       <input name="name" required placeholder="file.txt" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono w-32">
       <button class="xm-btn xm-btn-ghost text-xs">New file</button>
     </form>
@@ -59,7 +95,7 @@
         {{if $.FilePath}}
         <tr>
           <td class="py-2 px-3" colspan="5">
-            <a href="/projects/{{.ID}}?tab=files{{if $.FileParent}}&path={{pathEscape $.FileParent}}{{end}}"
+            <a href="/projects/{{.ID}}?tab=files&{{$qs}}{{if $.FileParent}}&path={{pathEscape $.FileParent}}{{end}}"
                class="font-mono text-indigo-300 hover:underline">..</a>
           </td>
         </tr>
@@ -68,7 +104,7 @@
         <tr class="hover:bg-zinc-900/40 align-top">
           <td class="py-2 px-3 font-mono">
             {{if .IsDir}}
-            <a href="/projects/{{$.Project.ID}}?tab=files&path={{pathEscape .RelPath}}" class="text-indigo-300 hover:underline">{{.Name}}/</a>
+            <a href="/projects/{{$.Project.ID}}?tab=files&{{$qs}}&path={{pathEscape .RelPath}}" class="text-indigo-300 hover:underline">{{.Name}}/</a>
             {{else}}
             <span class="text-gray-200">{{.Name}}</span>
             {{end}}
@@ -79,13 +115,15 @@
           <td class="py-2 px-3">
             <div class="flex flex-wrap gap-2 items-center">
               {{if not .IsDir}}
-              <a href="/projects/{{$.Project.ID}}?tab=files&edit=1&path={{pathEscape .RelPath}}" class="text-emerald-400 hover:underline">Edit</a>
-              <a href="/projects/{{$.Project.ID}}/files/download?path={{pathEscape .RelPath}}" class="text-indigo-300 hover:underline">Download</a>
+              <a href="/projects/{{$.Project.ID}}?tab=files&{{$qs}}&edit=1&path={{pathEscape .RelPath}}" class="text-emerald-400 hover:underline">Edit</a>
+              <a href="/projects/{{$.Project.ID}}/files/download?{{$qs}}&path={{pathEscape .RelPath}}" class="text-indigo-300 hover:underline">Download</a>
               {{end}}
               <details class="relative">
                 <summary class="cursor-pointer text-panel-muted hover:text-gray-200 list-none">Rename</summary>
                 <form method="post" action="/projects/{{$.Project.ID}}/files/rename" class="mt-1 flex gap-1">
                   <input type="hidden" name="path" value="{{.RelPath}}">
+                  <input type="hidden" name="scope" value="{{$scope}}">
+                  {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
                   <input name="name" value="{{.Name}}" class="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[11px] font-mono w-28">
                   <button class="text-indigo-300 text-[11px]">OK</button>
                 </form>
@@ -94,12 +132,16 @@
                 <summary class="cursor-pointer text-panel-muted hover:text-gray-200 list-none">Chmod</summary>
                 <form method="post" action="/projects/{{$.Project.ID}}/files/chmod" class="mt-1 flex gap-1">
                   <input type="hidden" name="path" value="{{.RelPath}}">
+                  <input type="hidden" name="scope" value="{{$scope}}">
+                  {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
                   <input name="mode" placeholder="644" class="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[11px] font-mono w-14">
                   <button class="text-indigo-300 text-[11px]">OK</button>
                 </form>
               </details>
               <form method="post" action="/projects/{{$.Project.ID}}/files/delete" onsubmit="return confirm('Delete {{.Name}}?')">
                 <input type="hidden" name="path" value="{{.RelPath}}">
+                <input type="hidden" name="scope" value="{{$scope}}">
+                {{if $.FileContainer}}<input type="hidden" name="container" value="{{$.FileContainer}}">{{end}}
                 <button class="text-red-400 hover:underline">Delete</button>
               </form>
             </div>

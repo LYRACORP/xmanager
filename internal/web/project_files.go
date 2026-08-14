@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -137,7 +138,103 @@ func (h *handler) ensureProjectRoot(p *storage.Project) (string, error) {
 	return root, nil
 }
 
-func (h *handler) fillProjectFiles(data *pageData, p *storage.Project, rel string) error {
+func (h *handler) filesScopeFromRequest(r *http.Request, p *storage.Project) (scope, container string) {
+	scope = strings.TrimSpace(r.FormValue("scope"))
+	if scope == "" {
+		scope = strings.TrimSpace(r.URL.Query().Get("scope"))
+	}
+	container = strings.TrimSpace(r.FormValue("container"))
+	if container == "" {
+		container = strings.TrimSpace(r.URL.Query().Get("container"))
+	}
+	running := []string{}
+	for _, c := range projectContainerCandidates(p) {
+		if containerRunning(c) {
+			running = append(running, c)
+		}
+	}
+	if container != "" {
+		ok := false
+		for _, c := range running {
+			if c == container {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			container = ""
+		}
+	}
+	if container == "" && len(running) > 0 {
+		container = running[0]
+	}
+	if scope != "host" && scope != "container" {
+		if container != "" {
+			scope = "container"
+		} else {
+			scope = "host"
+		}
+	}
+	if scope == "container" && container == "" {
+		scope = "host"
+	}
+	return scope, container
+}
+
+func (h *handler) redirectProjectFiles(w http.ResponseWriter, r *http.Request, id uint, path, flash string) {
+	scope := strings.TrimSpace(r.FormValue("scope"))
+	if scope == "" {
+		scope = strings.TrimSpace(r.URL.Query().Get("scope"))
+	}
+	container := strings.TrimSpace(r.FormValue("container"))
+	if container == "" {
+		container = strings.TrimSpace(r.URL.Query().Get("container"))
+	}
+	u := fmt.Sprintf("/projects/%d?tab=files", id)
+	if scope != "" {
+		u += "&scope=" + urlQueryEscape(scope)
+	}
+	if container != "" {
+		u += "&container=" + urlQueryEscape(container)
+	}
+	if path != "" {
+		u += "&path=" + urlQueryEscape(path)
+	}
+	if flash != "" {
+		u += "&flash=" + urlQueryEscape(flash)
+	}
+	http.Redirect(w, r, u, http.StatusSeeOther)
+}
+
+func (h *handler) fillProjectFiles(data *pageData, p *storage.Project, rel, scope, container string) error {
+	data.FileScope = scope
+	data.FileContainer = container
+	if scope == "container" && container != "" {
+		wd := containerWorkDir(container)
+		list, err := listContainerDir(container, wd, rel)
+		if err != nil {
+			return err
+		}
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].IsDir != list[j].IsDir {
+				return list[i].IsDir
+			}
+			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
+		})
+		data.FileRoot = container + ":" + wd
+		data.FilePath = strings.Trim(rel, "/")
+		data.FileEntries = list
+		data.FileCrumbs = fileCrumbs(rel)
+		if data.FilePath != "" {
+			parent := filepath.ToSlash(filepath.Dir(data.FilePath))
+			if parent == "." {
+				parent = ""
+			}
+			data.FileParent = parent
+		}
+		return nil
+	}
+
 	root, err := h.ensureProjectRoot(p)
 	if err != nil {
 		return err
@@ -199,21 +296,29 @@ func (h *handler) fillProjectFiles(data *pageData, p *storage.Project, rel strin
 	return nil
 }
 
-func (h *handler) redirectProjectFiles(w http.ResponseWriter, r *http.Request, id uint, path, flash string) {
-	u := fmt.Sprintf("/projects/%d?tab=files", id)
-	if path != "" {
-		u += "&path=" + urlQueryEscape(path)
-	}
-	if flash != "" {
-		u += "&flash=" + urlQueryEscape(flash)
-	}
-	http.Redirect(w, r, u, http.StatusSeeOther)
-}
-
 func (h *handler) getNodeProjectFilesDownload(w http.ResponseWriter, r *http.Request) {
 	p, err := h.loadProjectForFiles(r)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	rel := r.URL.Query().Get("path")
+	if scope == "container" {
+		wd := containerWorkDir(container)
+		abs, err := resolveContainerPath(wd, rel)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		data, err := dockerExecBytes(container, "cat", abs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, path.Base(abs)))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(data)
 		return
 	}
 	root, err := h.ensureProjectRoot(p)
@@ -221,7 +326,6 @@ func (h *handler) getNodeProjectFilesDownload(w http.ResponseWriter, r *http.Req
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	rel := r.URL.Query().Get("path")
 	abs, err := resolveUnderRoot(root, rel)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -248,16 +352,7 @@ func (h *handler) postNodeProjectFilesUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	relDir := r.FormValue("path")
-	root, err := h.ensureProjectRoot(p)
-	if err != nil {
-		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
-		return
-	}
-	dirAbs, err := resolveUnderRoot(root, relDir)
-	if err != nil {
-		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
-		return
-	}
+	scope, container := h.filesScopeFromRequest(r, p)
 	file, hdr, err := r.FormFile("file")
 	if err != nil {
 		h.redirectProjectFiles(w, r, p.ID, relDir, "file required")
@@ -267,6 +362,24 @@ func (h *handler) postNodeProjectFilesUpload(w http.ResponseWriter, r *http.Requ
 	name := filepath.Base(hdr.Filename)
 	if name == "" || name == "." || name == ".." {
 		h.redirectProjectFiles(w, r, p.ID, relDir, "invalid filename")
+		return
+	}
+	if scope == "container" {
+		if err := uploadContainerFile(container, containerWorkDir(container), relDir, name, file); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, relDir, "Uploaded "+name)
+		return
+	}
+	root, err := h.ensureProjectRoot(p)
+	if err != nil {
+		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
+		return
+	}
+	dirAbs, err := resolveUnderRoot(root, relDir)
+	if err != nil {
+		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
 		return
 	}
 	dest := filepath.Join(dirAbs, name)
@@ -304,14 +417,23 @@ func (h *handler) postNodeProjectFilesMkdir(w http.ResponseWriter, r *http.Reque
 		h.redirectProjectFiles(w, r, p.ID, relDir, "folder name required")
 		return
 	}
+	child := name
+	if relDir != "" {
+		child = strings.Trim(relDir, "/") + "/" + name
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	if scope == "container" {
+		if err := mkdirContainer(container, containerWorkDir(container), child); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, relDir, "Folder created")
+		return
+	}
 	root, err := h.ensureProjectRoot(p)
 	if err != nil {
 		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
 		return
-	}
-	child := name
-	if relDir != "" {
-		child = strings.Trim(relDir, "/") + "/" + name
 	}
 	abs, err := resolveUnderRoot(root, child)
 	if err != nil {
@@ -338,14 +460,23 @@ func (h *handler) postNodeProjectFilesCreate(w http.ResponseWriter, r *http.Requ
 		h.redirectProjectFiles(w, r, p.ID, relDir, "file name required")
 		return
 	}
+	child := name
+	if relDir != "" {
+		child = strings.Trim(relDir, "/") + "/" + name
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	if scope == "container" {
+		if err := createContainerFile(container, containerWorkDir(container), child); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, relDir, "File created")
+		return
+	}
 	root, err := h.ensureProjectRoot(p)
 	if err != nil {
 		h.redirectProjectFiles(w, r, p.ID, relDir, err.Error())
 		return
-	}
-	child := name
-	if relDir != "" {
-		child = strings.Trim(relDir, "/") + "/" + name
 	}
 	abs, err := resolveUnderRoot(root, child)
 	if err != nil {
@@ -370,32 +501,51 @@ func (h *handler) postNodeProjectFilesSave(w http.ResponseWriter, r *http.Reques
 	}
 	rel := r.FormValue("path")
 	content := r.FormValue("content")
+	scope, container := h.filesScopeFromRequest(r, p)
+	editURL := func(flash string) string {
+		u := fmt.Sprintf("/projects/%d?tab=files&edit=1&path=%s&scope=%s", p.ID, urlQueryEscape(rel), urlQueryEscape(scope))
+		if container != "" {
+			u += "&container=" + urlQueryEscape(container)
+		}
+		if flash != "" {
+			u += "&flash=" + urlQueryEscape(flash)
+		}
+		return u
+	}
 	if len(content) > maxFileEditBytes {
-		http.Redirect(w, r, fmt.Sprintf("/projects/%d?tab=files&edit=1&path=%s&flash=%s", p.ID, urlQueryEscape(rel), urlQueryEscape("content exceeds 10 MiB")), http.StatusSeeOther)
-		return
-	}
-	root, err := h.ensureProjectRoot(p)
-	if err != nil {
-		h.redirectProjectFiles(w, r, p.ID, filepath.Dir(rel), err.Error())
-		return
-	}
-	abs, err := resolveUnderRoot(root, rel)
-	if err != nil {
-		h.redirectProjectFiles(w, r, p.ID, filepath.Dir(rel), err.Error())
-		return
-	}
-	st, err := os.Stat(abs)
-	if err != nil || st.IsDir() {
-		h.redirectProjectFiles(w, r, p.ID, filepath.Dir(rel), "file not found")
-		return
-	}
-	if err := os.WriteFile(abs, []byte(content), st.Mode().Perm()); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/projects/%d?tab=files&edit=1&path=%s&flash=%s", p.ID, urlQueryEscape(rel), urlQueryEscape(err.Error())), http.StatusSeeOther)
+		http.Redirect(w, r, editURL("content exceeds 10 MiB"), http.StatusSeeOther)
 		return
 	}
 	parent := filepath.ToSlash(filepath.Dir(rel))
 	if parent == "." {
 		parent = ""
+	}
+	if scope == "container" {
+		if err := writeContainerFile(container, containerWorkDir(container), rel, []byte(content)); err != nil {
+			http.Redirect(w, r, editURL(err.Error()), http.StatusSeeOther)
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, parent, "Saved "+filepath.Base(rel))
+		return
+	}
+	root, err := h.ensureProjectRoot(p)
+	if err != nil {
+		h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
+		return
+	}
+	abs, err := resolveUnderRoot(root, rel)
+	if err != nil {
+		h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
+		return
+	}
+	st, err := os.Stat(abs)
+	if err != nil || st.IsDir() {
+		h.redirectProjectFiles(w, r, p.ID, parent, "file not found")
+		return
+	}
+	if err := os.WriteFile(abs, []byte(content), st.Mode().Perm()); err != nil {
+		http.Redirect(w, r, editURL(err.Error()), http.StatusSeeOther)
+		return
 	}
 	h.redirectProjectFiles(w, r, p.ID, parent, "Saved "+filepath.Base(rel))
 }
@@ -417,6 +567,19 @@ func (h *handler) postNodeProjectFilesRename(w http.ResponseWriter, r *http.Requ
 		h.redirectProjectFiles(w, r, p.ID, parent, "new name required")
 		return
 	}
+	newRel := newName
+	if parent != "" {
+		newRel = parent + "/" + newName
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	if scope == "container" {
+		if err := renameContainerPath(container, containerWorkDir(container), rel, newRel); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, parent, "Renamed")
+		return
+	}
 	root, err := h.ensureProjectRoot(p)
 	if err != nil {
 		h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
@@ -426,10 +589,6 @@ func (h *handler) postNodeProjectFilesRename(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
 		return
-	}
-	newRel := newName
-	if parent != "" {
-		newRel = parent + "/" + newName
 	}
 	newAbs, err := resolveUnderRoot(root, newRel)
 	if err != nil {
@@ -454,6 +613,15 @@ func (h *handler) postNodeProjectFilesDelete(w http.ResponseWriter, r *http.Requ
 	parent := filepath.ToSlash(filepath.Dir(rel))
 	if parent == "." {
 		parent = ""
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	if scope == "container" {
+		if err := deleteContainerPath(container, containerWorkDir(container), rel); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, parent, "Deleted")
+		return
 	}
 	root, err := h.ensureProjectRoot(p)
 	if err != nil {
@@ -492,6 +660,15 @@ func (h *handler) postNodeProjectFilesChmod(w http.ResponseWriter, r *http.Reque
 	modeVal, err := strconv.ParseUint(modeStr, 8, 32)
 	if err != nil || modeVal > 0o777 {
 		h.redirectProjectFiles(w, r, p.ID, parent, "mode must be octal like 644 or 755")
+		return
+	}
+	scope, container := h.filesScopeFromRequest(r, p)
+	if scope == "container" {
+		if err := chmodContainerPath(container, containerWorkDir(container), rel, modeStr); err != nil {
+			h.redirectProjectFiles(w, r, p.ID, parent, err.Error())
+			return
+		}
+		h.redirectProjectFiles(w, r, p.ID, parent, "Permissions updated")
 		return
 	}
 	root, err := h.ensureProjectRoot(p)

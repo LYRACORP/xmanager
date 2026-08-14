@@ -28,3 +28,20 @@ func TestResolveUnderRoot(t *testing.T) {
 		t.Fatalf("got %q err=%v", got, err)
 	}
 }
+
+func TestResolveContainerPath(t *testing.T) {
+	got, err := resolveContainerPath("/app", "")
+	if err != nil || got != "/app" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+	got, err = resolveContainerPath("/app", "src/index.js")
+	if err != nil || got != "/app/src/index.js" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+	if _, err := resolveContainerPath("/app", "../etc/passwd"); err == nil {
+		t.Fatal("expected escape error")
+	}
+	if _, err := resolveContainerPath("/app", "/etc/passwd"); err == nil {
+		t.Fatal("expected absolute escape error")
+	}
+}

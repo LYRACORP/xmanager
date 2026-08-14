@@ -451,36 +451,61 @@ func (h *handler) getNodeProjectDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if tab == "files" {
 		rel := r.URL.Query().Get("path")
+		scope, container := h.filesScopeFromRequest(r, p)
+		data.FileScope = scope
+		data.FileContainer = container
+		data.TermContainers = nil
+		for _, c := range projectContainerCandidates(p) {
+			if containerRunning(c) {
+				data.TermContainers = append(data.TermContainers, c)
+			}
+		}
 		if r.URL.Query().Get("edit") == "1" {
-			root, err := h.ensureProjectRoot(p)
-			if err != nil {
-				data.Flash = err.Error()
+			data.FileEditPath = strings.Trim(rel, "/")
+			data.FilePath = filepath.ToSlash(filepath.Dir(data.FileEditPath))
+			if data.FilePath == "." {
+				data.FilePath = ""
+			}
+			data.FileCrumbs = fileCrumbs(data.FilePath)
+			if data.FilePath != "" {
+				parent := filepath.ToSlash(filepath.Dir(data.FilePath))
+				if parent == "." {
+					parent = ""
+				}
+				data.FileParent = parent
+			}
+			if scope == "container" {
+				wd := containerWorkDir(container)
+				data.FileRoot = container + ":" + wd
+				raw, err := readContainerFile(container, wd, rel)
+				if err != nil {
+					data.Flash = err.Error()
+				} else if isLikelyBinary(raw) {
+					data.Flash = "binary file — download instead"
+				} else {
+					data.FileEditBody = string(raw)
+				}
 			} else {
-				data.FileRoot = root
-				data.FileEditPath = strings.Trim(rel, "/")
-				data.FilePath = filepath.ToSlash(filepath.Dir(data.FileEditPath))
-				if data.FilePath == "." {
-					data.FilePath = ""
-				}
-				data.FileCrumbs = fileCrumbs(data.FilePath)
-				data.FileParent = ""
-				if data.FilePath != "" {
-					parent := filepath.ToSlash(filepath.Dir(data.FilePath))
-					if parent == "." {
-						parent = ""
-					}
-					data.FileParent = parent
-				}
-				body, err := loadFileForEdit(root, rel)
+				root, err := h.ensureProjectRoot(p)
 				if err != nil {
 					data.Flash = err.Error()
 				} else {
-					data.FileEditBody = body
+					data.FileRoot = root
+					body, err := loadFileForEdit(root, rel)
+					if err != nil {
+						data.Flash = err.Error()
+					} else {
+						data.FileEditBody = body
+					}
 				}
 			}
-		} else if err := h.fillProjectFiles(&data, p, rel); err != nil {
+		} else if err := h.fillProjectFiles(&data, p, rel, scope, container); err != nil {
 			data.Flash = err.Error()
-			data.FileRoot = h.projectFileRoot(p)
+			if scope == "container" && container != "" {
+				data.FileRoot = container + ":" + containerWorkDir(container)
+			} else {
+				data.FileRoot = h.projectFileRoot(p)
+			}
 			data.FilePath = strings.Trim(rel, "/")
 		}
 	}
