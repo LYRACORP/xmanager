@@ -1,0 +1,156 @@
+{{define "node_backup"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Backup</h1>
+      <p class="text-panel-muted text-xs mt-0.5">Dump managed databases · deliver via download, FTP, SCP, Telegram</p>
+    </div>
+    <a href="/services" class="text-xs text-indigo-300 hover:underline">Need PITR? Enable Databasus →</a>
+  </div>
+
+  {{if .Flash}}
+  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  {{end}}
+
+  <form method="post" action="/backup/run" class="xm-card p-5 space-y-4">
+    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Databases</p>
+    {{if .BackupTargets}}
+    <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+      {{range .BackupTargets}}
+      <label class="flex items-center gap-2 text-xs font-mono bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 cursor-pointer hover:border-zinc-600">
+        <input type="checkbox" name="db" value="{{.Key}}" class="rounded border-zinc-600">
+        <span class="text-indigo-300">{{.Type}}</span>
+        <span class="text-gray-200 truncate">{{.Name}}</span>
+      </label>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No dumpable databases found (postgres / mysql / mariadb / mongodb).</p>
+    {{end}}
+
+    {{if .BackupDestinations}}
+    <div>
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold mb-2">Also send to</p>
+      <div class="flex flex-wrap gap-3">
+        {{range .BackupDestinations}}
+        <label class="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" name="dest" value="{{.ID}}" class="rounded border-zinc-600">
+          <span class="font-mono text-indigo-300">{{.Type}}</span>
+          <span>{{.Name}}</span>
+        </label>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    <div class="flex flex-wrap gap-2">
+      <button class="xm-btn xm-btn-primary text-xs" {{if not .BackupTargets}}disabled{{end}}>Backup selected</button>
+      <button name="all" value="1" class="xm-btn xm-btn-ghost text-xs" {{if not .BackupTargets}}disabled{{end}}>Backup all</button>
+    </div>
+    <p class="text-[11px] text-zinc-500">Files are stored under <span class="font-mono text-zinc-400">/opt/xmanager/backups</span>. Redis &amp; ClickHouse are not dumpable here.</p>
+  </form>
+
+  <div class="xm-card p-5 space-y-3">
+    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Add destination</p>
+    <form method="post" action="/backup/destinations" class="grid md:grid-cols-3 gap-2 items-end">
+      <input name="name" required placeholder="Name" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <select name="type" id="dest-type" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs" onchange="xmDestType(this.value)">
+        <option value="ftp">FTP</option>
+        <option value="scp">SCP</option>
+        <option value="telegram">Telegram</option>
+      </select>
+      <button class="xm-btn xm-btn-primary text-xs">Save</button>
+      <input name="host" placeholder="Host" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="port" placeholder="Port (21 / 22)" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="user" placeholder="User" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="password" type="password" placeholder="Password" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="path" placeholder="Remote path" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="key_path" placeholder="SSH key path (optional)" class="dest-scp hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <select name="channel_id" class="dest-tg hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+        <option value="">Telegram channel (Alerts)…</option>
+        {{range .BackupTelegramChannels}}
+        <option value="{{.ID}}">{{.Name}}</option>
+        {{end}}
+      </select>
+      <input name="bot_token" placeholder="Or bot token" class="dest-tg hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="chat_id" placeholder="Or chat id" class="dest-tg hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+    </form>
+    {{if .BackupDestinations}}
+    <ul class="divide-y divide-zinc-800 border border-zinc-800 rounded-lg mt-3">
+      {{range .BackupDestinations}}
+      <li class="flex items-center justify-between px-3 py-2 text-xs">
+        <span><span class="font-mono text-indigo-300">{{.Type}}</span> · {{.Name}}</span>
+        <form method="post" action="/backup/destinations/{{.ID}}/delete" onsubmit="return confirm('Delete destination?')">
+          <button class="text-red-400 hover:underline">Delete</button>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+  </div>
+
+  <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+    <table class="w-full text-xs text-left">
+      <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+        <tr>
+          <th class="py-2 px-3 font-medium">When</th>
+          <th class="py-2 px-3 font-medium">DB</th>
+          <th class="py-2 px-3 font-medium">Size</th>
+          <th class="py-2 px-3 font-medium">Status</th>
+          <th class="py-2 px-3 font-medium">Destinations</th>
+          <th class="py-2 px-3 font-medium">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-800/80">
+        {{range .BackupHistory}}
+        <tr class="hover:bg-zinc-900/40 align-top">
+          <td class="py-2 px-3 text-panel-muted whitespace-nowrap">{{.BackedAt.Format "2006-01-02 15:04"}}</td>
+          <td class="py-2 px-3 font-mono"><span class="text-indigo-300">{{.Type}}</span> {{.Service}}</td>
+          <td class="py-2 px-3 text-panel-muted">{{.SizeHuman}}</td>
+          <td class="py-2 px-3">
+            {{if eq .Status "success"}}<span class="text-emerald-400">success</span>
+            {{else}}<span class="text-red-400" title="{{.Error}}">{{.Status}}</span>{{end}}
+          </td>
+          <td class="py-2 px-3 font-mono text-panel-muted">{{.Destinations}}</td>
+          <td class="py-2 px-3">
+            <div class="flex flex-wrap gap-2 items-center">
+              {{if eq .Status "success"}}
+              <a href="/backup/{{.ID}}/download" class="text-indigo-300 hover:underline">Download</a>
+              {{if $.BackupDestinations}}
+              <details>
+                <summary class="cursor-pointer text-panel-muted hover:text-gray-200 list-none">Resend</summary>
+                <form method="post" action="/backup/{{.ID}}/resend" class="mt-1 flex flex-wrap gap-2">
+                  {{range $.BackupDestinations}}
+                  <label class="text-[11px]"><input type="checkbox" name="dest" value="{{.ID}}"> {{.Name}}</label>
+                  {{end}}
+                  <button class="text-indigo-300 text-[11px]">OK</button>
+                </form>
+              </details>
+              {{end}}
+              {{end}}
+              <form method="post" action="/backup/{{.ID}}/delete" onsubmit="return confirm('Delete backup?')">
+                <button class="text-red-400 hover:underline">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="py-8 px-3 text-center text-panel-muted">No backups yet</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+function xmDestType(v) {
+  document.querySelectorAll('.dest-ftp,.dest-scp,.dest-tg').forEach(el => el.classList.add('hidden'));
+  if (v === 'ftp') document.querySelectorAll('.dest-ftp').forEach(el => el.classList.remove('hidden'));
+  if (v === 'scp') document.querySelectorAll('.dest-ftp,.dest-scp').forEach(el => el.classList.remove('hidden'));
+  if (v === 'telegram') document.querySelectorAll('.dest-tg').forEach(el => el.classList.remove('hidden'));
+}
+xmDestType(document.getElementById('dest-type').value);
+</script>
+{{template "foot" .}}
+{{end}}

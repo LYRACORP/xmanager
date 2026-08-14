@@ -96,15 +96,45 @@ type AISession struct {
 
 type Backup struct {
 	gorm.Model
-	ServerID uint      `gorm:"index;not null" json:"server_id"`
-	Server   Server    `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	Type     string    `json:"type"`
-	Service  string    `json:"service"`
-	Path     string    `json:"path"`
-	Size     int64     `json:"size"`
-	Schedule string    `json:"schedule"`
-	Status   string    `json:"status"`
-	BackedAt time.Time `json:"backed_at"`
+	ServerID     uint      `gorm:"index;not null" json:"server_id"`
+	Server       Server    `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Type         string    `json:"type"`
+	Service      string    `json:"service"`
+	Path         string    `json:"path"`
+	Filename     string    `json:"filename"`
+	Size         int64     `json:"size"`
+	Schedule     string    `json:"schedule"`
+	Status       string    `json:"status"`
+	Destinations string    `json:"destinations"` // comma-separated: local,ftp:1,scp:2,telegram:3
+	Error        string    `gorm:"type:text" json:"error"`
+	BackedAt     time.Time `json:"backed_at"`
+}
+
+// BackupDestination is a saved FTP/SCP/Telegram delivery target.
+type BackupDestination struct {
+	gorm.Model
+	ServerID   uint   `gorm:"index;not null" json:"server_id"`
+	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Name       string `gorm:"not null" json:"name"`
+	Type       string `gorm:"not null" json:"type"` // ftp, scp, telegram
+	ConfigJSON string `gorm:"type:text" json:"config_json"`
+	Enabled    bool   `gorm:"default:true" json:"enabled"`
+}
+
+// ActivityLog records panel and TUI mutations for the Logs UI.
+type ActivityLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	ServerID  uint      `gorm:"index" json:"server_id"`
+	Source    string    `gorm:"index;size:16" json:"source"` // web | tui
+	Actor     string    `gorm:"size:128" json:"actor"`
+	Action    string    `gorm:"size:64" json:"action"`
+	Method    string    `gorm:"size:16" json:"method"`
+	Path      string    `gorm:"size:512" json:"path"`
+	Resource  string    `gorm:"size:256" json:"resource"`
+	Detail    string    `gorm:"type:text" json:"detail"`
+	Status    string    `gorm:"size:16" json:"status"` // ok | error
+	IP        string    `gorm:"size:64" json:"ip"`
 }
 
 type AIConfigRecord struct {

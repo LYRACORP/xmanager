@@ -5,8 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/lyracorp/xmanager/internal/activity"
 )
 
 const sessionCookieName = "xm_session"
@@ -115,6 +118,64 @@ func (h *handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-		next(w, r.WithContext(withSession(r.Context(), sess)))
+		r = r.WithContext(withSession(r.Context(), sess))
+		if shouldAuditRequest(r) {
+			rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next(rw, r)
+			status := "ok"
+			if rw.status >= 400 {
+				status = "error"
+			}
+			activity.Log(h.opts.DB, activity.Entry{
+				ServerID: h.localServerID(),
+				Source:   "web",
+				Actor:    sess.Username,
+				Action:   r.Method,
+				Method:   r.Method,
+				Path:     r.URL.Path,
+				Detail:   r.URL.RawQuery,
+				Status:   status,
+				IP:       clientIP(r),
+			})
+			return
+		}
+		next(w, r)
 	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func shouldAuditRequest(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return false
+	}
+	path := r.URL.Path
+	if strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/api/node/metrics") {
+		return false
+	}
+	if strings.Contains(path, "/terminal/ws") {
+		return false
+	}
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	host := r.RemoteAddr
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		return host[:i]
+	}
+	return host
 }

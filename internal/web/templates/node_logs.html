@@ -1,0 +1,79 @@
+{{define "node_logs"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight">Logs</h1>
+    <p class="text-panel-muted text-xs mt-0.5">Activity audit — panel and TUI actions</p>
+  </div>
+
+  {{if .Flash}}
+  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  {{end}}
+
+  <form method="get" action="/logs" class="xm-card p-4 flex flex-wrap gap-2 items-end">
+    <div>
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Source</label>
+      <select name="source" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
+        <option value="" {{if not .LogsSource}}selected{{end}}>all</option>
+        <option value="web" {{if eq .LogsSource "web"}}selected{{end}}>web</option>
+        <option value="tui" {{if eq .LogsSource "tui"}}selected{{end}}>tui</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Range</label>
+      <select name="range" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
+        <option value="24h" {{if eq .LogsRange "24h"}}selected{{end}}>24h</option>
+        <option value="7d" {{if eq .LogsRange "7d"}}selected{{end}}>7d</option>
+        <option value="all" {{if eq .LogsRange "all"}}selected{{end}}>all</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Actor</label>
+      <input name="actor" value="{{.LogsActor}}" placeholder="username" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs w-28">
+    </div>
+    <div class="flex-1 min-w-[10rem]">
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Search</label>
+      <input name="q" value="{{.LogsQuery}}" placeholder="path, action, detail…" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
+    </div>
+    <button class="xm-btn xm-btn-primary text-xs">Filter</button>
+  </form>
+
+  <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+    <table class="w-full text-xs text-left">
+      <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+        <tr>
+          <th class="py-2 px-3 font-medium">Time</th>
+          <th class="py-2 px-3 font-medium">Source</th>
+          <th class="py-2 px-3 font-medium">Actor</th>
+          <th class="py-2 px-3 font-medium">Action</th>
+          <th class="py-2 px-3 font-medium">Path / resource</th>
+          <th class="py-2 px-3 font-medium">Detail</th>
+          <th class="py-2 px-3 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-800/80">
+        {{range .ActivityLogs}}
+        <tr class="hover:bg-zinc-900/40 align-top">
+          <td class="py-2 px-3 text-panel-muted whitespace-nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td class="py-2 px-3 font-mono text-indigo-300">{{.Source}}</td>
+          <td class="py-2 px-3">{{.Actor}}</td>
+          <td class="py-2 px-3 font-mono">{{if .Method}}{{.Method}} {{end}}{{.Action}}</td>
+          <td class="py-2 px-3 font-mono text-panel-muted break-all max-w-xs">
+            {{.Path}}{{if .Resource}} <span class="text-zinc-500">· {{.Resource}}</span>{{end}}
+          </td>
+          <td class="py-2 px-3 text-panel-muted break-all max-w-sm">{{.Detail}}</td>
+          <td class="py-2 px-3">
+            {{if eq .Status "ok"}}<span class="text-emerald-400">ok</span>
+            {{else}}<span class="text-red-400">{{.Status}}</span>{{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="py-8 px-3 text-center text-panel-muted">No activity yet</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

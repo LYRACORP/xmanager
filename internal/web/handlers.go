@@ -215,6 +215,17 @@ type pageData struct {
 	StorageTotalObjects int64
 	StorageTotalBytes   int64
 	StorageTotalHuman   string
+	// Backup
+	BackupTargets           []backupTargetView
+	BackupDestinations      []storage.BackupDestination
+	BackupHistory           []backupHistoryView
+	BackupTelegramChannels  []storage.AlertChannel
+	// Activity logs
+	ActivityLogs []storage.ActivityLog
+	LogsSource   string
+	LogsActor    string
+	LogsQuery    string
+	LogsRange    string
 }
 
 func (h *handler) register(mux *http.ServeMux) {

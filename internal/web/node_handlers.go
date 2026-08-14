@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/backup"
 	"github.com/lyracorp/xmanager/internal/cron"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/docker"
@@ -93,6 +94,16 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /databases/link", h.requireAuth(h.postNodeDatabaseLink))
 	mux.HandleFunc("POST /databases/tools/adminer", h.requireAuth(h.postNodeDatabaseToolAdminer))
 	mux.HandleFunc("POST /databases/tools/pgadmin", h.requireAuth(h.postNodeDatabaseToolPgAdmin))
+
+	mux.HandleFunc("GET /backup", h.requireAuth(h.getNodeBackup))
+	mux.HandleFunc("POST /backup/run", h.requireAuth(h.postNodeBackupRun))
+	mux.HandleFunc("POST /backup/destinations", h.requireAuth(h.postNodeBackupDestination))
+	mux.HandleFunc("POST /backup/destinations/{id}/delete", h.requireAuth(h.postNodeBackupDestinationDelete))
+	mux.HandleFunc("GET /backup/{id}/download", h.requireAuth(h.getNodeBackupDownload))
+	mux.HandleFunc("POST /backup/{id}/delete", h.requireAuth(h.postNodeBackupDelete))
+	mux.HandleFunc("POST /backup/{id}/resend", h.requireAuth(h.postNodeBackupResend))
+
+	mux.HandleFunc("GET /logs", h.requireAuth(h.getNodeLogs))
 
 	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeServices))
 	mux.HandleFunc("POST /services/{name}/enable", h.requireAuth(h.postNodeServiceEnable))
@@ -725,13 +736,16 @@ func (h *handler) postNodeDatabaseBackup(w http.ResponseWriter, r *http.Request)
 	_ = r.ParseForm()
 	t := dbmanager.DBType(r.FormValue("db_type"))
 	name := r.FormValue("name")
-	dest := fmt.Sprintf("/opt/xmanager/backups/%s-%s-%d.sql", t, name, time.Now().Unix())
-	_, _ = h.localExec().Run("mkdir -p /opt/xmanager/backups")
-	mgr := dbmanager.NewManager(t, h.localExec())
-	if mgr != nil {
-		_ = mgr.Backup(name, dest)
+	sid := h.localServerID()
+	res := backup.RunOne(h.localExec(), t, name, backup.DefaultDir)
+	backup.Record(h.opts.DB, sid, res, "local")
+	flash := "Backup saved"
+	if res.Err != nil {
+		flash = "Backup failed: " + res.Err.Error()
+	} else if res.Filename != "" {
+		flash = "Backup saved: " + res.Filename
 	}
-	http.Redirect(w, r, "/databases", http.StatusSeeOther)
+	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeDatabaseLink(w http.ResponseWriter, r *http.Request) {

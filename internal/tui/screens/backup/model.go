@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/activity"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -367,8 +368,16 @@ func (m *Model) saveNewBackup() tea.Cmd {
 			BackedAt: time.Now(),
 		}
 		if err := m.ctx.DB.Create(&b).Error; err != nil {
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+				Action: "backup.create", Resource: svc, Detail: err.Error(), Status: "error",
+			})
 			return backupsLoadedMsg{err: err}
 		}
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+			Action: "backup.create", Resource: svc, Detail: path, Status: "ok",
+		})
 		return m.loadBackups()
 	}
 }
@@ -388,8 +397,16 @@ func (m *Model) doDelete() tea.Cmd {
 	id := m.editBackupID
 	return func() tea.Msg {
 		if err := m.ctx.DB.Delete(&storage.Backup{}, id).Error; err != nil {
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+				Action: "backup.delete", Resource: fmt.Sprintf("%d", id), Detail: err.Error(), Status: "error",
+			})
 			return backupsLoadedMsg{err: err}
 		}
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+			Action: "backup.delete", Resource: fmt.Sprintf("%d", id), Status: "ok",
+		})
 		return m.loadBackups()
 	}
 }

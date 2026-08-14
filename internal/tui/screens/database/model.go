@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/activity"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -510,8 +511,16 @@ func (m *Model) runCreate(name string) tea.Cmd {
 		}
 		mgr := m.managerFor(eng, ex)
 		if err := mgr.CreateDatabase(name); err != nil {
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: sid, Source: "tui", Actor: "tui", Action: "db.create",
+				Resource: name, Detail: err.Error(), Status: "error",
+			})
 			return actionDoneMsg{err: err.Error()}
 		}
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: sid, Source: "tui", Actor: "tui", Action: "db.create",
+			Resource: name, Status: "ok",
+		})
 		return actionDoneMsg{out: fmt.Sprintf("Created database %q on %s.", name, engineLabel(eng))}
 	}
 }
@@ -526,8 +535,16 @@ func (m *Model) runDrop(name string) tea.Cmd {
 		}
 		mgr := m.managerFor(eng, ex)
 		if err := mgr.DropDatabase(name); err != nil {
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: sid, Source: "tui", Actor: "tui", Action: "db.drop",
+				Resource: name, Detail: err.Error(), Status: "error",
+			})
 			return actionDoneMsg{err: err.Error()}
 		}
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: sid, Source: "tui", Actor: "tui", Action: "db.drop",
+			Resource: name, Status: "ok",
+		})
 		return actionDoneMsg{out: fmt.Sprintf("Dropped database %q on %s.", name, engineLabel(eng))}
 	}
 }
@@ -543,8 +560,16 @@ func (m *Model) runBackup(name string) tea.Cmd {
 		}
 		mgr := m.managerFor(eng, ex)
 		if err := mgr.Backup(name, path); err != nil {
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: sid, Source: "tui", Actor: "tui", Action: "db.backup",
+				Resource: name, Detail: err.Error(), Status: "error",
+			})
 			return actionDoneMsg{err: err.Error()}
 		}
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: sid, Source: "tui", Actor: "tui", Action: "db.backup",
+			Resource: name, Detail: path, Status: "ok",
+		})
 		return actionDoneMsg{out: fmt.Sprintf("Backup of %q written under %s (engine-specific extension).", name, path)}
 	}
 }

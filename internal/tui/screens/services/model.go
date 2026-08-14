@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/activity"
 	svcs "github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/services/bugsink"
 	"github.com/lyracorp/xmanager/internal/services/databasus"
@@ -132,6 +133,11 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.busy = false
 		if msg.err != nil {
 			m.message = fmt.Sprintf("%s failed: %v", msg.serviceType, msg.err)
+			activity.Log(m.ctx.DB, activity.Entry{
+				ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+				Action: "service.toggle", Resource: msg.serviceType,
+				Detail: msg.err.Error(), Status: "error",
+			})
 			return m, m.load()
 		}
 		action := "disabled"
@@ -139,6 +145,11 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			action = "enabled"
 		}
 		m.message = fmt.Sprintf("%s %s (%s)", msg.serviceType, action, msg.status)
+		activity.Log(m.ctx.DB, activity.Entry{
+			ServerID: m.ctx.ServerID, Source: "tui", Actor: "tui",
+			Action: "service." + action, Resource: msg.serviceType,
+			Detail: msg.status, Status: "ok",
+		})
 		return m, m.load()
 	case tea.KeyMsg:
 		if m.busy {
