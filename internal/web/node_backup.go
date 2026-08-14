@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lyracorp/xmanager/internal/backup"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
@@ -23,6 +24,12 @@ type backupTargetView struct {
 type backupHistoryView struct {
 	storage.Backup
 	SizeHuman string
+}
+
+type backupScheduleView struct {
+	storage.Backup
+	LastRun string
+	Target  string
 }
 
 func (h *handler) getNodeBackup(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +58,23 @@ func (h *handler) getNodeBackup(w http.ResponseWriter, r *http.Request) {
 	h.opts.DB.Where("type = ? AND enabled = ?", "telegram", true).Find(&channels)
 	data.BackupTelegramChannels = channels
 
+	var schedules []storage.Backup
+	h.opts.DB.Where("server_id = ? AND status = ?", sid, backup.StatusScheduled).Order("id desc").Find(&schedules)
+	for _, b := range schedules {
+		target := b.Type + " / " + b.Service
+		if b.Type == "all" || b.Service == "__all__" {
+			target = "all dumpable databases"
+		}
+		data.BackupSchedules = append(data.BackupSchedules, backupScheduleView{
+			Backup:  b,
+			LastRun: backup.FormatAge(b.BackedAt),
+			Target:  target,
+		})
+	}
+
 	var hist []storage.Backup
-	h.opts.DB.Where("server_id = ?", sid).Order("backed_at desc").Limit(100).Find(&hist)
+	h.opts.DB.Where("server_id = ? AND status != ?", sid, backup.StatusScheduled).
+		Order("backed_at desc").Limit(100).Find(&hist)
 	for _, b := range hist {
 		data.BackupHistory = append(data.BackupHistory, backupHistoryView{
 			Backup:    b,
@@ -251,4 +273,71 @@ func (h *handler) postNodeBackupResend(w http.ResponseWriter, r *http.Request) {
 		flash = "Resend errors: " + strings.Join(errs, "; ")
 	}
 	http.Redirect(w, r, "/backup?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeBackupSchedule(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	sid := h.localServerID()
+	schedule := strings.TrimSpace(r.FormValue("schedule"))
+	if custom := strings.TrimSpace(r.FormValue("schedule_custom")); custom != "" {
+		schedule = custom
+	}
+	target := strings.TrimSpace(r.FormValue("target"))
+	dbType, service := "all", "__all__"
+	if target != "" && target != "all" {
+		parts := strings.SplitN(target, ":", 2)
+		if len(parts) == 2 {
+			dbType, service = parts[0], parts[1]
+		}
+	}
+	var destParts []string
+	for _, idStr := range r.Form["dest"] {
+		id, _ := strconv.ParseUint(idStr, 10, 64)
+		if id > 0 {
+			destParts = append(destParts, strconv.FormatUint(id, 10))
+		}
+	}
+	_, err := backup.CreateSchedule(h.opts.DB, sid, dbType, service, schedule, strings.Join(destParts, ","))
+	if err != nil {
+		http.Redirect(w, r, "/backup?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/backup?flash="+urlQueryEscape("Schedule saved — first run on next minute tick"), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeBackupScheduleDelete(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	h.opts.DB.Where("server_id = ? AND id = ? AND status = ?", h.localServerID(), id, backup.StatusScheduled).
+		Delete(&storage.Backup{})
+	http.Redirect(w, r, "/backup?flash="+urlQueryEscape("Schedule deleted"), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeBackupScheduleUpdate(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	schedule := strings.TrimSpace(r.FormValue("schedule"))
+	if custom := strings.TrimSpace(r.FormValue("schedule_custom")); custom != "" {
+		schedule = custom
+	}
+	if !backup.ValidSchedule(schedule) {
+		http.Redirect(w, r, "/backup?flash="+urlQueryEscape("invalid schedule"), http.StatusSeeOther)
+		return
+	}
+	h.opts.DB.Model(&storage.Backup{}).
+		Where("server_id = ? AND id = ? AND status = ?", h.localServerID(), id, backup.StatusScheduled).
+		Update("schedule", schedule)
+	http.Redirect(w, r, "/backup?flash="+urlQueryEscape("Schedule updated"), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeBackupScheduleRun(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	var job storage.Backup
+	if err := h.opts.DB.Where("server_id = ? AND id = ? AND status = ?", h.localServerID(), id, backup.StatusScheduled).
+		First(&job).Error; err != nil {
+		http.Redirect(w, r, "/backup?flash="+urlQueryEscape("schedule not found"), http.StatusSeeOther)
+		return
+	}
+	sched := backup.NewScheduler(h.opts.DB)
+	sched.RunSchedule(h.localExec(), job, time.Now())
+	http.Redirect(w, r, "/backup?flash="+urlQueryEscape("Schedule ran"), http.StatusSeeOther)
 }

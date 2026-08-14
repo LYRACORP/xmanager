@@ -97,6 +97,10 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /backup", h.requireAuth(h.getNodeBackup))
 	mux.HandleFunc("POST /backup/run", h.requireAuth(h.postNodeBackupRun))
+	mux.HandleFunc("POST /backup/schedule", h.requireAuth(h.postNodeBackupSchedule))
+	mux.HandleFunc("POST /backup/schedule/{id}/delete", h.requireAuth(h.postNodeBackupScheduleDelete))
+	mux.HandleFunc("POST /backup/schedule/{id}/update", h.requireAuth(h.postNodeBackupScheduleUpdate))
+	mux.HandleFunc("POST /backup/schedule/{id}/run", h.requireAuth(h.postNodeBackupScheduleRun))
 	mux.HandleFunc("POST /backup/destinations", h.requireAuth(h.postNodeBackupDestination))
 	mux.HandleFunc("POST /backup/destinations/{id}/delete", h.requireAuth(h.postNodeBackupDestinationDelete))
 	mux.HandleFunc("GET /backup/{id}/download", h.requireAuth(h.getNodeBackupDownload))

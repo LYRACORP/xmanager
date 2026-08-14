@@ -216,10 +216,11 @@ type pageData struct {
 	StorageTotalBytes   int64
 	StorageTotalHuman   string
 	// Backup
-	BackupTargets           []backupTargetView
-	BackupDestinations      []storage.BackupDestination
-	BackupHistory           []backupHistoryView
-	BackupTelegramChannels  []storage.AlertChannel
+	BackupTargets          []backupTargetView
+	BackupDestinations     []storage.BackupDestination
+	BackupHistory          []backupHistoryView
+	BackupSchedules        []backupScheduleView
+	BackupTelegramChannels []storage.AlertChannel
 	// Activity logs
 	ActivityLogs []storage.ActivityLog
 	LogsSource   string

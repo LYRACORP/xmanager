@@ -6,10 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
+
+const StatusScheduled = "scheduled"
 
 type Scheduler struct {
 	db *gorm.DB
@@ -51,15 +54,15 @@ func (s *Scheduler) UpdateSchedule(id uint, schedule string) error {
 		Update("schedule", schedule).Error
 }
 
+// GetDueBackups returns schedule templates (status=scheduled with a schedule expression).
 func (s *Scheduler) GetDueBackups() ([]storage.Backup, error) {
 	var backups []storage.Backup
-	err := s.db.Where("schedule != '' AND schedule IS NOT NULL").Find(&backups).Error
+	err := s.db.Where("status = ? AND schedule != '' AND schedule IS NOT NULL", StatusScheduled).Find(&backups).Error
 	return backups, err
 }
 
 // StartScheduler runs a background loop that checks for due backups every
-// minute and executes them via the provided SSH pool. It blocks until ctx is
-// done or stop is closed.
+// minute and executes them via the provided SSH pool (falls back to local exec).
 func (s *Scheduler) StartScheduler(pool *ssh.Pool, stop <-chan struct{}) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -74,6 +77,16 @@ func (s *Scheduler) StartScheduler(pool *ssh.Pool, stop <-chan struct{}) {
 	}
 }
 
+func (s *Scheduler) executorFor(pool *ssh.Pool, serverID uint) *ssh.Executor {
+	if pool != nil {
+		if exec, ok := pool.GetExecutor(serverID); ok && exec != nil {
+			return exec
+		}
+	}
+	// Node panel: jobs target the local host.
+	return ssh.NewLocalExecutor()
+}
+
 func (s *Scheduler) runDue(pool *ssh.Pool) {
 	backups, err := s.GetDueBackups()
 	if err != nil {
@@ -82,57 +95,124 @@ func (s *Scheduler) runDue(pool *ssh.Pool) {
 
 	now := time.Now()
 	for _, b := range backups {
-		if !isDue(b, now) {
+		if !IsDue(b, now) {
 			continue
 		}
-
-		exec, ok := pool.GetExecutor(b.ServerID)
-		if !ok {
-			continue
-		}
-
-		runner := NewRunner(exec)
-		destDir := "/var/backups/xmanager"
-		_ = runner.EnsureDir(destDir)
-
-		var (
-			path   string
-			size   int64
-			runErr error
-		)
-		switch b.Type {
-		case "postgres":
-			path, size, runErr = runner.BackupPostgres(b.Service, destDir)
-		case "mysql", "mariadb":
-			path, size, runErr = runner.BackupMySQL(b.Service, destDir)
-		case "mongodb":
-			path, size, runErr = runner.BackupMongoDB(b.Service, destDir)
-		case "volume":
-			path, size, runErr = runner.BackupDockerVolume(b.Service, destDir)
-		}
-
-		status := "success"
-		if runErr != nil {
-			status = "failed"
-		}
-
-		record := storage.Backup{
-			ServerID: b.ServerID,
-			Type:     b.Type,
-			Service:  b.Service,
-			Path:     path,
-			Size:     size,
-			Schedule: b.Schedule,
-			Status:   status,
-			BackedAt: now,
-		}
-		_ = s.db.Create(&record).Error
+		exec := s.executorFor(pool, b.ServerID)
+		s.RunSchedule(exec, b, now)
 	}
 }
 
-// isDue returns true if the backup schedule indicates it should run now.
-// Schedule format: "@hourly", "@daily", "@weekly", or a simple interval like "1h", "24h".
-func isDue(b storage.Backup, now time.Time) bool {
+// RunSchedule executes one schedule template and records history (without schedule).
+func (s *Scheduler) RunSchedule(exec *ssh.Executor, job storage.Backup, now time.Time) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	destIDs := parseDestIDs(job.Destinations)
+
+	var targets []Target
+	if job.Type == "all" || job.Service == "__all__" {
+		targets = ListDumpable(exec)
+	} else {
+		targets = []Target{{Type: dbmanager.DBType(job.Type), Name: job.Service}}
+	}
+
+	for _, t := range targets {
+		res := RunOne(exec, t.Type, t.Name, DefaultDir)
+		destLabels := []string{"local"}
+		var deliverErrs []string
+		if res.Err == nil && len(destIDs) > 0 && s.db != nil {
+			for _, id := range destIDs {
+				var d storage.BackupDestination
+				if err := s.db.Where("server_id = ? AND id = ? AND enabled = ?", job.ServerID, id, true).First(&d).Error; err != nil {
+					continue
+				}
+				if err := Deliver(exec, s.db, d, res.Path, res.Filename); err != nil {
+					deliverErrs = append(deliverErrs, d.Name+": "+err.Error())
+				} else {
+					destLabels = append(destLabels, d.Type+":"+d.Name)
+				}
+			}
+		}
+		if len(deliverErrs) > 0 && res.Err == nil {
+			res.Err = fmt.Errorf("delivered with errors: %s", strings.Join(deliverErrs, "; "))
+		}
+		Record(s.db, job.ServerID, res, strings.Join(destLabels, ","))
+	}
+
+	_ = s.db.Model(&storage.Backup{}).Where("id = ?", job.ID).Update("backed_at", now).Error
+}
+
+func parseDestIDs(raw string) []uint {
+	var out []uint
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "local" {
+			continue
+		}
+		// accept "12" or "dest:12"
+		if i := strings.LastIndex(part, ":"); i >= 0 {
+			part = part[i+1:]
+		}
+		id, err := strconv.ParseUint(part, 10, 64)
+		if err == nil && id > 0 {
+			out = append(out, uint(id))
+		}
+	}
+	return out
+}
+
+// CreateSchedule inserts a schedule template row.
+func CreateSchedule(db *gorm.DB, serverID uint, dbType, service, schedule, destinations string) (*storage.Backup, error) {
+	schedule = strings.TrimSpace(schedule)
+	if schedule == "" {
+		return nil, fmt.Errorf("schedule required")
+	}
+	if !ValidSchedule(schedule) {
+		return nil, fmt.Errorf("invalid schedule %q (use @hourly, @daily, @weekly, @monthly, or durations like 6h)", schedule)
+	}
+	dbType = strings.TrimSpace(dbType)
+	service = strings.TrimSpace(service)
+	if dbType == "" {
+		return nil, fmt.Errorf("database type required")
+	}
+	rec := storage.Backup{
+		ServerID:     serverID,
+		Type:         dbType,
+		Service:      service,
+		Schedule:     schedule,
+		Destinations: destinations,
+		Status:       StatusScheduled,
+		BackedAt:     time.Time{}, // due immediately on next tick
+	}
+	if err := db.Create(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// ValidSchedule reports whether expression is supported by IsDue.
+func ValidSchedule(s string) bool {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "@hourly", "@daily", "@weekly", "@monthly":
+		return true
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d > 0
+	}
+	if h, err := strconv.Atoi(strings.TrimSuffix(s, "h")); err == nil && h > 0 {
+		return true
+	}
+	return false
+}
+
+// IsDue returns true if the backup schedule indicates it should run now.
+// Schedule format: "@hourly", "@daily", "@weekly", "@monthly", or a duration like "6h", "30m".
+func IsDue(b storage.Backup, now time.Time) bool {
+	if strings.TrimSpace(b.Schedule) == "" {
+		return false
+	}
 	if b.BackedAt.IsZero() {
 		return true
 	}
@@ -147,18 +227,15 @@ func isDue(b storage.Backup, now time.Time) bool {
 	case "@monthly":
 		interval = 30 * 24 * time.Hour
 	default:
-		// try parsing as a Go duration string like "6h", "30m"
 		d, err := time.ParseDuration(b.Schedule)
 		if err == nil {
 			interval = d
 		} else {
-			// try as plain hours integer
 			h, err2 := strconv.Atoi(strings.TrimSuffix(b.Schedule, "h"))
-			if err2 == nil {
-				interval = time.Duration(h) * time.Hour
-			} else {
+			if err2 != nil {
 				return false
 			}
+			interval = time.Duration(h) * time.Hour
 		}
 	}
 	return now.Sub(b.BackedAt) >= interval
@@ -178,6 +255,9 @@ func FormatSize(bytes int64) string {
 }
 
 func FormatAge(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
 	d := time.Since(t)
 	switch {
 	case d < time.Hour:

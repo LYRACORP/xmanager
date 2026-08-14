@@ -52,6 +52,106 @@
     <p class="text-[11px] text-zinc-500">Files are stored under <span class="font-mono text-zinc-400">/opt/xmanager/backups</span>. Redis &amp; ClickHouse are not dumpable here.</p>
   </form>
 
+  <div class="xm-card p-5 space-y-4">
+    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Scheduled backups</p>
+    <form method="post" action="/backup/schedule" class="grid md:grid-cols-2 gap-3 items-end">
+      <div>
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Database</label>
+        <select name="target" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+          <option value="all">All dumpable databases</option>
+          {{range .BackupTargets}}
+          <option value="{{.Key}}">{{.Type}} / {{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Interval</label>
+        <select name="schedule" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+          <option value="@hourly">Every hour</option>
+          <option value="6h">Every 6 hours</option>
+          <option value="12h">Every 12 hours</option>
+          <option value="@daily" selected>Daily</option>
+          <option value="@weekly">Weekly</option>
+          <option value="@monthly">Monthly</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Custom interval (optional)</label>
+        <input name="schedule_custom" placeholder="e.g. 30m or 2h" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      </div>
+      {{if .BackupDestinations}}
+      <div>
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Also send to</label>
+        <div class="flex flex-wrap gap-2">
+          {{range .BackupDestinations}}
+          <label class="flex items-center gap-1 text-xs cursor-pointer">
+            <input type="checkbox" name="dest" value="{{.ID}}" class="rounded border-zinc-600">
+            <span class="font-mono text-indigo-300">{{.Type}}</span> {{.Name}}
+          </label>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      <div class="md:col-span-2">
+        <button class="xm-btn xm-btn-primary text-xs">Add schedule</button>
+      </div>
+    </form>
+    <p class="text-[11px] text-zinc-500">Runs in the background every minute check. First run happens on the next tick after create.</p>
+
+    {{if .BackupSchedules}}
+    <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table class="w-full text-xs text-left">
+        <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+          <tr>
+            <th class="py-2 px-3 font-medium">Target</th>
+            <th class="py-2 px-3 font-medium">Schedule</th>
+            <th class="py-2 px-3 font-medium">Last run</th>
+            <th class="py-2 px-3 font-medium">Destinations</th>
+            <th class="py-2 px-3 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/80">
+          {{range .BackupSchedules}}
+          <tr class="hover:bg-zinc-900/40 align-top">
+            <td class="py-2 px-3 font-mono">{{.Target}}</td>
+            <td class="py-2 px-3 font-mono text-indigo-300">{{.Schedule}}</td>
+            <td class="py-2 px-3 text-panel-muted">{{.LastRun}}</td>
+            <td class="py-2 px-3 font-mono text-panel-muted">{{if .Destinations}}{{.Destinations}}{{else}}local{{end}}</td>
+            <td class="py-2 px-3">
+              <div class="flex flex-wrap gap-2 items-center">
+                <form method="post" action="/backup/schedule/{{.ID}}/run">
+                  <button class="text-emerald-400 hover:underline">Run now</button>
+                </form>
+                <details>
+                  <summary class="cursor-pointer text-panel-muted hover:text-gray-200 list-none">Edit</summary>
+                  <form method="post" action="/backup/schedule/{{.ID}}/update" class="mt-1 flex gap-1 items-center">
+                    <select name="schedule" class="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[11px]">
+                      <option value="@hourly" {{if eq .Schedule "@hourly"}}selected{{end}}>hourly</option>
+                      <option value="6h" {{if eq .Schedule "6h"}}selected{{end}}>6h</option>
+                      <option value="12h" {{if eq .Schedule "12h"}}selected{{end}}>12h</option>
+                      <option value="@daily" {{if eq .Schedule "@daily"}}selected{{end}}>daily</option>
+                      <option value="@weekly" {{if eq .Schedule "@weekly"}}selected{{end}}>weekly</option>
+                      <option value="@monthly" {{if eq .Schedule "@monthly"}}selected{{end}}>monthly</option>
+                    </select>
+                    <input name="schedule_custom" placeholder="custom" class="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[11px] font-mono w-16">
+                    <button class="text-indigo-300 text-[11px]">OK</button>
+                  </form>
+                </details>
+                <form method="post" action="/backup/schedule/{{.ID}}/delete" onsubmit="return confirm('Delete schedule?')">
+                  <button class="text-red-400 hover:underline">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No schedules yet.</p>
+    {{end}}
+  </div>
+
   <div class="xm-card p-5 space-y-3">
     <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Add destination</p>
     <form method="post" action="/backup/destinations" class="grid md:grid-cols-3 gap-2 items-end">
@@ -92,6 +192,7 @@
   </div>
 
   <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+    <div class="px-3 py-2 text-[11px] text-panel-muted uppercase tracking-widest font-semibold border-b border-zinc-800 bg-zinc-950/50">History</div>
     <table class="w-full text-xs text-left">
       <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
         <tr>
