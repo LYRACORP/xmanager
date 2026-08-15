@@ -5,7 +5,7 @@
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold tracking-tight">Backup</h1>
-      <p class="text-panel-muted text-xs mt-0.5">Dump managed databases · deliver via download, FTP, SCP, Telegram</p>
+      <p class="text-panel-muted text-xs mt-0.5">Dump databases · schedule tasks · deliver via FTP, SCP, Telegram</p>
     </div>
     <a href="/services" class="text-xs text-indigo-300 hover:underline">Need PITR? Enable Databasus →</a>
   </div>
@@ -53,35 +53,101 @@
   </form>
 
   <div class="xm-card p-5 space-y-4">
-    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Scheduled backups</p>
-    <form method="post" action="/backup/schedule" class="grid md:grid-cols-2 gap-3 items-end">
-      <div>
-        <label class="block text-[10px] text-panel-muted uppercase mb-1">Database</label>
-        <select name="target" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
-          <option value="all">All dumpable databases</option>
-          {{range .BackupTargets}}
-          <option value="{{.Key}}">{{.Type}} / {{.Name}}</option>
-          {{end}}
-        </select>
+    <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Add task</p>
+    <form method="post" action="/backup/schedule" class="space-y-3" id="task-form">
+      <div class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Task name</label>
+          <input name="task_name" placeholder="e.g. nightly-db" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Task type</label>
+          <select name="task_type" id="task-type" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs" onchange="xmTaskType(this.value)">
+            <option value="backup_database">Backup Database</option>
+            <option value="backup_directory">Backup Directory</option>
+            <option value="cut_log">Cut Log</option>
+            <option value="full_backup">Full Backup</option>
+            <option value="sync_time">Sync Time</option>
+            <option value="free_ram">Free RAM</option>
+            <option value="access_url">Access URL</option>
+            <option value="shell">Shell Script</option>
+          </select>
+        </div>
       </div>
-      <div>
-        <label class="block text-[10px] text-panel-muted uppercase mb-1">Interval</label>
-        <select name="schedule" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
-          <option value="@hourly">Every hour</option>
-          <option value="6h">Every 6 hours</option>
-          <option value="12h">Every 12 hours</option>
-          <option value="@daily" selected>Daily</option>
-          <option value="@weekly">Weekly</option>
-          <option value="@monthly">Monthly</option>
-        </select>
+
+      <div id="panel-backup_database" class="task-panel grid md:grid-cols-2 gap-3">
+        <div class="md:col-span-2">
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Database</label>
+          <select name="target" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+            <option value="all">All dumpable databases</option>
+            {{range .BackupTargets}}
+            <option value="{{.Key}}">{{.Type}} / {{.Name}}</option>
+            {{end}}
+          </select>
+        </div>
       </div>
-      <div>
-        <label class="block text-[10px] text-panel-muted uppercase mb-1">Custom interval (optional)</label>
-        <input name="schedule_custom" placeholder="e.g. 30m or 2h" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+
+      <div id="panel-backup_directory" class="task-panel hidden grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Directory path</label>
+          <input name="dir_path" placeholder="/var/www" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+        <div class="flex items-end pb-2">
+          <label class="flex items-center gap-2 text-xs cursor-pointer">
+            <input type="checkbox" name="compress" value="1" checked class="rounded border-zinc-600">
+            Compress (.tar.gz)
+          </label>
+        </div>
       </div>
+
+      <div id="panel-cut_log" class="task-panel hidden grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Log file path</label>
+          <input name="log_path" placeholder="/var/log/app.log" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Keep last N lines</label>
+          <input name="keep_lines" type="number" value="1000" min="1" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+      </div>
+
+      <div id="panel-access_url" class="task-panel hidden grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">URL</label>
+          <input name="url" placeholder="https://example.com/health" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Timeout (seconds)</label>
+          <input name="timeout" type="number" value="10" min="1" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+      </div>
+
+      <div id="panel-shell" class="task-panel hidden">
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Script content</label>
+        <textarea name="script" rows="6" placeholder="#!/bin/bash&#10;echo hello" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono"></textarea>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-3 items-end">
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Execute cycle</label>
+          <select name="schedule" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+            <option value="@hourly">Every hour</option>
+            <option value="6h">Every 6 hours</option>
+            <option value="12h">Every 12 hours</option>
+            <option value="@daily" selected>Daily</option>
+            <option value="@weekly">Weekly</option>
+            <option value="@monthly">Monthly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[10px] text-panel-muted uppercase mb-1">Custom interval (optional)</label>
+          <input name="schedule_custom" placeholder="e.g. 30m or 2h" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+        </div>
+      </div>
+
       {{if .BackupDestinations}}
       <div>
-        <label class="block text-[10px] text-panel-muted uppercase mb-1">Also send to</label>
+        <label class="block text-[10px] text-panel-muted uppercase mb-1">Also send to (file tasks)</label>
         <div class="flex flex-wrap gap-2">
           {{range .BackupDestinations}}
           <label class="flex items-center gap-1 text-xs cursor-pointer">
@@ -92,9 +158,8 @@
         </div>
       </div>
       {{end}}
-      <div class="md:col-span-2">
-        <button class="xm-btn xm-btn-primary text-xs">Add schedule</button>
-      </div>
+
+      <button class="xm-btn xm-btn-primary text-xs">Add task</button>
     </form>
     <p class="text-[11px] text-zinc-500">Runs in the background every minute check. First run happens on the next tick after create.</p>
 
@@ -103,20 +168,22 @@
       <table class="w-full text-xs text-left">
         <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
           <tr>
+            <th class="py-2 px-3 font-medium">Name</th>
+            <th class="py-2 px-3 font-medium">Type</th>
             <th class="py-2 px-3 font-medium">Target</th>
             <th class="py-2 px-3 font-medium">Schedule</th>
             <th class="py-2 px-3 font-medium">Last run</th>
-            <th class="py-2 px-3 font-medium">Destinations</th>
             <th class="py-2 px-3 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-zinc-800/80">
           {{range .BackupSchedules}}
           <tr class="hover:bg-zinc-900/40 align-top">
-            <td class="py-2 px-3 font-mono">{{.Target}}</td>
+            <td class="py-2 px-3">{{.TaskName}}</td>
+            <td class="py-2 px-3"><span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300 border border-indigo-800/40">{{.TaskType}}</span></td>
+            <td class="py-2 px-3 font-mono text-panel-muted break-all max-w-[12rem]">{{.Target}}</td>
             <td class="py-2 px-3 font-mono text-indigo-300">{{.Schedule}}</td>
             <td class="py-2 px-3 text-panel-muted">{{.LastRun}}</td>
-            <td class="py-2 px-3 font-mono text-panel-muted">{{if .Destinations}}{{.Destinations}}{{else}}local{{end}}</td>
             <td class="py-2 px-3">
               <div class="flex flex-wrap gap-2 items-center">
                 <form method="post" action="/backup/schedule/{{.ID}}/run">
@@ -148,7 +215,7 @@
       </table>
     </div>
     {{else}}
-    <p class="text-sm text-panel-muted">No schedules yet.</p>
+    <p class="text-sm text-panel-muted">No scheduled tasks yet.</p>
     {{end}}
   </div>
 
@@ -252,6 +319,23 @@ function xmDestType(v) {
   if (v === 'telegram') document.querySelectorAll('.dest-tg').forEach(el => el.classList.remove('hidden'));
 }
 xmDestType(document.getElementById('dest-type').value);
+
+function xmTaskType(v) {
+  document.querySelectorAll('.task-panel').forEach(el => el.classList.add('hidden'));
+  const panels = {
+    backup_database: 'panel-backup_database',
+    backup_directory: 'panel-backup_directory',
+    cut_log: 'panel-cut_log',
+    access_url: 'panel-access_url',
+    shell: 'panel-shell'
+  };
+  const id = panels[v];
+  if (id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
+  }
+}
+xmTaskType(document.getElementById('task-type').value);
 </script>
 {{template "foot" .}}
 {{end}}

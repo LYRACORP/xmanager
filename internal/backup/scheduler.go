@@ -109,38 +109,61 @@ func (s *Scheduler) RunSchedule(exec *ssh.Executor, job storage.Backup, now time
 		now = time.Now()
 	}
 	destIDs := parseDestIDs(job.Destinations)
+	typ := strings.TrimSpace(job.Type)
+	svc := strings.TrimSpace(job.Service)
 
-	var targets []Target
-	if job.Type == "all" || job.Service == "__all__" {
-		targets = ListDumpable(exec)
-	} else {
-		targets = []Target{{Type: dbmanager.DBType(job.Type), Name: job.Service}}
+	wantAll := typ == "all" || svc == "__all__" || svc == "all" ||
+		(typ == TaskBackupDatabase && (svc == "" || svc == "__all__" || svc == "all"))
+
+	if wantAll {
+		for _, t := range ListDumpable(exec) {
+			res := RunOne(exec, t.Type, t.Name, DefaultDir)
+			res.TaskType = TaskBackupDatabase
+			s.deliverAndRecord(exec, job, res, destIDs)
+		}
+		_ = s.db.Model(&storage.Backup{}).Where("id = ?", job.ID).Update("backed_at", now).Error
+		return
 	}
 
-	for _, t := range targets {
-		res := RunOne(exec, t.Type, t.Name, DefaultDir)
-		destLabels := []string{"local"}
-		var deliverErrs []string
-		if res.Err == nil && len(destIDs) > 0 && s.db != nil {
-			for _, id := range destIDs {
-				var d storage.BackupDestination
-				if err := s.db.Where("server_id = ? AND id = ? AND enabled = ?", job.ServerID, id, true).First(&d).Error; err != nil {
-					continue
-				}
-				if err := Deliver(exec, s.db, d, res.Path, res.Filename); err != nil {
-					deliverErrs = append(deliverErrs, d.Name+": "+err.Error())
-				} else {
-					destLabels = append(destLabels, d.Type+":"+d.Name)
-				}
+	switch typ {
+	case "postgres", "mysql", "mariadb", "mongodb":
+		if svc != "" {
+			res := RunOne(exec, dbmanager.DBType(typ), svc, DefaultDir)
+			s.deliverAndRecord(exec, job, res, destIDs)
+			_ = s.db.Model(&storage.Backup{}).Where("id = ?", job.ID).Update("backed_at", now).Error
+			return
+		}
+	}
+
+	res := RunTask(exec, job)
+	s.deliverAndRecord(exec, job, res, destIDs)
+	_ = s.db.Model(&storage.Backup{}).Where("id = ?", job.ID).Update("backed_at", now).Error
+}
+
+func (s *Scheduler) deliverAndRecord(exec *ssh.Executor, job storage.Backup, res Result, destIDs []uint) {
+	destLabels := []string{"local"}
+	var deliverErrs []string
+	hasFile := res.Path != "" && res.Err == nil
+	if hasFile && len(destIDs) > 0 && s.db != nil {
+		for _, id := range destIDs {
+			var d storage.BackupDestination
+			if err := s.db.Where("server_id = ? AND id = ? AND enabled = ?", job.ServerID, id, true).First(&d).Error; err != nil {
+				continue
+			}
+			if err := Deliver(exec, s.db, d, res.Path, res.Filename); err != nil {
+				deliverErrs = append(deliverErrs, d.Name+": "+err.Error())
+			} else {
+				destLabels = append(destLabels, d.Type+":"+d.Name)
 			}
 		}
-		if len(deliverErrs) > 0 && res.Err == nil {
-			res.Err = fmt.Errorf("delivered with errors: %s", strings.Join(deliverErrs, "; "))
-		}
-		Record(s.db, job.ServerID, res, strings.Join(destLabels, ","))
 	}
-
-	_ = s.db.Model(&storage.Backup{}).Where("id = ?", job.ID).Update("backed_at", now).Error
+	if len(deliverErrs) > 0 && res.Err == nil {
+		res.Err = fmt.Errorf("delivered with errors: %s", strings.Join(deliverErrs, "; "))
+	}
+	if !hasFile {
+		destLabels = []string{"local"}
+	}
+	Record(s.db, job.ServerID, res, strings.Join(destLabels, ","))
 }
 
 func parseDestIDs(raw string) []uint {
@@ -163,7 +186,7 @@ func parseDestIDs(raw string) []uint {
 }
 
 // CreateSchedule inserts a schedule template row.
-func CreateSchedule(db *gorm.DB, serverID uint, dbType, service, schedule, destinations string) (*storage.Backup, error) {
+func CreateSchedule(db *gorm.DB, serverID uint, dbType, service, schedule, destinations, taskConfig string) (*storage.Backup, error) {
 	schedule = strings.TrimSpace(schedule)
 	if schedule == "" {
 		return nil, fmt.Errorf("schedule required")
@@ -174,7 +197,10 @@ func CreateSchedule(db *gorm.DB, serverID uint, dbType, service, schedule, desti
 	dbType = strings.TrimSpace(dbType)
 	service = strings.TrimSpace(service)
 	if dbType == "" {
-		return nil, fmt.Errorf("database type required")
+		return nil, fmt.Errorf("task type required")
+	}
+	if !IsTaskType(dbType) {
+		return nil, fmt.Errorf("unknown task type %q", dbType)
 	}
 	rec := storage.Backup{
 		ServerID:     serverID,
@@ -182,6 +208,7 @@ func CreateSchedule(db *gorm.DB, serverID uint, dbType, service, schedule, desti
 		Service:      service,
 		Schedule:     schedule,
 		Destinations: destinations,
+		TaskConfig:   taskConfig,
 		Status:       StatusScheduled,
 		BackedAt:     time.Time{}, // due immediately on next tick
 	}

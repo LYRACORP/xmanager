@@ -130,6 +130,7 @@ type pageData struct {
 	ContainerID    string
 	LogText        string
 	CronJobs       []storage.CronJob
+	CronJobViews   []cronJobView
 	CronRuns       []storage.CronRun
 	CronJobID      uint
 	NodeDBs        []nodeDBView

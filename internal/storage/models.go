@@ -98,7 +98,7 @@ type Backup struct {
 	gorm.Model
 	ServerID     uint      `gorm:"index;not null" json:"server_id"`
 	Server       Server    `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	Type         string    `json:"type"`
+	Type         string    `json:"type"` // backup_database, backup_directory, cut_log, full_backup, sync_time, free_ram, access_url, shell; also legacy postgres/mysql/...
 	Service      string    `json:"service"`
 	Path         string    `json:"path"`
 	Filename     string    `json:"filename"`
@@ -107,6 +107,7 @@ type Backup struct {
 	Status       string    `json:"status"`
 	Destinations string    `json:"destinations"` // comma-separated: local,ftp:1,scp:2,telegram:3
 	Error        string    `gorm:"type:text" json:"error"`
+	TaskConfig   string    `gorm:"type:text" json:"task_config"` // JSON extras per task type
 	BackedAt     time.Time `json:"backed_at"`
 }
 
@@ -216,6 +217,8 @@ type CronJob struct {
 	Name       string     `gorm:"not null" json:"name"`
 	Expression string     `gorm:"not null" json:"expression"`
 	Command    string     `gorm:"type:text;not null" json:"command"`
+	TaskType   string     `json:"task_type"`                     // backup_database, shell, …; empty = legacy raw command
+	TaskConfig string     `gorm:"type:text" json:"task_config"` // JSON extras per task type
 	Enabled    bool       `gorm:"default:true" json:"enabled"`
 	LastRun    *time.Time `json:"last_run"`
 	NextRun    *time.Time `json:"next_run"`

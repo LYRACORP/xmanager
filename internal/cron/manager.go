@@ -43,8 +43,16 @@ func (m *Manager) List(serverID uint) ([]storage.CronJob, error) {
 
 // Add creates the cron file on the server and records the job in the DB.
 func (m *Manager) Add(serverID uint, name, expression, command string) (*storage.CronJob, error) {
+	return m.AddTask(serverID, name, expression, command, "", "")
+}
+
+// AddTask creates a cron job with optional task type metadata.
+func (m *Manager) AddTask(serverID uint, name, expression, command, taskType, taskConfig string) (*storage.CronJob, error) {
 	if _, err := parseExpr(expression); err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)
+	}
+	if strings.TrimSpace(command) == "" {
+		return nil, fmt.Errorf("command required")
 	}
 
 	safeName := sanitizeName(name)
@@ -62,6 +70,8 @@ func (m *Manager) Add(serverID uint, name, expression, command string) (*storage
 		Name:       name,
 		Expression: expression,
 		Command:    command,
+		TaskType:   taskType,
+		TaskConfig: taskConfig,
 		Enabled:    true,
 		NextRun:    &next,
 		Status:     "idle",

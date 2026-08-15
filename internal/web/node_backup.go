@@ -28,8 +28,10 @@ type backupHistoryView struct {
 
 type backupScheduleView struct {
 	storage.Backup
-	LastRun string
-	Target  string
+	LastRun  string
+	Target   string
+	TaskType string
+	TaskName string
 }
 
 func (h *handler) getNodeBackup(w http.ResponseWriter, r *http.Request) {
@@ -61,14 +63,37 @@ func (h *handler) getNodeBackup(w http.ResponseWriter, r *http.Request) {
 	var schedules []storage.Backup
 	h.opts.DB.Where("server_id = ? AND status = ?", sid, backup.StatusScheduled).Order("id desc").Find(&schedules)
 	for _, b := range schedules {
+		cfg := backup.ParseTaskConfig(b.TaskConfig)
+		taskName := cfg.Name
+		if taskName == "" {
+			taskName = b.Service
+		}
+		if taskName == "" || taskName == "__all__" {
+			taskName = backup.TaskTypeLabel(b.Type)
+		}
 		target := b.Type + " / " + b.Service
-		if b.Type == "all" || b.Service == "__all__" {
-			target = "all dumpable databases"
+		switch b.Type {
+		case backup.TaskBackupDatabase, "all", "postgres", "mysql", "mariadb", "mongodb":
+			if b.Type == "all" || b.Service == "__all__" || b.Service == "all" {
+				target = "all dumpable databases"
+			} else if b.Service != "" {
+				target = b.Service
+			}
+		case backup.TaskBackupDirectory, backup.TaskCutLog:
+			target = cfg.Path
+		case backup.TaskAccessURL:
+			target = cfg.URL
+		case backup.TaskShell:
+			target = "shell script"
+		case backup.TaskFullBackup, backup.TaskSyncTime, backup.TaskFreeRAM:
+			target = "—"
 		}
 		data.BackupSchedules = append(data.BackupSchedules, backupScheduleView{
-			Backup:  b,
-			LastRun: backup.FormatAge(b.BackedAt),
-			Target:  target,
+			Backup:   b,
+			LastRun:  backup.FormatAge(b.BackedAt),
+			Target:   target,
+			TaskType: backup.TaskTypeLabel(b.Type),
+			TaskName: taskName,
 		})
 	}
 
@@ -282,14 +307,69 @@ func (h *handler) postNodeBackupSchedule(w http.ResponseWriter, r *http.Request)
 	if custom := strings.TrimSpace(r.FormValue("schedule_custom")); custom != "" {
 		schedule = custom
 	}
-	target := strings.TrimSpace(r.FormValue("target"))
-	dbType, service := "all", "__all__"
-	if target != "" && target != "all" {
-		parts := strings.SplitN(target, ":", 2)
-		if len(parts) == 2 {
-			dbType, service = parts[0], parts[1]
-		}
+	taskType := strings.TrimSpace(r.FormValue("task_type"))
+	if taskType == "" {
+		taskType = backup.TaskBackupDatabase
 	}
+	taskName := strings.TrimSpace(r.FormValue("task_name"))
+
+	cfg := backup.TaskConfig{Name: taskName}
+	service := ""
+
+	switch taskType {
+	case backup.TaskBackupDatabase:
+		target := strings.TrimSpace(r.FormValue("target"))
+		if target == "" || target == "all" {
+			service = "__all__"
+			taskType = "all"
+		} else {
+			parts := strings.SplitN(target, ":", 2)
+			if len(parts) == 2 {
+				taskType, service = parts[0], parts[1]
+			} else {
+				service = target
+			}
+		}
+	case backup.TaskBackupDirectory:
+		cfg.Path = strings.TrimSpace(r.FormValue("dir_path"))
+		cfg.Compress = r.FormValue("compress") == "1"
+		service = taskName
+		if service == "" {
+			service = "directory"
+		}
+	case backup.TaskCutLog:
+		cfg.Path = strings.TrimSpace(r.FormValue("log_path"))
+		cfg.KeepLines = backup.ParseKeepLines(r.FormValue("keep_lines"))
+		service = taskName
+		if service == "" {
+			service = "cut-log"
+		}
+	case backup.TaskAccessURL:
+		cfg.URL = strings.TrimSpace(r.FormValue("url"))
+		cfg.Timeout, _ = strconv.Atoi(strings.TrimSpace(r.FormValue("timeout")))
+		if cfg.Timeout <= 0 {
+			cfg.Timeout = 10
+		}
+		service = taskName
+		if service == "" {
+			service = cfg.URL
+		}
+	case backup.TaskShell:
+		cfg.Script = r.FormValue("script")
+		service = taskName
+		if service == "" {
+			service = "shell"
+		}
+	case backup.TaskFullBackup, backup.TaskSyncTime, backup.TaskFreeRAM:
+		service = taskName
+		if service == "" {
+			service = taskType
+		}
+	default:
+		http.Redirect(w, r, "/backup?flash="+urlQueryEscape("unknown task type"), http.StatusSeeOther)
+		return
+	}
+
 	var destParts []string
 	for _, idStr := range r.Form["dest"] {
 		id, _ := strconv.ParseUint(idStr, 10, 64)
@@ -297,7 +377,7 @@ func (h *handler) postNodeBackupSchedule(w http.ResponseWriter, r *http.Request)
 			destParts = append(destParts, strconv.FormatUint(id, 10))
 		}
 	}
-	_, err := backup.CreateSchedule(h.opts.DB, sid, dbType, service, schedule, strings.Join(destParts, ","))
+	_, err := backup.CreateSchedule(h.opts.DB, sid, taskType, service, schedule, strings.Join(destParts, ","), cfg.JSON())
 	if err != nil {
 		http.Redirect(w, r, "/backup?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return

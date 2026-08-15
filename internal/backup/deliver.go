@@ -94,13 +94,15 @@ func skipSystemDB(t dbmanager.DBType, name string) bool {
 	}
 }
 
-// Result is one completed dump.
+// Result is one completed dump or task run.
 type Result struct {
 	Type     dbmanager.DBType
+	TaskType string // preferred over Type when set (shell, sync_time, …)
 	Name     string
 	Path     string
 	Filename string
 	Size     int64
+	Output   string
 	Err      error
 }
 
@@ -288,10 +290,16 @@ func Record(db *gorm.DB, serverID uint, r Result, destinations string) storage.B
 	if r.Err != nil {
 		status = "failed"
 		errMsg = r.Err.Error()
+	} else if r.Output != "" {
+		errMsg = r.Output
+	}
+	typ := r.TaskType
+	if typ == "" {
+		typ = string(r.Type)
 	}
 	rec := storage.Backup{
 		ServerID:     serverID,
-		Type:         string(r.Type),
+		Type:         typ,
 		Service:      r.Name,
 		Path:         r.Path,
 		Filename:     r.Filename,

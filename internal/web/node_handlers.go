@@ -242,6 +242,55 @@ func (h *handler) getNodeDockerLogs(w http.ResponseWriter, r *http.Request) {
 
 // --- Cron ---
 
+type cronJobView struct {
+	storage.CronJob
+	TaskTypeLabel string
+	TaskSummary   string
+}
+
+func cronJobsToViews(jobs []storage.CronJob) []cronJobView {
+	out := make([]cronJobView, 0, len(jobs))
+	for _, j := range jobs {
+		v := cronJobView{CronJob: j}
+		if j.TaskType != "" {
+			v.TaskTypeLabel = backup.TaskTypeLabel(j.TaskType)
+		} else {
+			v.TaskTypeLabel = "Shell Script"
+		}
+		cfg := backup.ParseTaskConfig(j.TaskConfig)
+		switch j.TaskType {
+		case backup.TaskBackupDirectory, backup.TaskCutLog:
+			v.TaskSummary = cfg.Path
+		case backup.TaskAccessURL:
+			v.TaskSummary = cfg.URL
+		case backup.TaskShell:
+			v.TaskSummary = truncateStr(cfg.Script, 60)
+			if v.TaskSummary == "" {
+				v.TaskSummary = truncateStr(j.Command, 60)
+			}
+		case backup.TaskBackupDatabase, "postgres", "mysql", "mariadb", "mongodb", "all":
+			if j.TaskType == "all" || strings.Contains(j.Command, "datistemplate") {
+				v.TaskSummary = "all databases"
+			} else {
+				v.TaskSummary = truncateStr(j.Command, 60)
+			}
+		default:
+			v.TaskSummary = truncateStr(j.Command, 60)
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func truncateStr(s string, n int) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 func (h *handler) getNodeCron(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	mgr := cron.NewManager(h.localExec(), h.opts.DB)
@@ -249,6 +298,14 @@ func (h *handler) getNodeCron(w http.ResponseWriter, r *http.Request) {
 	data := h.basePage(sess, "Cron")
 	data.ActiveNav = "cron"
 	data.CronJobs = jobs
+	data.CronJobViews = cronJobsToViews(jobs)
+	for _, t := range backup.ListDumpable(h.localExec()) {
+		data.BackupTargets = append(data.BackupTargets, backupTargetView{
+			Type: string(t.Type),
+			Name: t.Name,
+			Key:  string(t.Type) + ":" + t.Name,
+		})
+	}
 	h.render(w, "node_cron", data)
 }
 
@@ -273,8 +330,80 @@ func (h *handler) postNodeCron(w http.ResponseWriter, r *http.Request) {
 			expr, err = cron.ExpressionFromHuman(hs)
 		}
 	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	taskType := strings.TrimSpace(r.FormValue("task_type"))
+	command := strings.TrimSpace(r.FormValue("command"))
+	taskConfig := ""
+
+	if err == nil && taskType != "" {
+		cfg := backup.TaskConfig{Name: name}
+		service := name
+		switch taskType {
+		case backup.TaskBackupDatabase:
+			target := strings.TrimSpace(r.FormValue("target"))
+			if target == "" || target == "all" {
+				service = "__all__"
+				taskType = "all"
+			} else {
+				parts := strings.SplitN(target, ":", 2)
+				if len(parts) == 2 {
+					taskType, service = parts[0], parts[1]
+				} else {
+					service = target
+				}
+			}
+		case backup.TaskBackupDirectory:
+			cfg.Path = strings.TrimSpace(r.FormValue("dir_path"))
+			cfg.Compress = r.FormValue("compress") == "1"
+			if service == "" {
+				service = "directory"
+			}
+		case backup.TaskCutLog:
+			cfg.Path = strings.TrimSpace(r.FormValue("log_path"))
+			cfg.KeepLines = backup.ParseKeepLines(r.FormValue("keep_lines"))
+			if service == "" {
+				service = "cut-log"
+			}
+		case backup.TaskAccessURL:
+			cfg.URL = strings.TrimSpace(r.FormValue("url"))
+			cfg.Timeout, _ = strconv.Atoi(strings.TrimSpace(r.FormValue("timeout")))
+			if cfg.Timeout <= 0 {
+				cfg.Timeout = 10
+			}
+			if service == "" {
+				service = cfg.URL
+			}
+		case backup.TaskShell:
+			cfg.Script = r.FormValue("script")
+			if strings.TrimSpace(cfg.Script) == "" {
+				cfg.Script = command
+			}
+			if service == "" {
+				service = "shell"
+			}
+		case backup.TaskFullBackup, backup.TaskSyncTime, backup.TaskFreeRAM:
+			if service == "" {
+				service = taskType
+			}
+		default:
+			err = fmt.Errorf("unknown task type")
+		}
+		if err == nil {
+			command, err = backup.BuildHostCommand(taskType, service, cfg)
+			taskConfig = cfg.JSON()
+		}
+	} else if err == nil && command == "" {
+		// Legacy advanced form: raw command only.
+		err = fmt.Errorf("command required")
+	}
+
 	if err == nil {
-		_, err = mgr.Add(h.localServerID(), r.FormValue("name"), expr, r.FormValue("command"))
+		if taskType == "" {
+			taskType = backup.TaskShell
+			taskConfig = backup.TaskConfig{Name: name, Script: command}.JSON()
+		}
+		_, err = mgr.AddTask(h.localServerID(), name, expr, command, taskType, taskConfig)
 	}
 	if err != nil {
 		sess := sessionFromCtx(r.Context())
@@ -283,6 +412,14 @@ func (h *handler) postNodeCron(w http.ResponseWriter, r *http.Request) {
 		data.Flash = err.Error()
 		jobs, _ := mgr.List(h.localServerID())
 		data.CronJobs = jobs
+		data.CronJobViews = cronJobsToViews(jobs)
+		for _, t := range backup.ListDumpable(h.localExec()) {
+			data.BackupTargets = append(data.BackupTargets, backupTargetView{
+				Type: string(t.Type),
+				Name: t.Name,
+				Key:  string(t.Type) + ":" + t.Name,
+			})
+		}
 		h.render(w, "node_cron", data)
 		return
 	}
