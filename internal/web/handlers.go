@@ -398,8 +398,8 @@ func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	data.StatContainers = data.Node.ContainerCount
 	data.StatBuckets = h.countRustFSBuckets()
 	data.DiskUsage = h.getDiskUsageCached()
-	data.NetRxRate = nodemetrics.FormatRate(data.Node.NetRxBps)
-	data.NetTxRate = nodemetrics.FormatRate(data.Node.NetTxBps)
+	data.NetRxRate = nodemetrics.FormatRateKbps(data.Node.NetRxBps)
+	data.NetTxRate = nodemetrics.FormatRateKbps(data.Node.NetTxBps)
 	h.render(w, "node_dashboard", data)
 }
 
@@ -432,8 +432,8 @@ func (h *handler) getNodeNetJSON(w http.ResponseWriter, r *http.Request) {
 		"tx_bps": snap.NetTxBps,
 		"rx":     snap.NetRxBytes,
 		"tx":     snap.NetTxBytes,
-		"rx_rate": nodemetrics.FormatRate(snap.NetRxBps),
-		"tx_rate": nodemetrics.FormatRate(snap.NetTxBps),
+		"rx_rate": nodemetrics.FormatRateKbps(snap.NetRxBps),
+		"tx_rate": nodemetrics.FormatRateKbps(snap.NetTxBps),
 		"t":      snap.SampledAt.Unix(),
 	})
 }

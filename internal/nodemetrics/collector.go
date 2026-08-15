@@ -170,6 +170,22 @@ func FormatRate(bps float64) string {
 	return FormatBytes(uint64(bps)) + "/s"
 }
 
+// FormatRateKbps formats bytes/sec as kilobits per second (network style).
+func FormatRateKbps(bps float64) string {
+	if bps < 0 {
+		bps = 0
+	}
+	kbps := bps * 8 / 1000
+	switch {
+	case kbps < 1:
+		return fmt.Sprintf("%.2f Kbps", kbps)
+	case kbps < 1000:
+		return fmt.Sprintf("%.1f Kbps", kbps)
+	default:
+		return fmt.Sprintf("%.2f Mbps", kbps/1000)
+	}
+}
+
 // Sample collects metrics once from the local machine.
 func Sample() Snapshot {
 	snap := Snapshot{

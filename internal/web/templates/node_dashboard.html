@@ -38,16 +38,30 @@
     </div>
   </div>
 
-  <div class="xm-card p-5 space-y-3">
+  <div class="xm-card p-5 space-y-4">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Live network</h2>
-      <span class="text-[10px] text-zinc-600 font-mono" id="net-iface-label">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
+      <div class="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
+        <span id="net-iface-label">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
+        <span>last 5 min</span>
+      </div>
     </div>
-    <div class="flex flex-wrap gap-4 text-sm font-mono mb-1">
-      <span class="text-emerald-300">RX <span id="net-rx-rate">{{.NetRxRate}}</span></span>
-      <span class="text-sky-300">TX <span id="net-tx-rate">{{.NetTxRate}}</span></span>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <p class="text-xs text-panel-muted uppercase tracking-wide">Kbps transmitting</p>
+          <p class="text-sm font-mono text-sky-300" id="net-tx-rate">{{.NetTxRate}}</p>
+        </div>
+        <canvas id="net-tx-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+      </div>
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <p class="text-xs text-panel-muted uppercase tracking-wide">Kbps receiving</p>
+          <p class="text-sm font-mono text-emerald-300" id="net-rx-rate">{{.NetRxRate}}</p>
+        </div>
+        <canvas id="net-rx-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+      </div>
     </div>
-    <canvas id="net-chart" height="72" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
   </div>
 
   <div id="node-disk-usage"
@@ -66,59 +80,123 @@
 </div>
 <script>
 (function () {
-  var rxHist = [], txHist = [];
-  var maxPts = 60;
-  function drawNet() {
-    var c = document.getElementById('net-chart');
+  var rxHist = [], txHist = [], timeHist = [];
+  var maxPts = 60; // ~5 min at 5s
+  function bpsToKbps(bps) { return (Number(bps) || 0) * 8 / 1000; }
+  function formatKbps(kbps) {
+    if (kbps < 1) return kbps.toFixed(2) + ' Kbps';
+    if (kbps < 1000) return kbps.toFixed(1) + ' Kbps';
+    return (kbps / 1000).toFixed(2) + ' Mbps';
+  }
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    var p = Math.pow(10, Math.floor(Math.log10(v)));
+    var n = Math.ceil(v / p);
+    if (n <= 1) return p;
+    if (n <= 2) return 2 * p;
+    if (n <= 5) return 5 * p;
+    return 10 * p;
+  }
+  function drawChart(canvasId, data, times, color, fill) {
+    var c = document.getElementById(canvasId);
     if (!c) return;
     var dpr = window.devicePixelRatio || 1;
-    var cw = c.offsetWidth, ch = 72;
+    var cw = c.offsetWidth, ch = 140;
+    if (cw < 10) return;
     c.width = cw * dpr;
     c.height = ch * dpr;
     var ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
+
+    var padL = 40, padR = 10, padT = 10, padB = 22;
+    var plotW = cw - padL - padR, plotH = ch - padT - padB;
+    var max = niceMax(Math.max.apply(null, data.concat([0.1])));
+
+    // grid + y labels
+    ctx.strokeStyle = '#27272a';
     ctx.fillStyle = '#71717a';
     ctx.font = '10px monospace';
-    ctx.fillText('RX / TX B/s', 8, 12);
-    var data = rxHist.concat(txHist);
-    if (!data.length) return;
-    var max = Math.max.apply(null, data.concat([1]));
-    function line(arr, color) {
-      if (!arr.length) return;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
+    ctx.textAlign = 'right';
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + plotH * (g / 4);
+      var val = max * (1 - g / 4);
       ctx.beginPath();
-      arr.forEach(function (v, i) {
-        var x = 8 + (i / Math.max(arr.length - 1, 1)) * (cw - 16);
-        var y = ch - 8 - (v / max) * (ch - 20);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(cw - padR, gy);
       ctx.stroke();
+      var label = val >= 1000 ? (val / 1000).toFixed(1) + 'k' : (val < 10 ? val.toFixed(1) : Math.round(val));
+      ctx.fillText(label, padL - 4, gy + 3);
     }
-    line(rxHist, '#34d399');
-    line(txHist, '#38bdf8');
+
+    // x time labels
+    ctx.textAlign = 'center';
+    if (times.length) {
+      var idxs = [0, Math.floor((times.length - 1) / 2), times.length - 1];
+      idxs.forEach(function (i) {
+        if (i < 0 || !times[i]) return;
+        var x = padL + (i / Math.max(times.length - 1, 1)) * plotW;
+        var d = new Date(times[i] * 1000);
+        var hh = String(d.getHours()).padStart(2, '0');
+        var mm = String(d.getMinutes()).padStart(2, '0');
+        ctx.fillText(hh + ':' + mm, x, ch - 6);
+      });
+    }
+
+    if (!data.length) return;
+
+    // filled area
+    ctx.beginPath();
+    data.forEach(function (v, i) {
+      var x = padL + (i / Math.max(data.length - 1, 1)) * plotW;
+      var y = padT + plotH - (v / max) * plotH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    var lastX = padL + plotW;
+    var baseY = padT + plotH;
+    ctx.lineTo(lastX, baseY);
+    ctx.lineTo(padL, baseY);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+
+    // stroke
+    ctx.beginPath();
+    data.forEach(function (v, i) {
+      var x = padL + (i / Math.max(data.length - 1, 1)) * plotW;
+      var y = padT + plotH - (v / max) * plotH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  function drawAll() {
+    drawChart('net-tx-chart', txHist, timeHist, '#38bdf8', 'rgba(56,189,248,0.25)');
+    drawChart('net-rx-chart', rxHist, timeHist, '#34d399', 'rgba(52,211,153,0.25)');
   }
   function pollNet() {
     fetch('/api/node/net.json')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        rxHist.push(Number(d.rx_bps) || 0);
-        txHist.push(Number(d.tx_bps) || 0);
-        if (rxHist.length > maxPts) rxHist.shift();
-        if (txHist.length > maxPts) txHist.shift();
+        var rx = bpsToKbps(d.rx_bps);
+        var tx = bpsToKbps(d.tx_bps);
+        rxHist.push(rx);
+        txHist.push(tx);
+        timeHist.push(Number(d.t) || Math.floor(Date.now() / 1000));
+        if (rxHist.length > maxPts) { rxHist.shift(); txHist.shift(); timeHist.shift(); }
         var rxEl = document.getElementById('net-rx-rate');
         var txEl = document.getElementById('net-tx-rate');
         var ifEl = document.getElementById('net-iface-label');
-        if (rxEl) rxEl.textContent = d.rx_rate || '0 B/s';
-        if (txEl) txEl.textContent = d.tx_rate || '0 B/s';
+        if (rxEl) rxEl.textContent = formatKbps(rx);
+        if (txEl) txEl.textContent = formatKbps(tx);
         if (ifEl && d.iface) ifEl.textContent = d.iface;
-        drawNet();
+        drawAll();
       }).catch(function () {});
   }
   pollNet();
   setInterval(pollNet, 5000);
-  window.addEventListener('resize', drawNet);
+  window.addEventListener('resize', drawAll);
 })();
 </script>
 {{template "foot" .}}
