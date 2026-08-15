@@ -427,14 +427,16 @@ func (h *handler) getNodeNetJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"iface":  snap.NetIface,
-		"rx_bps": snap.NetRxBps,
-		"tx_bps": snap.NetTxBps,
-		"rx":     snap.NetRxBytes,
-		"tx":     snap.NetTxBytes,
+		"iface":   snap.NetIface,
+		"rx_bps":  snap.NetRxBps,
+		"tx_bps":  snap.NetTxBps,
+		"rx":      snap.NetRxBytes,
+		"tx":      snap.NetTxBytes,
 		"rx_rate": nodemetrics.FormatRateKbps(snap.NetRxBps),
 		"tx_rate": nodemetrics.FormatRateKbps(snap.NetTxBps),
-		"t":      snap.SampledAt.Unix(),
+		"t":       snap.SampledAt.Unix(),
+		"uptime":  nodemetrics.FormatUptime(snap.UptimeSec),
+		"uptime_sec": snap.UptimeSec,
 	})
 }
 

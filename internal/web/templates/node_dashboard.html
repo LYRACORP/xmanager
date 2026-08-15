@@ -5,12 +5,16 @@
   <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
     <div>
       <h1 class="text-3xl font-bold tracking-tight text-white">Welcome back{{if .WelcomeName}}, {{.WelcomeName}}{{end}}</h1>
-      <p class="text-panel-muted text-sm mt-1">{{if .Node.Hostname}}{{.Node.Hostname}}{{else}}This host{{end}} · live metrics refresh every 5s</p>
+      <p class="text-panel-muted text-sm mt-1">
+        {{if .Node.Hostname}}{{.Node.Hostname}}{{else}}This host{{end}}
+        · <span class="text-emerald-400/90">uptime <span id="home-uptime-header">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</span></span>
+        · live metrics every 5s
+      </p>
     </div>
     <a href="/projects" class="xm-btn xm-btn-ghost">Go to projects →</a>
   </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
     <div class="xm-stat">
       <div class="xm-stat-label">Projects</div>
       <div class="xm-stat-value">{{.StatProjects}}</div>
@@ -34,7 +38,11 @@
     <div class="xm-stat">
       <div class="xm-stat-label">Containers</div>
       <div class="xm-stat-value">{{.StatContainers}}</div>
-      <div class="xm-stat-sub">disk {{printf "%.0f" .Node.DiskPct}}% · up {{.UptimeHuman}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Uptime</div>
+      <div class="xm-stat-value text-xl mt-2 font-mono text-emerald-300" id="home-uptime">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</div>
+      <div class="xm-stat-sub">system since boot</div>
     </div>
   </div>
 
@@ -191,6 +199,12 @@
         if (rxEl) rxEl.textContent = formatKbps(rx);
         if (txEl) txEl.textContent = formatKbps(tx);
         if (ifEl && d.iface) ifEl.textContent = d.iface;
+        if (d.uptime) {
+          var up = document.getElementById('home-uptime');
+          var upH = document.getElementById('home-uptime-header');
+          if (up) up.textContent = d.uptime;
+          if (upH) upH.textContent = d.uptime;
+        }
         drawAll();
       }).catch(function () {});
   }
