@@ -40,6 +40,8 @@ import (
 func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", h.requireAuth(h.getNodeHome))
 	mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
+	mux.HandleFunc("GET /api/node/disk-usage", h.requireAuth(h.getNodeDiskUsageFragment))
+	mux.HandleFunc("GET /api/node/net.json", h.requireAuth(h.getNodeNetJSON))
 	mux.HandleFunc("POST /api/node/ports/open", h.requireAuth(h.postNodePortsOpen))
 	mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
 

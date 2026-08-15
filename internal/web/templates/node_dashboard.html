@@ -10,30 +10,51 @@
     <a href="/projects" class="xm-btn xm-btn-ghost">Go to projects →</a>
   </div>
 
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
     <div class="xm-stat">
       <div class="xm-stat-label">Projects</div>
       <div class="xm-stat-value">{{.StatProjects}}</div>
-      <div class="xm-stat-sub">{{.StatDomains}} domains linked</div>
     </div>
     <div class="xm-stat">
-      <div class="xm-stat-label">Services</div>
+      <div class="xm-stat-label">Domains</div>
+      <div class="xm-stat-value">{{.StatDomains}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Email accounts</div>
+      <div class="xm-stat-value">{{.StatMailboxes}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Databases</div>
+      <div class="xm-stat-value">{{.StatDatabases}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Buckets</div>
+      <div class="xm-stat-value">{{.StatBuckets}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Containers</div>
       <div class="xm-stat-value">{{.StatContainers}}</div>
-      <div class="xm-stat-sub">{{.StatDatabases}} DB links · {{.StatMailboxes}} mailboxes</div>
+      <div class="xm-stat-sub">disk {{printf "%.0f" .Node.DiskPct}}% · up {{.UptimeHuman}}</div>
     </div>
-    <div class="xm-stat">
-      <div class="xm-stat-label">CPU / RAM</div>
-      <div class="xm-stat-value text-xl mt-2 font-mono">{{printf "%.0f" .Node.CPUPct}}% <span class="text-panel-muted text-base font-sans font-normal">/</span> {{printf "%.0f" .Node.RAMPct}}%</div>
-      <div class="xm-stat-sub">load {{printf "%.2f" .Node.Load1}}</div>
+  </div>
+
+  <div class="xm-card p-5 space-y-3">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Live network</h2>
+      <span class="text-[10px] text-zinc-600 font-mono" id="net-iface-label">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
     </div>
-    <div class="xm-stat">
-      <div class="xm-stat-label">Status</div>
-      <div class="flex flex-col gap-1.5 mt-3 text-sm">
-        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> {{.StatContainers}} containers</span>
-        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-sky-400"></span> disk {{printf "%.0f" .Node.DiskPct}}%</span>
-        <span class="flex items-center gap-2 text-panel-muted"><span class="w-2 h-2 rounded-full bg-zinc-500"></span> up {{.UptimeHuman}}</span>
-      </div>
+    <div class="flex flex-wrap gap-4 text-sm font-mono mb-1">
+      <span class="text-emerald-300">RX <span id="net-rx-rate">{{.NetRxRate}}</span></span>
+      <span class="text-sky-300">TX <span id="net-tx-rate">{{.NetTxRate}}</span></span>
     </div>
+    <canvas id="net-chart" height="72" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+  </div>
+
+  <div id="node-disk-usage"
+       hx-get="/api/node/disk-usage"
+       hx-trigger="load, every 60s"
+       hx-swap="innerHTML">
+    {{template "node_disk_usage" .}}
   </div>
 
   <div id="node-metrics"
@@ -43,7 +64,97 @@
     {{template "node_metrics" .}}
   </div>
 </div>
+<script>
+(function () {
+  var rxHist = [], txHist = [];
+  var maxPts = 60;
+  function drawNet() {
+    var c = document.getElementById('net-chart');
+    if (!c) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cw = c.offsetWidth, ch = 72;
+    c.width = cw * dpr;
+    c.height = ch * dpr;
+    var ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = '#71717a';
+    ctx.font = '10px monospace';
+    ctx.fillText('RX / TX B/s', 8, 12);
+    var data = rxHist.concat(txHist);
+    if (!data.length) return;
+    var max = Math.max.apply(null, data.concat([1]));
+    function line(arr, color) {
+      if (!arr.length) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      arr.forEach(function (v, i) {
+        var x = 8 + (i / Math.max(arr.length - 1, 1)) * (cw - 16);
+        var y = ch - 8 - (v / max) * (ch - 20);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    line(rxHist, '#34d399');
+    line(txHist, '#38bdf8');
+  }
+  function pollNet() {
+    fetch('/api/node/net.json')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        rxHist.push(Number(d.rx_bps) || 0);
+        txHist.push(Number(d.tx_bps) || 0);
+        if (rxHist.length > maxPts) rxHist.shift();
+        if (txHist.length > maxPts) txHist.shift();
+        var rxEl = document.getElementById('net-rx-rate');
+        var txEl = document.getElementById('net-tx-rate');
+        var ifEl = document.getElementById('net-iface-label');
+        if (rxEl) rxEl.textContent = d.rx_rate || '0 B/s';
+        if (txEl) txEl.textContent = d.tx_rate || '0 B/s';
+        if (ifEl && d.iface) ifEl.textContent = d.iface;
+        drawNet();
+      }).catch(function () {});
+  }
+  pollNet();
+  setInterval(pollNet, 5000);
+  window.addEventListener('resize', drawNet);
+})();
+</script>
 {{template "foot" .}}
+{{end}}
+
+{{define "node_disk_usage"}}
+  <div class="xm-card p-5 space-y-4">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Disk usage</h2>
+      <span class="text-[10px] text-zinc-600">refreshes every 60s</span>
+    </div>
+    <div>
+      <div class="flex justify-between text-sm mb-1">
+        <span class="font-mono text-emerald-300">{{printf "%.1f" .DiskUsage.DiskUsedGB}} / {{printf "%.1f" .DiskUsage.DiskTotalGB}} GB</span>
+        <span class="text-panel-muted">{{printf "%.0f" .DiskUsage.DiskPct}}% of /</span>
+      </div>
+      <div class="bg-zinc-800 rounded-full h-2">
+        <div class="h-2 rounded-full bg-emerald-500" style="width: {{printf "%.0f" .DiskUsage.DiskPct}}%"></div>
+      </div>
+    </div>
+    <div class="space-y-3">
+      {{range .DiskUsage.Rows}}
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300">{{.Label}}</span>
+          <span class="font-mono text-panel-muted">{{.Human}}{{if gt .Pct 0.05}} · {{printf "%.1f" .Pct}}%{{end}}</span>
+        </div>
+        <div class="bg-zinc-800 rounded-full h-1.5">
+          <div class="h-1.5 rounded-full bg-indigo-500/80" style="width: {{printf "%.0f" .BarPct}}%"></div>
+        </div>
+      </div>
+      {{else}}
+      <p class="text-sm text-panel-muted">Collecting disk breakdown…</p>
+      {{end}}
+    </div>
+  </div>
 {{end}}
 
 {{define "node_metrics"}}
@@ -125,7 +236,7 @@
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="xm-card p-5">
-      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide mb-3">Network</h2>
+      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide mb-3">Network totals</h2>
       <p class="text-sm text-gray-300 font-mono">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</p>
       <p class="text-sm text-panel-muted mt-2">RX {{.NetRx}} · TX {{.NetTx}}</p>
       <p class="text-xs text-zinc-600 mt-3">sampled {{.Node.SampledAt.Format "15:04:05"}}</p>

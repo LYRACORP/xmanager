@@ -39,6 +39,7 @@ type handler struct {
 	oauthStates  *oauthStateStore
 	deviceStates *deviceStateStore
 	relayStates  *relayStateStore
+	diskCache    *diskUsageCache
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -162,7 +163,11 @@ type pageData struct {
 	StatDomains    int
 	StatMailboxes  int
 	StatDatabases  int
+	StatBuckets    int
 	WelcomeName    string
+	DiskUsage      diskUsageView
+	NetRxRate      string
+	NetTxRate      string
 	// Projects PaaS UX
 	Project            *storage.Project
 	ProjectConfig      project.Config
@@ -391,12 +396,46 @@ func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	h.opts.DB.Model(&storage.ProjectDatabase{}).Where("server_id = ?", sid).Count(&n)
 	data.StatDatabases = int(n)
 	data.StatContainers = data.Node.ContainerCount
+	data.StatBuckets = h.countRustFSBuckets()
+	data.DiskUsage = h.getDiskUsageCached()
+	data.NetRxRate = nodemetrics.FormatRate(data.Node.NetRxBps)
+	data.NetTxRate = nodemetrics.FormatRate(data.Node.NetTxBps)
 	h.render(w, "node_dashboard", data)
 }
 
 func (h *handler) getNodeMetricsFragment(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	h.renderNodeMetrics(w, sess, "")
+}
+
+func (h *handler) getNodeDiskUsageFragment(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	data := h.nodePage(sess, "Home")
+	data.DiskUsage = h.getDiskUsageCached()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "node_disk_usage", data); err != nil {
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *handler) getNodeNetJSON(w http.ResponseWriter, r *http.Request) {
+	snap := nodemetrics.Snapshot{}
+	if h.node != nil {
+		snap = h.node.Latest()
+	} else {
+		snap = nodemetrics.Sample()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"iface":  snap.NetIface,
+		"rx_bps": snap.NetRxBps,
+		"tx_bps": snap.NetTxBps,
+		"rx":     snap.NetRxBytes,
+		"tx":     snap.NetTxBytes,
+		"rx_rate": nodemetrics.FormatRate(snap.NetRxBps),
+		"tx_rate": nodemetrics.FormatRate(snap.NetTxBps),
+		"t":      snap.SampledAt.Unix(),
+	})
 }
 
 func (h *handler) panelProtectedPorts() map[int]string {

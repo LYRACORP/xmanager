@@ -32,6 +32,8 @@ type Snapshot struct {
 	NetIface       string       `json:"net_iface"`
 	NetRxBytes     uint64       `json:"net_rx_bytes"`
 	NetTxBytes     uint64       `json:"net_tx_bytes"`
+	NetRxBps       float64      `json:"net_rx_bps"` // bytes/sec since previous sample
+	NetTxBps       float64      `json:"net_tx_bps"`
 	ContainerCount int          `json:"container_count"`
 	Containers     []Container  `json:"containers"`
 	Ports          []Port       `json:"ports"`
@@ -134,8 +136,38 @@ func (c *Collector) Refresh() {
 func (c *Collector) refresh() {
 	snap := Sample()
 	c.mu.Lock()
+	prev := c.latest
+	if !prev.SampledAt.IsZero() && snap.SampledAt.After(prev.SampledAt) {
+		snap.NetRxBps, snap.NetTxBps = NetRates(
+			prev.NetRxBytes, prev.NetTxBytes, prev.SampledAt,
+			snap.NetRxBytes, snap.NetTxBytes, snap.SampledAt,
+		)
+	}
 	c.latest = snap
 	c.mu.Unlock()
+}
+
+// NetRates computes receive/transmit bytes per second between two samples.
+func NetRates(prevRx, prevTx uint64, prevAt time.Time, rx, tx uint64, at time.Time) (rxBps, txBps float64) {
+	dt := at.Sub(prevAt).Seconds()
+	if dt <= 0 {
+		return 0, 0
+	}
+	if rx >= prevRx {
+		rxBps = float64(rx-prevRx) / dt
+	}
+	if tx >= prevTx {
+		txBps = float64(tx-prevTx) / dt
+	}
+	return rxBps, txBps
+}
+
+// FormatRate formats a bytes/sec value as a human rate string.
+func FormatRate(bps float64) string {
+	if bps < 0 {
+		bps = 0
+	}
+	return FormatBytes(uint64(bps)) + "/s"
 }
 
 // Sample collects metrics once from the local machine.
