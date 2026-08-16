@@ -111,3 +111,10 @@ func TestComposeYAMLPublishesHostPort(t *testing.T) {
 	}
 }
 
+func TestRewritePortBindError(t *testing.T) {
+	msg := rewritePortBindError("Error: failed to bind host port 0.0.0.0:53/tcp: address already in use", "53")
+	if !strings.Contains(msg, "53") || !strings.Contains(msg, "dns_port") {
+		t.Fatalf("%s", msg)
+	}
+}
+

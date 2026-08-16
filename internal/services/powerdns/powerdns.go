@@ -78,6 +78,10 @@ func (p *PowerDNS) Enable(exec *ssh.Executor, cfg map[string]string) error {
 		c.BaseURL = ""
 	}
 
+	if err := ensureDNSPortAvailable(exec, c.DNSPort); err != nil {
+		return fmt.Errorf("powerdns enable: %w", err)
+	}
+
 	compose := ComposeYAML(c)
 
 	initScript := `#!/bin/sh
@@ -132,10 +136,13 @@ exec pdns_server --daemon=no
 	}
 	upRes, err := exec.Run("cd " + dir + " && docker compose up -d 2>&1")
 	if err != nil {
+		_, _ = exec.Run("docker rm -f pdns-auth 2>/dev/null || true")
 		return fmt.Errorf("powerdns enable: %w", err)
 	}
 	if upRes.ExitCode != 0 {
-		return fmt.Errorf("powerdns enable: %s", strings.TrimSpace(upRes.Stdout+upRes.Stderr))
+		_, _ = exec.Run("docker rm -f pdns-auth 2>/dev/null || true")
+		msg := strings.TrimSpace(upRes.Stdout + upRes.Stderr)
+		return fmt.Errorf("powerdns enable: %s", rewritePortBindError(msg, c.DNSPort))
 	}
 	if err := verifyAPIPublish(exec, c.APIPort); err != nil {
 		return fmt.Errorf("powerdns enable: %w", err)
@@ -182,13 +189,82 @@ func hostPortInUse(exec *ssh.Executor, port string) bool {
 	if exec == nil || port == "" {
 		return false
 	}
-	// Docker published ports or host listeners.
+	// Docker published ports or host TCP/UDP listeners.
 	out := exec.RunQuiet(fmt.Sprintf(
 		`docker ps --format '{{.Ports}}' 2>/dev/null | grep -E '(:|^)%s->|0\.0\.0\.0:%s|:::%s' >/dev/null && echo busy; `+
-			`ss -ltn 2>/dev/null | awk '{print $4}' | grep -E ':%s$' >/dev/null && echo busy; `+
+			`ss -ltnup 2>/dev/null | grep -E ':%s\b' >/dev/null && echo busy; `+
 			`true`,
 		port, port, port, port))
 	return strings.Contains(out, "busy")
+}
+
+// ensureDNSPortAvailable tries to free systemd-resolved's stub on :53, then errors if still busy.
+func ensureDNSPortAvailable(exec *ssh.Executor, dnsPort string) error {
+	if dnsPort == "" {
+		dnsPort = "53"
+	}
+	if !hostPortInUse(exec, dnsPort) {
+		return nil
+	}
+	owner := portOwner(exec, dnsPort)
+	if dnsPort == "53" && looksLikeResolved(owner) {
+		_ = disableResolvedStub(exec)
+		if !hostPortInUse(exec, "53") {
+			return nil
+		}
+		owner = portOwner(exec, "53")
+	}
+	if owner == "" {
+		owner = "unknown process"
+	}
+	return fmt.Errorf("host port %s is already in use by %s — stop that DNS service, or set dns_port to a free port (e.g. 5353) when enabling. Authoritative public DNS normally needs host :53",
+		dnsPort, owner)
+}
+
+func looksLikeResolved(owner string) bool {
+	o := strings.ToLower(owner)
+	return strings.Contains(o, "systemd-resolve") || strings.Contains(o, "resolved")
+}
+
+func disableResolvedStub(exec *ssh.Executor) error {
+	if exec == nil {
+		return fmt.Errorf("no executor")
+	}
+	script := `mkdir -p /etc/systemd/resolved.conf.d && cat > /etc/systemd/resolved.conf.d/xmanager-pdns.conf << 'EOF'
+[Resolve]
+DNSStubListener=no
+EOF
+systemctl restart systemd-resolved 2>/dev/null || true
+sleep 1
+`
+	_, err := exec.Run(script)
+	return err
+}
+
+func portOwner(exec *ssh.Executor, port string) string {
+	if exec == nil {
+		return ""
+	}
+	out := strings.TrimSpace(exec.RunQuiet(fmt.Sprintf(
+		`ss -ltnup 2>/dev/null | grep -E ':%s\b' | head -3; `+
+			`docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -E '(:|^)%s->|0\.0\.0\.0:%s' | head -3`,
+		port, port, port)))
+	out = strings.ReplaceAll(out, "\n", " | ")
+	return truncateOut(out, 160)
+}
+
+// rewritePortBindError turns docker compose port-bind failures into actionable text.
+func rewritePortBindError(msg, dnsPort string) string {
+	low := strings.ToLower(msg)
+	if strings.Contains(low, "address already in use") && (strings.Contains(msg, ":53") || strings.Contains(msg, dnsPort)) {
+		return fmt.Sprintf("host port %s already in use (often systemd-resolved or another DNS). Free it or enable with dns_port=5353. Detail: %s",
+			dnsPort, truncateOut(msg, 200))
+	}
+	if strings.Contains(low, "address already in use") && strings.Contains(msg, "8081") {
+		return fmt.Sprintf("host port conflict (Adminer uses 8081 for API — PowerDNS defaults to %s). Detail: %s",
+			DefaultAPIPort, truncateOut(msg, 200))
+	}
+	return msg
 }
 
 func pickFreeHostPort(exec *ssh.Executor, preferred, fallbackStart string) string {
