@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -61,7 +62,7 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 	zone := strings.TrimSpace(strings.ToLower(r.FormValue("zone")))
 	publicIP := strings.TrimSpace(r.FormValue("public_ip"))
 	if zone == "" {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("zone name required"), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("zone name required"), http.StatusSeeOther)
 		return
 	}
 	if publicIP == "" {
@@ -69,11 +70,11 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 	}
 	client := h.pdnsClient()
 	if err := client.Ping(); err != nil {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("PowerDNS offline — enable it under Services first: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("PowerDNS offline — enable it under Services first: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	if err := client.EnsureZone(zone, publicIP, ""); err != nil {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("create zone failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("create zone failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	// Ensure ConnectedDomain hub row exists for linking.
@@ -88,27 +89,32 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 		cd.DNSReady = true
 		_ = h.opts.DB.Save(&cd).Error
 	}
-	http.Redirect(w, r, "/dns?flash="+urlQueryEscape("Zone "+zone+" created"), http.StatusSeeOther)
+	http.Redirect(w, r, "/domains/d/"+url.PathEscape(zone)+"?flash="+urlQueryEscape("Zone "+zone+" created"), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeDNSZoneDelete(w http.ResponseWriter, r *http.Request) {
 	zone := strings.TrimSpace(r.PathValue("zone"))
 	if zone == "" {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("zone required"), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("zone required"), http.StatusSeeOther)
 		return
 	}
 	if err := h.pdnsClient().DeleteZone(zone); err != nil {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("delete failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("delete failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/dns?flash="+urlQueryEscape("Zone "+zone+" deleted"), http.StatusSeeOther)
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape("Zone "+normalizeDomainName(zone)+" deleted"), http.StatusSeeOther)
 }
 
 func (h *handler) getNodeDNSZoneDetail(w http.ResponseWriter, r *http.Request) {
+	// HTMX fragment still used if bookmarked; prefer full Domains detail page.
+	zone := normalizeDomainName(r.PathValue("zone"))
+	if r.Header.Get("HX-Request") != "true" {
+		http.Redirect(w, r, "/domains/d/"+url.PathEscape(zone), http.StatusSeeOther)
+		return
+	}
 	sess := sessionFromCtx(r.Context())
-	zone := strings.TrimSpace(r.PathValue("zone"))
 	data := h.basePage(sess, "DNS zone")
-	data.ActiveNav = "dns"
+	data.ActiveNav = "domains"
 	data.DNSZoneName = zone
 	data.PowerDNSReady = true
 
@@ -118,7 +124,7 @@ func (h *handler) getNodeDNSZoneDetail(w http.ResponseWriter, r *http.Request) {
 	data.Projects = projects
 
 	var connected []storage.ConnectedDomain
-	h.opts.DB.Where("server_id = ? AND domain = ?", sid, strings.TrimSuffix(zone, ".")).Find(&connected)
+	h.opts.DB.Where("server_id = ? AND domain = ?", sid, zone).Find(&connected)
 	data.ConnectedDomains = connected
 
 	z, err := h.pdnsClient().GetZone(zone)
@@ -149,7 +155,7 @@ func (h *handler) postNodeDNSRecord(w http.ResponseWriter, r *http.Request) {
 			contents = append(contents, line)
 		}
 	}
-	redirect := "/dns?flash="
+	redirect := "/domains/d/" + url.PathEscape(normalizeDomainName(zone)) + "?flash="
 	if err := h.pdnsClient().UpsertRecord(zone, name, rtype, ttl, contents); err != nil {
 		http.Redirect(w, r, redirect+urlQueryEscape("record failed: "+err.Error()), http.StatusSeeOther)
 		return
@@ -162,11 +168,12 @@ func (h *handler) postNodeDNSRecordDelete(w http.ResponseWriter, r *http.Request
 	zone := strings.TrimSpace(r.PathValue("zone"))
 	name := strings.TrimSpace(r.FormValue("name"))
 	rtype := strings.TrimSpace(r.FormValue("type"))
+	redir := "/domains/d/" + url.PathEscape(normalizeDomainName(zone))
 	if err := h.pdnsClient().DeleteRecord(zone, name, rtype); err != nil {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape("delete record failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("delete record failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/dns?flash="+urlQueryEscape("Record deleted"), http.StatusSeeOther)
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Record deleted"), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeDNSZoneLink(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +193,7 @@ func (h *handler) postNodeDNSZoneLink(w http.ResponseWriter, r *http.Request) {
 	if err == gorm.ErrRecordNotFound {
 		cd = storage.ConnectedDomain{ServerID: sid, Domain: zone, DNSReady: true}
 	} else if err != nil {
-		http.Redirect(w, r, "/dns?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	if pid > 0 {
@@ -209,5 +216,5 @@ func (h *handler) postNodeDNSZoneLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		flash = err.Error()
 	}
-	http.Redirect(w, r, "/dns?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+	http.Redirect(w, r, "/domains/d/"+url.PathEscape(zone)+"?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }

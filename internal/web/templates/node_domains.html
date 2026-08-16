@@ -58,7 +58,14 @@
       <ul class="space-y-3 text-sm">
         {{range .ConnectedDomains}}
         <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3">
-          <div class="font-mono text-indigo-300 mb-1">{{.Domain}}</div>
+          <div class="flex flex-wrap items-start justify-between gap-2 mb-1">
+            <a href="/domains/d/{{pathEscape .Domain}}" class="font-mono text-indigo-300 hover:text-indigo-200 hover:underline">{{.Domain}}</a>
+            <form method="post" action="/domains/d/{{pathEscape .Domain}}/delete"
+                  onsubmit="return confirm('Remove {{.Domain}}? Nginx vhost will also be removed.')">
+              <input type="hidden" name="delete_nginx" value="1">
+              <button type="submit" class="text-xs text-red-400 border border-red-900/50 rounded px-2 py-0.5 hover:bg-red-950/40">Remove</button>
+            </form>
+          </div>
           <div class="flex flex-wrap gap-2 text-[11px] mb-2">
             <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}</span>
             <span class="{{if .MailReady}}text-emerald-400{{else}}text-gray-500{{end}}">Mail {{if .MailReady}}✓{{else}}—{{end}}</span>
@@ -67,6 +74,7 @@
           </div>
           {{if .Upstream}}<div class="text-xs text-gray-500 mb-2">{{.Upstream}}</div>{{end}}
           {{if .LastError}}<div class="text-xs text-amber-400/90 mb-2">{{.LastError}}</div>{{end}}
+          <p class="text-[11px] text-gray-600 mb-2">Click the domain name to manage DNS records</p>
           <form method="post" action="/domains/connect" class="flex flex-wrap gap-2 items-center mt-1">
             <input type="hidden" name="domain" value="{{.Domain}}">
             <select name="project_id" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
@@ -110,7 +118,7 @@
             <span class="font-mono text-emerald-300">{{.Address}}</span>
             {{if .ProjectID}}<span class="text-xs text-gray-500 block">project #{{.ProjectID}}</span>{{end}}
           </div>
-          <form method="post" action="/domains/mailbox/{{.ID}}/delete"><button class="text-xs text-red-400">Delete</button></form>
+          <form method="post" action="/domains/mailboxes/{{.ID}}/delete"><button class="text-xs text-red-400">Delete</button></form>
         </li>
         {{else}}
         <li class="text-gray-600">None — enable mailinbox (or point mode=mailinabox at a MiaB /admin API)</li>

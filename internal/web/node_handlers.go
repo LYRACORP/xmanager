@@ -131,9 +131,16 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /domains", h.requireAuth(h.postNodeDomains))
 	mux.HandleFunc("POST /domains/connect", h.requireAuth(h.postNodeDomainConnect))
 	mux.HandleFunc("POST /domains/mailbox", h.requireAuth(h.postNodeMailbox))
-	mux.HandleFunc("POST /domains/mailbox/{id}/delete", h.requireAuth(h.postNodeMailboxDelete))
+	mux.HandleFunc("POST /domains/mailboxes/{id}/delete", h.requireAuth(h.postNodeMailboxDelete))
+	mux.HandleFunc("GET /domains/d/{domain}", h.requireAuth(h.getNodeDomainDetail))
+	mux.HandleFunc("POST /domains/d/{domain}/delete", h.requireAuth(h.postNodeDomainDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/records", h.requireAuth(h.postNodeDomainRecord))
+	mux.HandleFunc("POST /domains/d/{domain}/records/delete", h.requireAuth(h.postNodeDomainRecordDelete))
 
-	mux.HandleFunc("GET /dns", h.requireAuth(h.getNodeDNS))
+	// Legacy DNS routes → Domains (nav entry removed; keep APIs for bookmarks / old forms)
+	mux.HandleFunc("GET /dns", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/domains", http.StatusSeeOther)
+	}))
 	mux.HandleFunc("POST /dns/zones", h.requireAuth(h.postNodeDNSZone))
 	mux.HandleFunc("POST /dns/zones/{zone}/delete", h.requireAuth(h.postNodeDNSZoneDelete))
 	mux.HandleFunc("GET /dns/zones/{zone}", h.requireAuth(h.getNodeDNSZoneDetail))
@@ -1165,7 +1172,11 @@ func (h *handler) postNodeDomainConnect(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		flash = err.Error()
 	}
-	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+	redir := "/domains"
+	if rt := strings.TrimSpace(r.FormValue("return_to")); strings.HasPrefix(rt, "/domains") {
+		redir = rt
+	}
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeMailbox(w http.ResponseWriter, r *http.Request) {
@@ -1189,6 +1200,111 @@ func (h *handler) postNodeMailboxDelete(w http.ResponseWriter, r *http.Request) 
 		flash = err.Error()
 	}
 	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func (h *handler) getNodeDomainDetail(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFromCtx(r.Context())
+	sid := h.localServerID()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	if domain == "" {
+		http.Redirect(w, r, "/domains", http.StatusSeeOther)
+		return
+	}
+
+	var cd storage.ConnectedDomain
+	if err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error; err != nil {
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
+		return
+	}
+
+	var projects []storage.Project
+	h.opts.DB.Where("server_id = ?", sid).Find(&projects)
+	var mailboxes []storage.Mailbox
+	h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).Order("address asc").Find(&mailboxes)
+
+	pdnsOK := h.pdnsClient().Ping() == nil
+	data := h.basePage(sess, domain)
+	data.ActiveNav = "domains"
+	data.Domain = &cd
+	data.ConnectedDomains = []storage.ConnectedDomain{cd}
+	data.Projects = projects
+	data.Mailboxes = mailboxes
+	data.PowerDNSReady = pdnsOK
+	data.DNSZoneName = domain
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
+	if pdnsOK {
+		if z, err := h.pdnsClient().GetZone(domain); err != nil {
+			if data.Flash == "" {
+				data.Flash = "DNS zone: " + err.Error()
+			}
+		} else {
+			data.DNSZone = z
+			data.DNSZoneName = z.Name
+		}
+	} else if data.Flash == "" {
+		data.Flash = "PowerDNS API offline — enable under Services to manage records"
+	}
+	h.render(w, "node_domain_detail", data)
+}
+
+func (h *handler) postNodeDomainDelete(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	deleteDNS := r.FormValue("delete_dns") == "1"
+	deleteNginx := r.FormValue("delete_nginx") == "1"
+	flash := "Removed " + domain
+	if err := h.disconnectDomain(domain, deleteDNS, deleteNginx); err != nil {
+		flash = err.Error()
+		// Still redirect to list if row is gone
+		var cd storage.ConnectedDomain
+		if h.opts.DB.Where("server_id = ? AND domain = ?", h.localServerID(), domain).First(&cd).Error != nil {
+			http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/domains/d/"+url.PathEscape(domain)+"?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDomainRecord(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	rtype := strings.TrimSpace(r.FormValue("type"))
+	content := strings.TrimSpace(r.FormValue("content"))
+	ttl, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("ttl")))
+	if ttl <= 0 {
+		ttl = 300
+	}
+	var contents []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			contents = append(contents, line)
+		}
+	}
+	redir := "/domains/d/" + url.PathEscape(domain)
+	if err := h.pdnsClient().UpsertRecord(domain, name, rtype, ttl, contents); err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("record failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape(fmt.Sprintf("Record %s %s saved", name, rtype)), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDomainRecordDelete(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	rtype := strings.TrimSpace(r.FormValue("type"))
+	redir := "/domains/d/" + url.PathEscape(domain)
+	if err := h.pdnsClient().DeleteRecord(domain, name, rtype); err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("delete record failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Record deleted"), http.StatusSeeOther)
 }
 
 func urlQueryEscape(s string) string {

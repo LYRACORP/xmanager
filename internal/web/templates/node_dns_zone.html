@@ -27,7 +27,7 @@
           <td class="py-2 pr-3 font-mono text-gray-200 break-all">{{.Content}}</td>
           <td class="py-2">
             {{if and (ne $rr.Type "SOA") (ne $rr.Type "NS")}}
-            <form method="post" action="/dns/zones/{{pathEscape $.DNSZoneName}}/records/delete"
+            <form method="post" action="/domains/d/{{pathEscape (trimDot $.DNSZoneName)}}/records/delete"
                   onsubmit="return confirm('Delete this {{$rr.Type}} record?')">
               <input type="hidden" name="name" value="{{$rr.Name}}">
               <input type="hidden" name="type" value="{{$rr.Type}}">
@@ -44,7 +44,7 @@
           <td class="py-2 pr-3 text-gray-600">—</td>
           <td class="py-2">
             {{if and (ne $rr.Type "SOA") (ne $rr.Type "NS")}}
-            <form method="post" action="/dns/zones/{{pathEscape $.DNSZoneName}}/records/delete">
+            <form method="post" action="/domains/d/{{pathEscape (trimDot $.DNSZoneName)}}/records/delete">
               <input type="hidden" name="name" value="{{$rr.Name}}">
               <input type="hidden" name="type" value="{{$rr.Type}}">
               <button class="text-red-400">Delete</button>
@@ -60,7 +60,7 @@
     </table>
   </div>
 
-  <form method="post" action="/dns/zones/{{pathEscape .DNSZoneName}}/records" class="grid md:grid-cols-5 gap-2 items-end">
+  <form method="post" action="/domains/d/{{pathEscape (trimDot .DNSZoneName)}}/records" class="grid md:grid-cols-5 gap-2 items-end">
     <div class="md:col-span-5 text-xs font-semibold text-gray-400">Add / replace record</div>
     <input name="name" placeholder="@ or www" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
     <select name="type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">

@@ -181,6 +181,60 @@ func truncateErr(s string, n int) string {
 	return s[:n] + "…"
 }
 
+func normalizeDomainName(s string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s), "."))
+}
+
+// disconnectDomain removes panel links and optionally nginx vhost / PowerDNS zone.
+func (h *handler) disconnectDomain(domain string, deleteDNS, deleteNginx bool) error {
+	domain = normalizeDomainName(domain)
+	if domain == "" {
+		return fmt.Errorf("domain required")
+	}
+	sid := h.localServerID()
+	exec := h.localExec()
+	var notes []string
+
+	if deleteNginx {
+		if m := proxy.NewManager(proxy.Nginx, exec); m != nil {
+			if nm, ok := m.(*proxy.NginxManager); ok && nm.IsAvailable() {
+				if err := nm.RemoveVHost(domain); err != nil {
+					notes = append(notes, "nginx: "+err.Error())
+				}
+			}
+		}
+	}
+
+	if deleteDNS {
+		if err := powerdns.NewClient(powerdns.LoadConfig(h.opts.DB, sid)).DeleteZone(domain); err != nil {
+			notes = append(notes, "dns: "+err.Error())
+		}
+	}
+
+	// Local mailbox rows (remote delete best-effort)
+	var mboxes []storage.Mailbox
+	h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).Find(&mboxes)
+	mailClient := mailinbox.NewClient(mailinbox.LoadConfig(h.opts.DB, sid))
+	for _, mb := range mboxes {
+		_ = mailClient.DeleteMailbox(mb.Address)
+		_ = h.opts.DB.Delete(&mb).Error
+	}
+
+	_ = h.opts.DB.Where("domain = ?", domain).Delete(&storage.ProjectDomain{}).Error
+
+	res := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).Delete(&storage.ConnectedDomain{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 && len(notes) == 0 {
+		return fmt.Errorf("domain %s not found", domain)
+	}
+	if len(notes) > 0 {
+		return fmt.Errorf("removed with warnings: %s", strings.Join(notes, "; "))
+	}
+	return nil
+}
+
 func (h *handler) createMailboxAPI(local, domain, password string, projectID uint) (*storage.Mailbox, error) {
 	local = strings.ToLower(strings.TrimSpace(local))
 	domain = strings.ToLower(strings.TrimSpace(domain))

@@ -1,0 +1,154 @@
+{{define "node_domain_detail"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <a href="/domains" class="text-xs text-panel-muted hover:text-gray-200">← Domains</a>
+      <h1 class="text-3xl font-bold tracking-tight font-mono mt-1">{{if .Domain}}{{.Domain.Domain}}{{else}}{{.DNSZoneName}}{{end}}</h1>
+      <p class="text-panel-muted text-sm mt-1">DNS records, links, and remove</p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs items-center">
+      <span class="px-2 py-1 rounded border {{if .PowerDNSReady}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">PowerDNS {{if .PowerDNSReady}}ready{{else}}offline{{end}}</span>
+      {{if .Domain}}
+      <span class="px-2 py-1 rounded border {{if .Domain.DNSReady}}border-emerald-800 text-emerald-400{{else}}border-gray-700 text-gray-500{{end}}">DNS {{if .Domain.DNSReady}}✓{{else}}—{{end}}</span>
+      <span class="px-2 py-1 rounded border {{if .Domain.MailReady}}border-emerald-800 text-emerald-400{{else}}border-gray-700 text-gray-500{{end}}">Mail {{if .Domain.MailReady}}✓{{else}}—{{end}}</span>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  {{if .Domain}}
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+    <div class="text-sm font-semibold text-gray-300">Links</div>
+    {{if .Domain.Upstream}}<div class="text-xs text-gray-500">Upstream: <span class="font-mono text-gray-300">{{.Domain.Upstream}}</span></div>{{end}}
+    {{if .Domain.PublicIP}}<div class="text-xs text-gray-500">Public IP: <span class="font-mono text-gray-300">{{.Domain.PublicIP}}</span></div>{{end}}
+    {{if .Domain.LastError}}<div class="text-xs text-amber-400/90">{{.Domain.LastError}}</div>{{end}}
+    <form method="post" action="/domains/connect" class="flex flex-wrap gap-2 items-center">
+      <input type="hidden" name="domain" value="{{.Domain.Domain}}">
+      <input type="hidden" name="return_to" value="/domains/d/{{pathEscape .Domain.Domain}}">
+      <select name="project_id" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+        <option value="0">project</option>
+        {{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      </select>
+      <select name="db_type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+        <option value="">db</option>
+        <option value="mysql" {{if eq .Domain.DBType "mysql"}}selected{{end}}>mysql</option>
+        <option value="postgres" {{if eq .Domain.DBType "postgres"}}selected{{end}}>postgres</option>
+        <option value="mongodb" {{if eq .Domain.DBType "mongodb"}}selected{{end}}>mongodb</option>
+      </select>
+      <input name="db_name" placeholder="db name" value="{{.Domain.DBName}}" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs w-28">
+      <input name="upstream" placeholder="upstream" value="{{.Domain.Upstream}}" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs w-48">
+      <button class="text-xs text-indigo-300 border border-indigo-800 rounded px-2 py-1.5">Update links</button>
+    </form>
+  </div>
+  {{end}}
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-gray-300">DNS records</h2>
+      {{if not .PowerDNSReady}}
+      <a href="/services" class="text-xs text-indigo-400 hover:underline">Enable PowerDNS under Services</a>
+      {{end}}
+    </div>
+    {{if .DNSZone}}
+    <div class="px-4 py-4 space-y-4">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left">
+          <thead class="text-gray-500 uppercase border-b border-gray-800">
+            <tr>
+              <th class="py-2 pr-3 font-medium">Name</th>
+              <th class="py-2 pr-3 font-medium">Type</th>
+              <th class="py-2 pr-3 font-medium">TTL</th>
+              <th class="py-2 pr-3 font-medium">Content</th>
+              <th class="py-2 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .DNSZone.RRSets}}
+            {{$rr := .}}
+            {{range .Records}}
+            <tr class="border-b border-gray-800/60 align-top">
+              <td class="py-2 pr-3 font-mono text-gray-300 whitespace-nowrap">{{trimDot $rr.Name}}</td>
+              <td class="py-2 pr-3 text-indigo-300">{{$rr.Type}}</td>
+              <td class="py-2 pr-3 text-gray-500">{{$rr.TTL}}</td>
+              <td class="py-2 pr-3 font-mono text-gray-200 break-all">{{.Content}}</td>
+              <td class="py-2">
+                {{if and (ne $rr.Type "SOA") (ne $rr.Type "NS")}}
+                <form method="post" action="/domains/d/{{pathEscape $.Domain.Domain}}/records/delete"
+                      onsubmit="return confirm('Delete this {{$rr.Type}} record?')">
+                  <input type="hidden" name="name" value="{{$rr.Name}}">
+                  <input type="hidden" name="type" value="{{$rr.Type}}">
+                  <button class="text-red-400 hover:text-red-300">Delete</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+            {{end}}
+            {{else}}
+            <tr><td colspan="5" class="py-3 text-gray-600">No records</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <form method="post" action="/domains/d/{{pathEscape .Domain.Domain}}/records" class="grid md:grid-cols-5 gap-2 items-end">
+        <div class="md:col-span-5 text-xs font-semibold text-gray-400">Add / replace record</div>
+        <input name="name" placeholder="@ or www" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+        <select name="type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+          <option>A</option>
+          <option>AAAA</option>
+          <option>CNAME</option>
+          <option>MX</option>
+          <option>TXT</option>
+          <option>NS</option>
+          <option>CAA</option>
+          <option>SRV</option>
+        </select>
+        <input name="ttl" type="number" value="300" placeholder="TTL" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+        <input name="content" required placeholder="content (MX: 10 mail.example.com.)" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs">
+        <button class="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded">Save</button>
+      </form>
+    </div>
+    {{else}}
+    <p class="px-4 py-6 text-sm text-gray-600">No PowerDNS zone loaded for this domain yet. Reconnect the domain once PowerDNS is online, or enable PowerDNS under Services.</p>
+    {{end}}
+  </div>
+
+  {{if .Mailboxes}}
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">Mailboxes on this domain</h2>
+    <ul class="space-y-2 text-sm">
+      {{range .Mailboxes}}
+      <li class="flex justify-between items-center gap-2">
+        <span class="font-mono text-emerald-300">{{.Address}}</span>
+        <form method="post" action="/domains/mailboxes/{{.ID}}/delete"><button class="text-xs text-red-400">Delete</button></form>
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+
+  {{if .Domain}}
+  <div class="bg-gray-900 border border-red-950/50 rounded-xl p-4">
+    <h2 class="text-sm font-semibold text-red-300 mb-2">Remove domain</h2>
+    <p class="text-xs text-gray-500 mb-3">Removes this domain from the panel. Optionally delete the nginx vhost and PowerDNS zone.</p>
+    <form method="post" action="/domains/d/{{pathEscape .Domain.Domain}}/delete"
+          class="flex flex-wrap gap-4 items-center"
+          onsubmit="return confirm('Remove {{.Domain.Domain}} from the panel?')">
+      <label class="text-xs text-gray-400 flex items-center gap-2">
+        <input type="checkbox" name="delete_nginx" value="1" checked class="rounded border-gray-600">
+        Remove nginx vhost
+      </label>
+      <label class="text-xs text-gray-400 flex items-center gap-2">
+        <input type="checkbox" name="delete_dns" value="1" class="rounded border-gray-600">
+        Delete PowerDNS zone
+      </label>
+      <button class="text-xs bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800 rounded px-3 py-1.5">Remove connected domain</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

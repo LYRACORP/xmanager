@@ -143,6 +143,7 @@ type pageData struct {
 	NodeServices   []nodeServiceView
 	ProjectDomains    []storage.ProjectDomain
 	ConnectedDomains  []storage.ConnectedDomain
+	Domain            *storage.ConnectedDomain
 	Mailboxes         []storage.Mailbox
 	VHosts            []proxy.VHost
 	AlertChannels     []storage.AlertChannel
