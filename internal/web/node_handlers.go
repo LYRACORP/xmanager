@@ -110,6 +110,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /backup/{id}/resend", h.requireAuth(h.postNodeBackupResend))
 
 	mux.HandleFunc("GET /logs", h.requireAuth(h.getNodeLogs))
+	mux.HandleFunc("GET /api/node/logs", h.requireAuth(h.getNodeLogsFragment))
 
 	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeServices))
 	mux.HandleFunc("POST /services/{name}/enable", h.requireAuth(h.postNodeServiceEnable))

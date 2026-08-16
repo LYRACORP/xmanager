@@ -1,23 +1,32 @@
 {{define "node_logs"}}
 {{template "head" .}}
 {{template "nav" .}}
-<div class="xm-page space-y-6">
+<div class="xm-page space-y-4">
   <div>
     <h1 class="text-2xl font-bold tracking-tight">Logs</h1>
-    <p class="text-panel-muted text-xs mt-0.5">Activity audit — panel and TUI actions</p>
+    <p class="text-panel-muted text-xs mt-0.5">Host · panel · projects · Docker · activity audit</p>
   </div>
 
   {{if .Flash}}
   <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
   {{end}}
 
+  <div class="flex flex-wrap gap-1.5">
+    {{range .LogsTabSources}}
+    <a href="/logs?source={{.ID}}{{if and (eq .ID "projects") $.LogsProject}}&project={{$.LogsProject}}{{end}}{{if and (eq .ID "docker") $.LogsContainer}}&container={{$.LogsContainer}}{{end}}"
+       class="text-xs px-3 py-1.5 rounded-lg border {{if eq $.LogsSource .ID}}bg-indigo-600 border-indigo-500 text-white{{else}}bg-zinc-900 border-zinc-700 text-panel-muted hover:text-gray-200{{end}}">{{.Label}}</a>
+    {{end}}
+  </div>
+
+  {{if eq .LogsSource "activity"}}
   <form method="get" action="/logs" class="xm-card p-4 flex flex-wrap gap-2 items-end">
+    <input type="hidden" name="source" value="activity">
     <div>
-      <label class="block text-[10px] text-panel-muted uppercase mb-1">Source</label>
-      <select name="source" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
-        <option value="" {{if not .LogsSource}}selected{{end}}>all</option>
-        <option value="web" {{if eq .LogsSource "web"}}selected{{end}}>web</option>
-        <option value="tui" {{if eq .LogsSource "tui"}}selected{{end}}>tui</option>
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Origin</label>
+      <select name="asource" class="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs">
+        <option value="">all</option>
+        <option value="web">web</option>
+        <option value="tui">tui</option>
       </select>
     </div>
     <div>
@@ -74,6 +83,54 @@
       </tbody>
     </table>
   </div>
+
+  {{else}}
+
+  {{if or (eq .LogsSource "projects") (eq .LogsSource "docker")}}
+  <form method="get" action="/logs" class="xm-card p-3 flex flex-wrap gap-2 items-end">
+    <input type="hidden" name="source" value="{{.LogsSource}}">
+    {{if eq .LogsSource "projects"}}
+    <div class="flex-1 min-w-[12rem]">
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Project</label>
+      <select name="project" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono">
+        <option value="">All (overview)</option>
+        {{range .Projects}}
+        <option value="{{.Name}}" {{if eq $.LogsProject .Name}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    {{end}}
+    {{if eq .LogsSource "docker"}}
+    <div class="flex-1 min-w-[12rem]">
+      <label class="block text-[10px] text-panel-muted uppercase mb-1">Container</label>
+      <select name="container" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono">
+        <option value="">Pick a container…</option>
+        {{range .Containers}}
+        <option value="{{.ID}}" {{if eq $.LogsContainer .ID}}selected{{end}}>{{.Name}} ({{.ID}})</option>
+        {{end}}
+      </select>
+    </div>
+    {{end}}
+    <button class="xm-btn xm-btn-primary text-xs">Load</button>
+  </form>
+  {{end}}
+
+  <div class="flex items-center justify-between gap-2">
+    <p class="text-xs text-panel-muted font-mono">{{.LogsLabel}}</p>
+    <span class="text-[10px] text-zinc-600">auto-refresh 5s</span>
+  </div>
+
+  <div id="logs-live"
+       hx-get="/api/node/logs?{{.LogsFragmentQS}}"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML">
+    {{template "node_logs_body" .}}
+  </div>
+  {{end}}
 </div>
 {{template "foot" .}}
+{{end}}
+
+{{define "node_logs_body"}}
+<pre class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs font-mono text-gray-300 overflow-auto max-h-[70vh] whitespace-pre-wrap">{{if .LogText}}{{.LogText}}{{else}}(no output){{end}}</pre>
 {{end}}

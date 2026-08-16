@@ -227,12 +227,17 @@ type pageData struct {
 	BackupHistory          []backupHistoryView
 	BackupSchedules        []backupScheduleView
 	BackupTelegramChannels []storage.AlertChannel
-	// Activity logs
-	ActivityLogs []storage.ActivityLog
-	LogsSource   string
-	LogsActor    string
-	LogsQuery    string
-	LogsRange    string
+	// Activity / system logs
+	ActivityLogs    []storage.ActivityLog
+	LogsSource      string
+	LogsActor       string
+	LogsQuery       string
+	LogsRange       string
+	LogsProject     string
+	LogsContainer   string
+	LogsLabel       string
+	LogsTabSources  []struct{ ID, Label string }
+	LogsFragmentQS  string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
