@@ -26,10 +26,17 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		DNSPort: "53",
-		APIPort: "8081",
+		APIPort: DefaultAPIPort,
 		APIKey:  randomHex(16),
 	}
 }
+
+// DefaultAPIPort is the host port published for the PowerDNS HTTP API.
+// Kept off 8081 so it does not collide with Adminer (xm-adminer).
+const DefaultAPIPort = "8082"
+
+// ContainerAPIPort is the port PowerDNS listens on inside the container.
+const ContainerAPIPort = "8081"
 
 func ParseConfig(raw string) Config {
 	raw = strings.TrimSpace(raw)
@@ -42,7 +49,7 @@ func ParseConfig(raw string) Config {
 		cfg.DNSPort = "53"
 	}
 	if cfg.APIPort == "" {
-		cfg.APIPort = "8081"
+		cfg.APIPort = DefaultAPIPort
 	}
 	// Empty API key is filled during Enable(); do not invent on every LoadConfig.
 	return cfg

@@ -12,8 +12,8 @@
       PowerDNS API {{if .PowerDNSReady}}ready{{else}}offline{{end}}
     </span>
     {{if not .PowerDNSReady}}
-    <a href="/services" class="text-indigo-400 hover:underline">Enable PowerDNS under Services</a>
-    <span class="text-gray-600">— if upgrading from MariaDB, disable then re-enable once</span>
+    <a href="/services" class="text-indigo-400 hover:underline">Disable then Enable PowerDNS under Services</a>
+    <span class="text-gray-600">— API defaults to :8082 (Adminer uses :8081). Container must publish ports.</span>
     {{end}}
   </div>
 

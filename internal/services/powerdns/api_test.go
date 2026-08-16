@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -85,3 +86,28 @@ func TestListZonesAndCRUD(t *testing.T) {
 func stringsHasSuffix(s, suf string) bool {
 	return len(s) >= len(suf) && s[len(s)-len(suf):] == suf
 }
+
+func TestDefaultAPIPort(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.APIPort != DefaultAPIPort || DefaultAPIPort != "8082" {
+		t.Fatalf("default api port=%q want 8082", cfg.APIPort)
+	}
+	parsed := ParseConfig(`{"api_key":"x"}`)
+	if parsed.APIPort != "8082" {
+		t.Fatalf("empty api_port fallback=%q", parsed.APIPort)
+	}
+}
+
+func TestComposeYAMLPublishesHostPort(t *testing.T) {
+	yml := ComposeYAML(Config{APIKey: "k", DNSPort: "53", APIPort: "8082"})
+	if !strings.Contains(yml, `"8082:8081"`) && !strings.Contains(yml, "8082:8081") {
+		t.Fatalf("expected host 8082 -> container 8081:\n%s", yml)
+	}
+	if !strings.Contains(yml, "PDNS_AUTH_WEBSERVER_PORT=8081") {
+		t.Fatal("container should listen on 8081")
+	}
+	if strings.Contains(yml, `"8081:8081"`) {
+		t.Fatal("default compose should not publish host 8081 (Adminer)")
+	}
+}
+

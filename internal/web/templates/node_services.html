@@ -35,7 +35,7 @@
           <p class="text-xs text-gray-600 mt-2">Mail stack — use <span class="font-mono">mode=mailinabox</span> and point at a MiaB <span class="font-mono">/admin</span> API for the <a class="text-indigo-400" href="/email">Email</a> panel (domains, accounts, webmail). Stalwart admin on <span class="font-mono text-gray-400">:8085</span> is optional.</p>
           {{end}}
           {{if eq .Name "powerdns"}}
-          <p class="text-xs text-gray-600 mt-2">Authoritative DNS (SQLite) API on <span class="font-mono text-gray-400">:8081</span>. Manage zones &amp; records in the <a class="text-indigo-400" href="/dns">DNS</a> panel.</p>
+          <p class="text-xs text-gray-600 mt-2">Authoritative DNS (SQLite) API on <span class="font-mono text-gray-400">:8082</span> by default (avoids Adminer on :8081). Manage zones in the <a class="text-indigo-400" href="/dns">DNS</a> panel. After upgrade: Disable then Enable once so ports republish.</p>
           {{end}}
           {{if eq .Name "netdata"}}
           <p class="text-xs text-gray-600 mt-2">Open <a class="text-indigo-400" href="/netdata/">/netdata/</a> (behind panel auth)</p>
@@ -72,6 +72,7 @@
             {{end}}
             {{if eq .Name "powerdns"}}
             <input name="api_key" placeholder="API key (auto if empty)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            <input name="api_port" placeholder="API host port (default 8082)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             {{end}}
             <button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded">Enable</button>
           </form>

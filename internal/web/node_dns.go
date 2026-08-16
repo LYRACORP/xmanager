@@ -27,6 +27,12 @@ func (h *handler) getNodeDNS(w http.ResponseWriter, r *http.Request) {
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
+	cfg := powerdns.LoadConfig(h.opts.DB, sid)
+	if !pdnsOK && data.Flash == "" {
+		data.Flash = fmt.Sprintf("PowerDNS API offline at %s — open Services, Disable then Enable PowerDNS (publishes API on :%s; Adminer keeps :8081)",
+			cfg.URL(), powerdns.DefaultAPIPort)
+	}
+
 
 	var projects []storage.Project
 	h.opts.DB.Where("server_id = ?", sid).Order("name asc").Find(&projects)

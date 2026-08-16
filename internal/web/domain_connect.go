@@ -82,6 +82,7 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 	}
 
 	var errs []string
+	var soft []string
 
 	// Project link + ProjectDomain row
 	if cd.ProjectID != nil && *cd.ProjectID > 0 {
@@ -106,12 +107,14 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		}
 	}
 
-	// Nginx
+	// Nginx — soft-skip when not installed
 	if !opts.SkipNginx {
 		if m := proxy.NewManager(proxy.Nginx, exec); m != nil {
 			if nm, ok := m.(*proxy.NginxManager); ok {
-				if err := nm.AddVHost(domain, opts.Upstream); err != nil {
-					errs = append(errs, "nginx: "+err.Error())
+				if !nm.IsAvailable() {
+					soft = append(soft, "nginx: not installed — skipped vhost")
+				} else if err := nm.AddVHost(domain, opts.Upstream); err != nil {
+					soft = append(soft, "nginx: "+err.Error())
 				}
 			}
 		}
@@ -126,26 +129,32 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		if mailHost == "" || mailHost == "mail.example.com" {
 			mailHost = "mail." + domain
 		}
-		if err := client.EnsureZone(domain, opts.PublicIP, mailHost); err != nil {
-			errs = append(errs, "powerdns: "+err.Error())
+		if err := client.Ping(); err != nil {
+			errs = append(errs, fmt.Sprintf("powerdns: API offline at %s — disable/enable PowerDNS under Services (API defaults to :%s; Adminer uses :8081): %v",
+				pdnsCfg.URL(), powerdns.DefaultAPIPort, truncateErr(err.Error(), 120)))
+		} else if err := client.EnsureZone(domain, opts.PublicIP, mailHost); err != nil {
+			errs = append(errs, "powerdns: "+truncateErr(err.Error(), 160))
 		} else {
 			cd.DNSReady = true
 		}
 	}
 
-	// Mail domain
+	// Mail domain — soft-fail when API is down
 	cd.MailReady = false
 	if !opts.SkipMail {
 		mailCfg := mailinbox.LoadConfig(h.opts.DB, sid)
 		mailClient := mailinbox.NewClient(mailCfg)
-		if err := mailClient.EnsureDomain(domain); err != nil {
-			errs = append(errs, "mail: "+err.Error())
+		if err := mailClient.Ping(); err != nil {
+			soft = append(soft, fmt.Sprintf("mail: API unreachable at %s — skipped (%v)", mailCfg.BaseURL(), err))
+		} else if err := mailClient.EnsureDomain(domain); err != nil {
+			soft = append(soft, "mail: "+truncateErr(err.Error(), 160))
 		} else {
 			cd.MailReady = true
 		}
 	}
 
-	cd.LastError = strings.Join(errs, "; ")
+	all := append(append([]string{}, soft...), errs...)
+	cd.LastError = strings.Join(all, "; ")
 	if cd.ID == 0 {
 		if err := h.opts.DB.Create(&cd).Error; err != nil {
 			return nil, err
@@ -153,10 +162,19 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 	} else if err := h.opts.DB.Save(&cd).Error; err != nil {
 		return nil, err
 	}
-	if len(errs) > 0 {
+	// Soft warnings still surface as "saved with warnings"; hard errors too.
+	if len(all) > 0 {
 		return &cd, fmt.Errorf("%s", cd.LastError)
 	}
 	return &cd, nil
+}
+
+func truncateErr(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func (h *handler) createMailboxAPI(local, domain, password string, projectID uint) (*storage.Mailbox, error) {
