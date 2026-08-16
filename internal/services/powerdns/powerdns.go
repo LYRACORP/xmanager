@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -146,6 +147,9 @@ exec pdns_server --daemon=no
 	}
 	if err := verifyAPIPublish(exec, c.APIPort); err != nil {
 		return fmt.Errorf("powerdns enable: %w", err)
+	}
+	if err := waitForAPI(c, 30); err != nil {
+		return fmt.Errorf("powerdns enable: published on :%s but API not ready: %w — check docker logs pdns-auth", c.APIPort, err)
 	}
 	return p.SaveInstance(p.serverID, serviceType, "running", c.JSON())
 }
@@ -301,6 +305,22 @@ func verifyAPIPublish(exec *ssh.Executor, hostPort string) error {
 		return fmt.Errorf("pdns-auth API not published on host :%s (got: %s). Free the port or set api_port differently", hostPort, truncateOut(out, 120))
 	}
 	return nil
+}
+
+func waitForAPI(c Config, seconds int) error {
+	client := NewClient(c)
+	var last error
+	for i := 0; i < seconds; i++ {
+		last = client.Ping()
+		if last == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	if last == nil {
+		last = fmt.Errorf("timeout")
+	}
+	return last
 }
 
 func truncateOut(s string, n int) string {

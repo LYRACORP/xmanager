@@ -422,25 +422,37 @@ func (c *Client) ListDomains() ([]string, error) {
 
 // Ping checks admin API reachability (best-effort).
 func (c *Client) Ping() error {
-	path := "/api/principal?types=domain&page=0&limit=1"
+	paths := []string{"/api/principal?types=domain&page=0&limit=1", "/api/principal", "/"}
 	if c.Cfg.Mode == ModeMiaB {
-		path = "/mail/users?format=json"
+		paths = []string{"/mail/users?format=json", "/admin/login"}
 	}
-	req, err := http.NewRequest("GET", c.Cfg.BaseURL()+path, nil)
-	if err != nil {
-		return err
+	var last error
+	for _, path := range paths {
+		req, err := http.NewRequest("GET", c.Cfg.BaseURL()+path, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", c.authHeader())
+		req.Header.Set("Accept", "application/json")
+		res, err := c.HTTP.Do(req)
+		if err != nil {
+			return err
+		}
+		code := res.StatusCode
+		_ = res.Body.Close()
+		// 401/403 means the server is up but auth differs — treat as reachable.
+		if code < 400 || code == 401 || code == 403 {
+			return nil
+		}
+		last = fmt.Errorf("mail ping: %s", res.Status)
+		if code != 404 {
+			return last
+		}
 	}
-	req.Header.Set("Authorization", c.authHeader())
-	req.Header.Set("Accept", "application/json")
-	res, err := c.HTTP.Do(req)
-	if err != nil {
-		return err
+	if last == nil {
+		last = fmt.Errorf("mail ping: unreachable")
 	}
-	defer res.Body.Close()
-	if res.StatusCode >= 400 {
-		return fmt.Errorf("mail ping: %s", res.Status)
-	}
-	return nil
+	return last
 }
 
 func truncate(s string, n int) string {

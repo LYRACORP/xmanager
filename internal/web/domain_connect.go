@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/proxy"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
@@ -107,14 +108,17 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		}
 	}
 
-	// Nginx — soft-skip when not installed
+	// Nginx — install if missing, then add vhost (needed for Cloudflare origin / :80)
 	if !opts.SkipNginx {
 		if m := proxy.NewManager(proxy.Nginx, exec); m != nil {
 			if nm, ok := m.(*proxy.NginxManager); ok {
-				if !nm.IsAvailable() {
-					soft = append(soft, "nginx: not installed — skipped vhost")
+				if err := nm.EnsureInstalled(); err != nil {
+					soft = append(soft, "nginx: "+err.Error())
 				} else if err := nm.AddVHost(domain, opts.Upstream); err != nil {
 					soft = append(soft, "nginx: "+err.Error())
+				} else {
+					// Best-effort open HTTP for Cloudflare / public access.
+					_ = hostfirewall.Allow([]int{80, 443}, "tcp")
 				}
 			}
 		}
