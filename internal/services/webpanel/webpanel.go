@@ -196,7 +196,9 @@ func (w *WebPanel) enableBinary(port string, force bool) error {
 
 	// Upload / SFTP often leaves the pooled session dead — refresh before systemd steps.
 	w.report(0.55, "Refreshing SSH session…")
-	_ = w.reconnect()
+	if err := w.reconnect(); err != nil {
+		return fmt.Errorf("refreshing SSH after binary upload: %w", err)
+	}
 
 	configYAML := fmt.Sprintf(`web:
   enabled: true
@@ -242,7 +244,10 @@ WantedBy=multi-user.target
 	}
 
 	// Fresh connection again — restart can race with MaxSessions / stale TCP.
-	_ = w.reconnect()
+	if err := w.reconnect(); err != nil {
+		// Still try start via run() (pool retry + system ssh); do not abort solely on this.
+		w.report(0.72, "SSH refresh soft-fail, continuing…")
+	}
 	// Wait for the process to stay up (crash-loop Restart=on-failure can briefly look active).
 	w.report(0.78, "Starting xmanager-web service…")
 	start := `systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && sleep 2 && systemctl is-active xmanager-web`
@@ -327,7 +332,13 @@ func (w *WebPanel) reconnect() error {
 	if w.pool == nil || w.sshCfg.Host == "" {
 		return fmt.Errorf("no pool/ssh config")
 	}
-	if _, err := w.pool.Reconnect(w.serverID, w.sshCfg); err != nil {
+	cfg := w.sshCfg
+	if cfg.Timeout < 25*time.Second {
+		cfg.Timeout = 25 * time.Second
+	}
+	// Drop stale client first; upload / restart often trips MaxStartups or brief blips.
+	w.pool.Disconnect(w.serverID)
+	if _, err := w.pool.ConnectWithRetry(w.serverID, cfg, 4); err != nil {
 		return err
 	}
 	exec, ok := w.pool.GetExecutor(w.serverID)
@@ -338,7 +349,7 @@ func (w *WebPanel) reconnect() error {
 	return nil
 }
 
-// run executes a remote command; on dead SSH sessions, reconnects once then falls back to system ssh.
+// run executes a remote command; on dead SSH sessions, reconnects then falls back to system ssh.
 func (w *WebPanel) run(cmd string) error {
 	if w.exec != nil {
 		err := w.runOnce(w.exec, cmd)
@@ -354,6 +365,10 @@ func (w *WebPanel) run(cmd string) error {
 			} else if !isSSHSessionError(err2) {
 				return err2
 			}
+		}
+	} else if rerr := w.reconnect(); rerr == nil {
+		if err2 := w.runOnce(w.exec, cmd); err2 == nil {
+			return nil
 		}
 	}
 	return w.runSystemSSH(cmd)
@@ -375,31 +390,12 @@ func (w *WebPanel) runOnce(exec *ssh.Executor, cmd string) error {
 }
 
 func (w *WebPanel) runSystemSSH(cmd string) error {
-	if w.sshCfg.Host == "" {
-		return fmt.Errorf("no SSH config for system-ssh fallback")
-	}
-	port := w.sshCfg.Port
-	if port == 0 {
-		port = 22
-	}
-	keyPath := expandHome(w.sshCfg.KeyPath)
-	args := []string{
-		"-p", strconv.Itoa(port),
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "BatchMode=yes",
-		"-o", "ConnectTimeout=20",
-	}
-	if keyPath != "" {
-		args = append(args, "-i", keyPath)
-	}
-	args = append(args, fmt.Sprintf("%s@%s", w.sshCfg.User, w.sshCfg.Host), cmd)
-	out, err := execcmd.Command("ssh", args...).CombinedOutput()
-	msg := strings.TrimSpace(string(out))
+	out, err := w.systemSSHOutput(cmd)
 	if err != nil {
-		if msg == "" {
-			msg = err.Error()
+		if out == "" {
+			return err
 		}
-		return fmt.Errorf("%s", msg)
+		return fmt.Errorf("%s", out)
 	}
 	return nil
 }
@@ -476,15 +472,59 @@ func (w *WebPanel) systemSSHOutput(cmd string) (string, error) {
 	args := []string{
 		"-p", strconv.Itoa(port),
 		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "BatchMode=yes",
-		"-o", "ConnectTimeout=20",
+		"-o", "ConnectTimeout=25",
 	}
 	if keyPath != "" {
-		args = append(args, "-i", keyPath)
+		args = append(args, "-o", "BatchMode=yes", "-i", keyPath)
+	} else if w.sshCfg.Password == "" {
+		args = append(args, "-o", "BatchMode=yes")
 	}
 	args = append(args, fmt.Sprintf("%s@%s", w.sshCfg.User, w.sshCfg.Host), cmd)
-	out, err := execcmd.Command("ssh", args...).CombinedOutput()
+
+	c := execcmd.Command("ssh", args...)
+	cleanup, err := attachSSHPassword(c, w.sshCfg.Password, keyPath)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		return "", err
+	}
+	out, err := c.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// attachSSHPassword enables OpenSSH password auth via SSH_ASKPASS when no key is configured.
+// BatchMode alone cannot supply passwords — that produced "Permission denied (publickey,password)".
+func attachSSHPassword(c *execcmd.Cmd, password, keyPath string) (func(), error) {
+	if password == "" || keyPath != "" {
+		return nil, nil
+	}
+	if _, err := execcmd.LookPath("sshpass"); err == nil {
+		// Prefer sshpass when present (no askpass display tricks).
+		c.Path, _ = execcmd.LookPath("sshpass")
+		c.Args = append([]string{"sshpass", "-e"}, c.Args...)
+		c.Env = append(os.Environ(), "SSHPASS="+password)
+		return nil, nil
+	}
+	f, err := os.CreateTemp("", "xm-askpass-*.sh")
+	if err != nil {
+		return nil, fmt.Errorf("ssh password fallback: %w (install sshpass or use an SSH key)", err)
+	}
+	script := "#!/bin/sh\nprintf '%s\\n' \"$SSH_PASSWORD\"\n"
+	if _, err := f.WriteString(script); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	_ = f.Close()
+	_ = os.Chmod(f.Name(), 0o700)
+	c.Env = append(os.Environ(),
+		"SSH_PASSWORD="+password,
+		"SSH_ASKPASS="+f.Name(),
+		"SSH_ASKPASS_REQUIRE=force",
+		"DISPLAY=:0",
+	)
+	return func() { os.Remove(f.Name()) }, nil
 }
 
 func mustExecutable() string {
@@ -677,15 +717,23 @@ func (w *WebPanel) uploadViaSCP(localPath string) error {
 	args := []string{
 		"-P", strconv.Itoa(port),
 		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "BatchMode=yes",
-		"-o", "ConnectTimeout=15",
+		"-o", "ConnectTimeout=25",
 	}
 	if keyPath != "" {
-		args = append(args, "-i", keyPath)
+		args = append(args, "-o", "BatchMode=yes", "-i", keyPath)
+	} else if w.sshCfg.Password == "" {
+		args = append(args, "-o", "BatchMode=yes")
 	}
 	args = append(args, localPath, target)
 
 	cmd := execcmd.Command("scp", args...)
+	cleanup, err := attachSSHPassword(cmd, w.sshCfg.Password, keyPath)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		return err
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w (%s)", err, strings.TrimSpace(string(out)))

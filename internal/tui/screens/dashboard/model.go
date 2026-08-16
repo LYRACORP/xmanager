@@ -529,7 +529,8 @@ func (m *Model) runWebPanel(action string) tea.Cmd {
 			Password: srv.Password,
 			JumpHost: srv.JumpHost,
 		}
-		_, err := m.ctx.Pool.Reconnect(srv.ID, cfg)
+		m.ctx.Pool.Disconnect(srv.ID)
+		_, err := m.ctx.Pool.ConnectWithRetry(srv.ID, cfg, 4)
 		if err != nil {
 			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: fmt.Errorf("reconnect: %w", err)}
 			return
