@@ -306,6 +306,13 @@ type webmailHostView struct {
 	URL    string
 }
 
+type webmailDNSContext struct {
+	ZoneDomain  string
+	DNSProvider string
+	CFZoneID    string
+	PublicIP    string
+}
+
 func mailWebmailUpstream(cfg mailinbox.Config) string {
 	if cfg.Mode == mailinbox.ModeMiaB {
 		return "http://127.0.0.1/mail/"
@@ -317,21 +324,86 @@ func mailWebmailUpstream(cfg mailinbox.Config) string {
 	return "http://127.0.0.1:" + port
 }
 
-// EnsureWebmail upserts DNS for webmail.<domain> and an nginx vhost to the local mail UI.
-func (h *handler) EnsureWebmail(domain string) error {
-	domain = strings.ToLower(strings.TrimSpace(domain))
+func webmailHostForDomain(domain string) string {
+	domain = normalizeDomainName(domain)
 	if domain == "" {
-		return fmt.Errorf("domain required")
+		return ""
+	}
+	return "webmail." + domain
+}
+
+func serverWebmailHost(mainDomain string) string {
+	mainDomain = normalizeDomainName(mainDomain)
+	if mainDomain == "" {
+		return ""
+	}
+	return "webmail." + mainDomain
+}
+
+func webmailURLForHost(host string) string {
+	host = normalizeDomainName(host)
+	if host == "" {
+		return ""
+	}
+	return "http://" + host + "/"
+}
+
+func webmailRecordName(host, zone string) string {
+	host = normalizeDomainName(host)
+	zone = normalizeDomainName(zone)
+	if host == "" || zone == "" {
+		return ""
+	}
+	if host == zone {
+		return "@"
+	}
+	suffix := "." + zone
+	if strings.HasSuffix(host, suffix) {
+		return strings.TrimSuffix(host, suffix)
+	}
+	return host
+}
+
+func dnsZoneForHost(host string, connected []storage.ConnectedDomain) webmailDNSContext {
+	host = normalizeDomainName(host)
+	bestLen := -1
+	best := webmailDNSContext{}
+	for _, cd := range connected {
+		zone := normalizeDomainName(cd.Domain)
+		if zone == "" {
+			continue
+		}
+		match := host == zone || strings.HasSuffix(host, "."+zone)
+		if !match {
+			continue
+		}
+		if len(zone) <= bestLen {
+			continue
+		}
+		bestLen = len(zone)
+		best = webmailDNSContext{
+			ZoneDomain:  zone,
+			DNSProvider: strings.ToLower(strings.TrimSpace(cd.DNSProvider)),
+			CFZoneID:    strings.TrimSpace(cd.CFZoneID),
+			PublicIP:    strings.TrimSpace(cd.PublicIP),
+		}
+	}
+	return best
+}
+
+func (h *handler) ensureWebmailHost(host string, ctx webmailDNSContext) error {
+	host = normalizeDomainName(host)
+	if host == "" {
+		return fmt.Errorf("webmail host required")
+	}
+	if ctx.ZoneDomain == "" {
+		return fmt.Errorf("dns zone required")
 	}
 	sid := h.localServerID()
 	exec := h.localExec()
-	host := "webmail." + domain
-
-	var cd storage.ConnectedDomain
-	_ = h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error
-	publicIP := strings.TrimSpace(cd.PublicIP)
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
+	publicIP := strings.TrimSpace(ctx.PublicIP)
 	if publicIP == "" {
-		ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
 		publicIP = strings.TrimSpace(ns.PublicIP)
 	}
 	if publicIP == "" {
@@ -339,28 +411,25 @@ func (h *handler) EnsureWebmail(domain string) error {
 	}
 
 	var notes []string
-	provider := strings.ToLower(strings.TrimSpace(cd.DNSProvider))
+	provider := strings.ToLower(strings.TrimSpace(ctx.DNSProvider))
 	if provider == "" {
 		provider = "powerdns"
 	}
 	if publicIP != "" && provider != "none" {
 		switch provider {
 		case "cloudflare":
-			ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
 			if ns.CFAPIToken == "" {
 				notes = append(notes, "cloudflare: no API token")
 			} else {
-				cfg := cloudflare.NewConfig(ns.CFAPIToken, cd.CFZoneID)
+				cfg := cloudflare.NewConfig(ns.CFAPIToken, strings.TrimSpace(ctx.CFZoneID))
 				client := cloudflare.NewClient(cfg)
-				if cd.CFZoneID == "" {
-					if zid, err := client.LookupZoneID(domain); err == nil {
-						cd.CFZoneID = zid
+				if cfg.ZoneID == "" {
+					if zid, err := client.LookupZoneID(ctx.ZoneDomain); err == nil {
 						cfg.ZoneID = zid
 						client = cloudflare.NewClient(cfg)
-						_ = h.opts.DB.Model(&cd).Update("cf_zone_id", zid)
 					}
 				}
-				if cd.CFZoneID != "" {
+				if cfg.ZoneID != "" {
 					if err := client.UpsertRecord(host, "A", publicIP, 300, false); err != nil {
 						notes = append(notes, "dns: "+err.Error())
 					}
@@ -372,7 +441,7 @@ func (h *handler) EnsureWebmail(domain string) error {
 			pdns := powerdns.NewClient(powerdns.LoadConfig(h.opts.DB, sid))
 			if err := pdns.Ping(); err != nil {
 				notes = append(notes, "powerdns offline")
-			} else if err := pdns.UpsertRecord(domain, "webmail", "A", 300, []string{publicIP}); err != nil {
+			} else if err := pdns.UpsertRecord(ctx.ZoneDomain, webmailRecordName(host, ctx.ZoneDomain), "A", 300, []string{publicIP}); err != nil {
 				notes = append(notes, "dns: "+err.Error())
 			}
 		}
@@ -400,12 +469,47 @@ func (h *handler) EnsureWebmail(domain string) error {
 	return nil
 }
 
-func webmailURLForDomain(domain string) string {
-	domain = strings.ToLower(strings.TrimSpace(domain))
+// EnsureWebmail upserts DNS for webmail.<domain> and an nginx vhost to the local mail UI.
+func (h *handler) EnsureWebmail(domain string) error {
+	domain = normalizeDomainName(domain)
 	if domain == "" {
-		return ""
+		return fmt.Errorf("domain required")
 	}
-	return "http://webmail." + domain + "/"
+	sid := h.localServerID()
+	var cd storage.ConnectedDomain
+	_ = h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error
+	ctx := webmailDNSContext{
+		ZoneDomain:  domain,
+		DNSProvider: strings.ToLower(strings.TrimSpace(cd.DNSProvider)),
+		CFZoneID:    strings.TrimSpace(cd.CFZoneID),
+		PublicIP:    strings.TrimSpace(cd.PublicIP),
+	}
+	return h.ensureWebmailHost(webmailHostForDomain(domain), ctx)
+}
+
+func (h *handler) EnsureServerWebmail() error {
+	sid := h.localServerID()
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
+	host := serverWebmailHost(ns.MainDomain)
+	if host == "" {
+		return nil
+	}
+
+	var connected []storage.ConnectedDomain
+	h.opts.DB.Where("server_id = ?", sid).Order("length(domain) desc").Find(&connected)
+	ctx := dnsZoneForHost(host, connected)
+	if ctx.ZoneDomain == "" {
+		ctx = webmailDNSContext{
+			ZoneDomain:  normalizeDomainName(ns.MainDomain),
+			DNSProvider: "powerdns",
+			PublicIP:    strings.TrimSpace(ns.PublicIP),
+		}
+	}
+	return h.ensureWebmailHost(host, ctx)
+}
+
+func webmailURLForDomain(domain string) string {
+	return webmailURLForHost(webmailHostForDomain(domain))
 }
 
 func (h *handler) createMailboxAPI(local, domain, password string, projectID uint) (*storage.Mailbox, error) {
@@ -443,6 +547,7 @@ func (h *handler) createMailboxAPI(local, domain, password string, projectID uin
 		Where("server_id = ? AND domain = ?", sid, domain).
 		Updates(map[string]any{"mail_ready": true, "last_error": ""})
 	_ = h.EnsureWebmail(domain)
+	_ = h.EnsureServerWebmail()
 	return &mb, nil
 }
 

@@ -46,6 +46,10 @@ func (h *handler) getNodeEmail(w http.ResponseWriter, r *http.Request) {
 	data.ConnectedDomains = connected
 	data.Mailboxes = mailboxes
 	data.MailAPIReady = mailAPIReady(cfg, client)
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
+	data.NodeSettings = &ns
+	data.ServerWebmailHost = serverWebmailHost(ns.MainDomain)
+	data.ServerWebmailURL = webmailURLForHost(data.ServerWebmailHost)
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
@@ -188,6 +192,9 @@ func (h *handler) postNodeEmailDomain(w http.ResponseWriter, r *http.Request) {
 	} else {
 		flash += " · webmail." + domain + " ready"
 	}
+	if swErr := h.EnsureServerWebmail(); swErr != nil {
+		flash += " · server webmail: " + swErr.Error()
+	}
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
@@ -207,6 +214,9 @@ func (h *handler) postNodeEmailAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	flash := "Account " + mb.Address + " created · webmail at " + webmailURLForDomain(domain)
+	if host := serverWebmailHost(cloudflare.LoadNodeSettings(h.opts.DB, h.localServerID()).MainDomain); host != "" {
+		flash += " · shared webmail at " + webmailURLForHost(host)
+	}
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
@@ -237,6 +247,19 @@ func (h *handler) postNodeEmailEnsureWebmail(w http.ResponseWriter, r *http.Requ
 	flash := "Webmail ensured for " + domain + " → " + webmailURLForDomain(domain)
 	if err := h.EnsureWebmail(domain); err != nil {
 		flash = "Webmail for " + domain + ": " + err.Error()
+	}
+	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeEmailEnsureServerWebmail(w http.ResponseWriter, r *http.Request) {
+	host := serverWebmailHost(cloudflare.LoadNodeSettings(h.opts.DB, h.localServerID()).MainDomain)
+	if host == "" {
+		http.Redirect(w, r, "/email?flash="+urlQueryEscape("set Main domain in Settings first"), http.StatusSeeOther)
+		return
+	}
+	flash := "Server webmail ensured → " + webmailURLForHost(host)
+	if err := h.EnsureServerWebmail(); err != nil {
+		flash = "Server webmail: " + err.Error()
 	}
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }

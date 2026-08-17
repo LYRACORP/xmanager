@@ -5,7 +5,7 @@
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <h1 class="text-3xl font-bold tracking-tight">Email</h1>
-      <p class="text-panel-muted text-sm mt-1">Mailboxes on connected domains · webmail.&lt;domain&gt;</p>
+      <p class="text-panel-muted text-sm mt-1">Mailboxes on connected domains · webmail.&lt;domain&gt; + shared webmail.&lt;main_domain&gt;</p>
     </div>
     <div class="flex flex-wrap gap-2">
       <a href="/apps" class="text-sm border border-gray-700 text-gray-300 hover:border-gray-500 px-3 py-1.5 rounded-lg">Open stack (Apps)</a>
@@ -115,6 +115,23 @@
 
     <div>
       <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Webmail per domain</h2>
+      {{if .ServerWebmailHost}}
+      <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3 mb-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="font-mono text-indigo-300">{{.ServerWebmailHost}}</span>
+            <a href="{{.ServerWebmailURL}}" target="_blank" rel="noopener" class="block text-xs text-emerald-400 mt-1 hover:underline">{{.ServerWebmailURL}}</a>
+          </div>
+          <form method="post" action="/email/webmail/server">
+            <button class="text-xs border border-indigo-800 text-indigo-300 rounded px-2 py-1">Ensure server webmail</button>
+          </form>
+        </div>
+      </div>
+      {{else}}
+      <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3 mb-3 text-xs text-gray-500">
+        Set a main domain in <a href="/settings" class="text-indigo-400 hover:underline">Settings</a> to enable shared server webmail.
+      </div>
+      {{end}}
       <ul class="space-y-2 text-sm">
         {{range .WebmailHosts}}
         <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3">

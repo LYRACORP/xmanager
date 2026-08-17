@@ -206,6 +206,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /email/accounts", h.requireAuth(h.postNodeEmailAccount))
 	mux.HandleFunc("POST /email/accounts/delete", h.requireAuth(h.postNodeEmailAccountDelete))
 	mux.HandleFunc("POST /email/webmail", h.requireAuth(h.postNodeEmailEnsureWebmail))
+	mux.HandleFunc("POST /email/webmail/server", h.requireAuth(h.postNodeEmailEnsureServerWebmail))
 	mux.HandleFunc("POST /email/config", h.requireAuth(h.postNodeEmailConfig))
 
 	mux.HandleFunc("GET /alerts", h.requireAuth(h.getNodeAlerts))

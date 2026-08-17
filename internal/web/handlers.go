@@ -176,6 +176,8 @@ type pageData struct {
 	WebmailURL       string
 	MailAdminURL     string
 	WebmailHosts     []webmailHostView
+	ServerWebmailHost string
+	ServerWebmailURL  string
 	SystemServices   []systemServiceView
 	SystemSvcFilter  string
 	FTPEnabled       bool
@@ -795,6 +797,11 @@ func (h *handler) postNodeSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if err := h.opts.DB.Save(&ns).Error; err != nil {
 		flash = "Save failed: " + err.Error()
+	}
+	if flash == "Node identity saved" {
+		if err := h.EnsureServerWebmail(); err != nil {
+			flash += " · server webmail: " + err.Error()
+		}
 	}
 	http.Redirect(w, r, "/settings?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
