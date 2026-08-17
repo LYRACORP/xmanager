@@ -29,14 +29,14 @@ import (
 )
 
 type handler struct {
-	opts        Options
-	tmpl        *template.Template
-	sess        *sessionStore
-	staticFS    fs.FS
-	nodeMode    bool
-	node        *nodemetrics.Collector
-	exec        *ssh.Executor
-	localSrvID  uint
+	opts         Options
+	tmpl         *template.Template
+	sess         *sessionStore
+	staticFS     fs.FS
+	nodeMode     bool
+	node         *nodemetrics.Collector
+	exec         *ssh.Executor
+	localSrvID   uint
 	oauthStates  *oauthStateStore
 	deviceStates *deviceStateStore
 	relayStates  *relayStateStore
@@ -110,57 +110,58 @@ type projectFileCrumb struct {
 
 // pageData is the common template context passed to all pages.
 type pageData struct {
-	Title          string
-	Flash          string
-	Session        *session
-	NodeMode       bool
-	ActiveNav      string
-	ServerID       uint
-	ServerCards    []serverCardData
-	ServerCard     serverCardData
-	Projects       []storage.Project
-	ProjectViews   []projectCardView
-	ProjectTypes   []string
-	AllServers     []storage.Server
-	Monitors       []storage.UptimeMonitor
-	Config         interface{}
-	Node           nodemetrics.Snapshot
-	NetRx          string
-	NetTx          string
-	UptimeHuman    string
-	Containers     []docker.Container
-	ContainerID    string
-	LogText        string
-	CronJobs       []storage.CronJob
-	CronJobViews   []cronJobView
-	CronRuns       []storage.CronRun
-	CronJobID      uint
-	NodeDBs        []nodeDBView
-	DBDetail       nodeDBDetailView
-	DBTools        []nodeDBToolView
-	DBAvailable    map[string]bool
-	DBEngines      []string
-	ProjectDBs     []storage.ProjectDatabase
-	NodeServices   []nodeServiceView
-	ProjectDomains    []storage.ProjectDomain
-	ConnectedDomains  []storage.ConnectedDomain
-	Domain            *storage.ConnectedDomain
-	Mailboxes         []storage.Mailbox
-	VHosts            []proxy.VHost
-	AlertChannels     []storage.AlertChannel
-	MailAPIMode       string
-	PowerDNSReady     bool
-	MailAPIReady      bool
-	DNSZones          []powerdns.Zone
-	DNSZone           *powerdns.Zone
-	DNSZoneName       string
-	CFRecords         []cloudflare.Record
-	NodeSettings      *storage.NodeSettings
-	MailDomains       []mailinbox.MailDomain
-	MailDomainList    []string
-	MailAPIConfig     mailinbox.Config // password cleared before render
-	WebmailURL        string
-	MailAdminURL      string
+	Title            string
+	Flash            string
+	Session          *session
+	NodeMode         bool
+	ActiveNav        string
+	ServerID         uint
+	ServerCards      []serverCardData
+	ServerCard       serverCardData
+	Projects         []storage.Project
+	ProjectViews     []projectCardView
+	ProjectTypes     []string
+	AllServers       []storage.Server
+	Monitors         []storage.UptimeMonitor
+	Config           interface{}
+	Node             nodemetrics.Snapshot
+	NetRx            string
+	NetTx            string
+	UptimeHuman      string
+	Containers       []docker.Container
+	DockerHost       docker.HostSnapshot
+	ContainerID      string
+	LogText          string
+	CronJobs         []storage.CronJob
+	CronJobViews     []cronJobView
+	CronRuns         []storage.CronRun
+	CronJobID        uint
+	NodeDBs          []nodeDBView
+	DBDetail         nodeDBDetailView
+	DBTools          []nodeDBToolView
+	DBAvailable      map[string]bool
+	DBEngines        []string
+	ProjectDBs       []storage.ProjectDatabase
+	NodeServices     []nodeServiceView
+	ProjectDomains   []storage.ProjectDomain
+	ConnectedDomains []storage.ConnectedDomain
+	Domain           *storage.ConnectedDomain
+	Mailboxes        []storage.Mailbox
+	VHosts           []proxy.VHost
+	AlertChannels    []storage.AlertChannel
+	MailAPIMode      string
+	PowerDNSReady    bool
+	MailAPIReady     bool
+	DNSZones         []powerdns.Zone
+	DNSZone          *powerdns.Zone
+	DNSZoneName      string
+	CFRecords        []cloudflare.Record
+	NodeSettings     *storage.NodeSettings
+	MailDomains      []mailinbox.MailDomain
+	MailDomainList   []string
+	MailAPIConfig    mailinbox.Config // password cleared before render
+	WebmailURL       string
+	MailAdminURL     string
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int
@@ -196,7 +197,7 @@ type pageData struct {
 	TemplateQuery      string
 	// Git OAuth / repo picker
 	GitProviders     []gitProviderView
-	GitRepos        []gitforge.Repo
+	GitRepos         []gitforge.Repo
 	GitProvider      string
 	GitCredID        uint
 	SelectedProvider string
@@ -232,16 +233,16 @@ type pageData struct {
 	BackupSchedules        []backupScheduleView
 	BackupTelegramChannels []storage.AlertChannel
 	// Activity / system logs
-	ActivityLogs    []storage.ActivityLog
-	LogsSource      string
-	LogsActor       string
-	LogsQuery       string
-	LogsRange       string
-	LogsProject     string
-	LogsContainer   string
-	LogsLabel       string
-	LogsTabSources  []struct{ ID, Label string }
-	LogsFragmentQS  string
+	ActivityLogs   []storage.ActivityLog
+	LogsSource     string
+	LogsActor      string
+	LogsQuery      string
+	LogsRange      string
+	LogsProject    string
+	LogsContainer  string
+	LogsLabel      string
+	LogsTabSources []struct{ ID, Label string }
+	LogsFragmentQS string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -436,15 +437,15 @@ func (h *handler) getNodeNetJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"iface":   snap.NetIface,
-		"rx_bps":  snap.NetRxBps,
-		"tx_bps":  snap.NetTxBps,
-		"rx":      snap.NetRxBytes,
-		"tx":      snap.NetTxBytes,
-		"rx_rate": nodemetrics.FormatRateKbps(snap.NetRxBps),
-		"tx_rate": nodemetrics.FormatRateKbps(snap.NetTxBps),
-		"t":       snap.SampledAt.Unix(),
-		"uptime":  nodemetrics.FormatUptime(snap.UptimeSec),
+		"iface":      snap.NetIface,
+		"rx_bps":     snap.NetRxBps,
+		"tx_bps":     snap.NetTxBps,
+		"rx":         snap.NetRxBytes,
+		"tx":         snap.NetTxBytes,
+		"rx_rate":    nodemetrics.FormatRateKbps(snap.NetRxBps),
+		"tx_rate":    nodemetrics.FormatRateKbps(snap.NetTxBps),
+		"t":          snap.SampledAt.Unix(),
+		"uptime":     nodemetrics.FormatUptime(snap.UptimeSec),
 		"uptime_sec": snap.UptimeSec,
 	})
 }

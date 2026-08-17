@@ -217,9 +217,11 @@ func (h *handler) getNodeDocker(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	mgr := docker.NewManager(h.localExec())
 	list, err := mgr.ListContainers()
+	snap := mgr.Snapshot()
 	data := h.basePage(sess, "Docker")
 	data.ActiveNav = "docker"
 	data.Containers = list
+	data.DockerHost = snap
 	if err != nil {
 		data.Flash = err.Error()
 	}

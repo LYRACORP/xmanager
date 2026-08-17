@@ -128,3 +128,28 @@ func DFBytesByType(rows []SystemDFRow, typeName string) uint64 {
 	}
 	return 0
 }
+
+// DFRowByType returns the first SystemDFRow whose Type contains typeName.
+func DFRowByType(rows []SystemDFRow, typeName string) (SystemDFRow, bool) {
+	want := strings.ToLower(typeName)
+	for _, r := range rows {
+		if strings.Contains(strings.ToLower(r.Type), want) {
+			return r, true
+		}
+	}
+	return SystemDFRow{}, false
+}
+
+// FormatSize formats bytes using docker-style units (1.5GB, 512MB).
+func FormatSize(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
+}

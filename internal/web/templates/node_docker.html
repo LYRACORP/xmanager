@@ -1,53 +1,223 @@
 {{define "node_docker"}}
 {{template "head" .}}
 {{template "nav" .}}
-<div class="xm-page">
-  <h1 class="text-2xl font-bold mb-2">Docker</h1>
-  <p class="text-gray-500 text-sm mb-6">Containers on this host — start, stop, restart, logs</p>
-  {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}
-  {{if .Containers}}
-  <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="text-gray-500 text-left border-b border-gray-800">
-        <tr>
-          <th class="px-4 py-3">Name</th>
-          <th class="px-4 py-3">Image</th>
-          <th class="px-4 py-3">State</th>
-          <th class="px-4 py-3">Ports</th>
-          <th class="px-4 py-3">Actions</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-800">
-        {{range .Containers}}
-        <tr>
-          <td class="px-4 py-3 font-mono text-indigo-300">{{.Name}}</td>
-          <td class="px-4 py-3 text-gray-500 text-xs truncate max-w-[12rem]">{{.Image}}</td>
-          <td class="px-4 py-3 text-gray-300">{{.State}}</td>
-          <td class="px-4 py-3 font-mono text-xs text-amber-200/80 max-w-xs break-all">{{if .Ports}}{{.Ports}}{{else}}—{{end}}</td>
-          <td class="px-4 py-3 space-x-2 whitespace-nowrap">
-            <form action="/docker/{{.ID}}/start" method="post" class="inline"><button class="text-xs text-emerald-400 hover:underline">Start</button></form>
-            <form action="/docker/{{.ID}}/stop" method="post" class="inline"><button class="text-xs text-amber-400 hover:underline">Stop</button></form>
-            <form action="/docker/{{.ID}}/restart" method="post" class="inline"><button class="text-xs text-sky-400 hover:underline">Restart</button></form>
-            <a href="/docker/{{.ID}}/logs" class="text-xs text-indigo-400 hover:underline">Logs</a>
-            {{if eq .State "running"}}
-            <a href="/docker/{{.ID}}/terminal" class="text-xs text-emerald-400 hover:underline">Terminal</a>
-            {{end}}
-          </td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+<div class="xm-page space-y-6">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Docker</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Containers, images, volumes, networks, and build cache on this host</p>
+    </div>
+    <nav class="flex flex-wrap gap-3 text-xs text-indigo-300">
+      <a href="#docker-containers" class="hover:underline">Containers</a>
+      <a href="#docker-images" class="hover:underline">Images</a>
+      <a href="#docker-volumes" class="hover:underline">Volumes</a>
+      <a href="#docker-networks" class="hover:underline">Networks</a>
+      <a href="#docker-build" class="hover:underline">Build cache</a>
+    </nav>
   </div>
-  {{else}}
-  <div class="xm-card mt-4">
-    <div class="xm-empty">
-      <div class="xm-empty-ico">⬡</div>
-      <h3>No containers yet</h3>
-      <p>Deploy a project or start a stack from Services.</p>
-      <a href="/projects" class="xm-btn xm-btn-primary mt-1">Go to projects →</a>
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Registry account</p>
+      <p class="text-lg font-semibold mt-1 truncate" title="{{.DockerHost.Login.AccountLine}}">{{.DockerHost.Login.AccountLine}}</p>
+      {{if .DockerHost.Login.CredsStore}}
+      <p class="text-[11px] text-panel-muted mt-1">cred store · {{.DockerHost.Login.CredsStore}}</p>
+      {{end}}
+    </div>
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Images</p>
+      <p class="text-2xl font-semibold mt-1">{{.DockerHost.DFHuman "Images"}}</p>
+      <p class="text-[11px] text-panel-muted mt-1">{{len .DockerHost.Images}} listed</p>
+    </div>
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Volumes</p>
+      <p class="text-2xl font-semibold mt-1">{{.DockerHost.DFHuman "Volumes"}}</p>
+      <p class="text-[11px] text-panel-muted mt-1">{{len .DockerHost.Volumes}} listed</p>
+    </div>
+    <div class="xm-card p-4">
+      <p class="text-[11px] text-panel-muted uppercase tracking-widest">Build cache</p>
+      <p class="text-2xl font-semibold mt-1">{{.DockerHost.DFHuman "Build Cache"}}</p>
+      <p class="text-[11px] text-panel-muted mt-1">{{len .DockerHost.Cache}} entries</p>
     </div>
   </div>
-  {{end}}
+
+  <section id="docker-containers">
+    <h2 class="text-sm font-semibold text-gray-200 mb-2">Containers</h2>
+    {{if .Containers}}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 text-left border-b border-gray-800">
+          <tr>
+            <th class="px-4 py-3">Name</th>
+            <th class="px-4 py-3">Image</th>
+            <th class="px-4 py-3">State</th>
+            <th class="px-4 py-3">Ports</th>
+            <th class="px-4 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          {{range .Containers}}
+          <tr>
+            <td class="px-4 py-3 font-mono text-indigo-300">{{.Name}}</td>
+            <td class="px-4 py-3 text-gray-500 text-xs truncate max-w-[12rem]">{{.Image}}</td>
+            <td class="px-4 py-3 text-gray-300">{{.State}}</td>
+            <td class="px-4 py-3 font-mono text-xs text-amber-200/80 max-w-xs break-all">{{if .Ports}}{{.Ports}}{{else}}—{{end}}</td>
+            <td class="px-4 py-3 space-x-2 whitespace-nowrap">
+              <form action="/docker/{{.ID}}/start" method="post" class="inline"><button class="text-xs text-emerald-400 hover:underline">Start</button></form>
+              <form action="/docker/{{.ID}}/stop" method="post" class="inline"><button class="text-xs text-amber-400 hover:underline">Stop</button></form>
+              <form action="/docker/{{.ID}}/restart" method="post" class="inline"><button class="text-xs text-sky-400 hover:underline">Restart</button></form>
+              <a href="/docker/{{.ID}}/logs" class="text-xs text-indigo-400 hover:underline">Logs</a>
+              {{if eq .State "running"}}
+              <a href="/docker/{{.ID}}/terminal" class="text-xs text-emerald-400 hover:underline">Terminal</a>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="xm-card">
+      <div class="xm-empty">
+        <div class="xm-empty-ico">⬡</div>
+        <h3>No containers yet</h3>
+        <p>Deploy a project or start a stack from Services.</p>
+        <a href="/projects" class="xm-btn xm-btn-primary mt-1">Go to projects →</a>
+      </div>
+    </div>
+    {{end}}
+  </section>
+
+  <section id="docker-images">
+    <h2 class="text-sm font-semibold text-gray-200 mb-2">Images</h2>
+    {{if .DockerHost.Images}}
+    <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table class="w-full text-xs text-left">
+        <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+          <tr>
+            <th class="py-2 px-3 font-medium">Repository</th>
+            <th class="py-2 px-3 font-medium">Tag</th>
+            <th class="py-2 px-3 font-medium">ID</th>
+            <th class="py-2 px-3 font-medium">Size</th>
+            <th class="py-2 px-3 font-medium">Created</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/80">
+          {{range .DockerHost.Images}}
+          <tr class="hover:bg-zinc-900/40">
+            <td class="py-2.5 px-3 font-mono text-indigo-300">{{.Repository}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Tag}}</td>
+            <td class="py-2.5 px-3 font-mono text-zinc-500">{{.ID}}</td>
+            <td class="py-2.5 px-3 whitespace-nowrap">{{.Size}}</td>
+            <td class="py-2.5 px-3 text-panel-muted whitespace-nowrap">{{.Created}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No images on this host.</p>
+    {{end}}
+  </section>
+
+  <section id="docker-volumes">
+    <h2 class="text-sm font-semibold text-gray-200 mb-2">Volumes</h2>
+    {{if .DockerHost.Volumes}}
+    <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table class="w-full text-xs text-left">
+        <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+          <tr>
+            <th class="py-2 px-3 font-medium">Name</th>
+            <th class="py-2 px-3 font-medium">Driver</th>
+            <th class="py-2 px-3 font-medium">Scope</th>
+            <th class="py-2 px-3 font-medium">Links</th>
+            <th class="py-2 px-3 font-medium">Size</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/80">
+          {{range .DockerHost.Volumes}}
+          <tr class="hover:bg-zinc-900/40">
+            <td class="py-2.5 px-3 font-mono text-indigo-300">{{.Name}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Driver}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Scope}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Links}}</td>
+            <td class="py-2.5 px-3 whitespace-nowrap">{{.SizeHuman}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No volumes on this host.</p>
+    {{end}}
+  </section>
+
+  <section id="docker-networks">
+    <h2 class="text-sm font-semibold text-gray-200 mb-2">Networks</h2>
+    {{if .DockerHost.Networks}}
+    <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table class="w-full text-xs text-left">
+        <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+          <tr>
+            <th class="py-2 px-3 font-medium">Name</th>
+            <th class="py-2 px-3 font-medium">Driver</th>
+            <th class="py-2 px-3 font-medium">Scope</th>
+            <th class="py-2 px-3 font-medium">Internal</th>
+            <th class="py-2 px-3 font-medium">Containers</th>
+            <th class="py-2 px-3 font-medium">Subnet</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/80">
+          {{range .DockerHost.Networks}}
+          <tr class="hover:bg-zinc-900/40">
+            <td class="py-2.5 px-3 font-mono text-indigo-300">{{.Name}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Driver}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Scope}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{if .Internal}}yes{{else}}no{{end}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Containers}}</td>
+            <td class="py-2.5 px-3 font-mono text-amber-200/80">{{if .Subnet}}{{.Subnet}}{{else}}—{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No networks on this host.</p>
+    {{end}}
+  </section>
+
+  <section id="docker-build">
+    <h2 class="text-sm font-semibold text-gray-200 mb-2">Build cache</h2>
+    {{if .DockerHost.Cache}}
+    <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+      <table class="w-full text-xs text-left">
+        <thead class="text-panel-muted uppercase border-b border-zinc-800 bg-zinc-950/50">
+          <tr>
+            <th class="py-2 px-3 font-medium">ID</th>
+            <th class="py-2 px-3 font-medium">Type</th>
+            <th class="py-2 px-3 font-medium">Shared</th>
+            <th class="py-2 px-3 font-medium">Usage</th>
+            <th class="py-2 px-3 font-medium">Size</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/80">
+          {{range .DockerHost.Cache}}
+          <tr class="hover:bg-zinc-900/40">
+            <td class="py-2.5 px-3 font-mono text-zinc-400">{{.ID}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Type}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{if .Shared}}yes{{else}}no{{end}}</td>
+            <td class="py-2.5 px-3 text-panel-muted">{{.Usage}}</td>
+            <td class="py-2.5 px-3 whitespace-nowrap">{{.SizeHuman}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-panel-muted">No build cache entries.</p>
+    {{end}}
+  </section>
 </div>
 {{template "foot" .}}
 {{end}}

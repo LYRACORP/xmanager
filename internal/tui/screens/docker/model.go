@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	xmdocker "github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -21,6 +22,10 @@ const (
 	tabContainers viewTab = iota
 	tabCompose
 	tabImages
+	tabVolumes
+	tabNetworks
+	tabBuild
+	tabCount
 )
 
 type containerRow struct {
@@ -52,6 +57,14 @@ type loadDoneMsg struct {
 	containers []containerRow
 	compose    []composeProject
 	images     []imageRow
+	volumes    []xmdocker.Volume
+	networks   []xmdocker.Network
+	cache      []xmdocker.BuildCache
+}
+
+type headerDoneMsg struct {
+	login xmdocker.LoginInfo
+	df    []xmdocker.SystemDFRow
 }
 
 type actionDoneMsg struct {
@@ -62,8 +75,8 @@ type actionDoneMsg struct {
 type Model struct {
 	ctx *shared.AppContext
 
-	tab   viewTab
-	width int
+	tab    viewTab
+	width  int
 	height int
 
 	table components.ListTable
@@ -71,6 +84,12 @@ type Model struct {
 	containers []containerRow
 	compose    []composeProject
 	images     []imageRow
+	volumes    []xmdocker.Volume
+	networks   []xmdocker.Network
+	cache      []xmdocker.BuildCache
+
+	login xmdocker.LoginInfo
+	df    []xmdocker.SystemDFRow
 
 	busy   bool
 	status string
@@ -85,11 +104,16 @@ func (m *Model) Name() string     { return "Docker" }
 func (m *Model) SetSize(w, h int) { m.width, m.height = w, h; m.rebuildTable() }
 
 func (m *Model) Init() tea.Cmd {
-	return m.reloadCmd()
+	return m.refresh()
 }
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case headerDoneMsg:
+		m.login = msg.login
+		m.df = msg.df
+		return m, nil
+
 	case loadDoneMsg:
 		m.busy = false
 		if msg.tab != m.tab {
@@ -105,6 +129,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 				m.compose = msg.compose
 			case tabImages:
 				m.images = msg.images
+			case tabVolumes:
+				m.volumes = msg.volumes
+			case tabNetworks:
+				m.networks = msg.networks
+			case tabBuild:
+				m.cache = msg.cache
 			}
 		}
 		m.rebuildTable()
@@ -115,7 +145,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.err = msg.err
 		m.status = msg.brief
 		if msg.err == "" {
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		}
 		return m, nil
 
@@ -128,22 +158,31 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "tab":
 			m.nextTab()
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		case "shift+tab":
 			m.prevTab()
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		case "1":
 			m.setTab(tabContainers)
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		case "2":
 			m.setTab(tabCompose)
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		case "3":
 			m.setTab(tabImages)
-			return m, m.reloadCmd()
+			return m, m.refresh()
+		case "4":
+			m.setTab(tabVolumes)
+			return m, m.refresh()
+		case "5":
+			m.setTab(tabNetworks)
+			return m, m.refresh()
+		case "6":
+			m.setTab(tabBuild)
+			return m, m.refresh()
 		case "ctrl+r", "f5":
 			m.status = "Refreshing…"
-			return m, m.reloadCmd()
+			return m, m.refresh()
 		case "s":
 			return m, m.dockerStart()
 		case "t":
@@ -155,7 +194,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "d":
 			return m, m.composeDown()
 		case "c":
-			return m, m.imagePrune()
+			return m, m.pruneCurrent()
 		}
 	}
 
@@ -167,7 +206,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 func (m *Model) KeyBindings() []components.KeyBinding {
 	base := []components.KeyBinding{
 		{Key: "tab", Desc: "next view"},
-		{Key: "1-3", Desc: "view"},
+		{Key: "1-6", Desc: "view"},
 		{Key: "ctrl+r", Desc: "refresh"},
 		{Key: "esc", Desc: "back"},
 	}
@@ -187,6 +226,18 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 		return append([]components.KeyBinding{
 			{Key: "c", Desc: "prune dangling"},
 		}, base...)
+	case tabVolumes:
+		return append([]components.KeyBinding{
+			{Key: "c", Desc: "prune unused"},
+		}, base...)
+	case tabNetworks:
+		return append([]components.KeyBinding{
+			{Key: "c", Desc: "prune unused"},
+		}, base...)
+	case tabBuild:
+		return append([]components.KeyBinding{
+			{Key: "c", Desc: "prune cache"},
+		}, base...)
 	}
 	return base
 }
@@ -195,33 +246,57 @@ func (m *Model) OnNavigate(params map[string]interface{}) {
 	if params == nil {
 		return
 	}
-	if t, ok := params["tab"].(int); ok && t >= 0 && t <= int(tabImages) {
+	if t, ok := params["tab"].(int); ok && t >= 0 && t < int(tabCount) {
 		m.tab = viewTab(t)
 		m.rebuildTable()
 	}
 }
 
 func (m *Model) localChrome() int {
-	n := components.FrameChromeRows(true) + components.TabBarRows()
+	n := components.FrameChromeRows(true) + 2*components.TabBarRows()
 	if m.err != "" || m.status != "" || m.busy {
 		n++
 	}
 	return n
 }
 
-func (m *Model) tabBar() components.TabBar {
-	bar := components.NewTabBar([]components.TabItem{
+func (m *Model) tabBar() string {
+	row1 := components.NewTabBar([]components.TabItem{
 		{ID: int(tabContainers), Label: "[1] Containers"},
 		{ID: int(tabCompose), Label: "[2] Compose"},
 		{ID: int(tabImages), Label: "[3] Images"},
 	}, int(m.tab))
-	bar.Width = m.width
-	return bar
+	row2 := components.NewTabBar([]components.TabItem{
+		{ID: int(tabVolumes), Label: "[4] Volumes"},
+		{ID: int(tabNetworks), Label: "[5] Networks"},
+		{ID: int(tabBuild), Label: "[6] Build"},
+	}, int(m.tab))
+	row1.Width = m.width
+	row2.Width = m.width
+	return row1.View() + "\n" + row2.View()
+}
+
+func (m *Model) headerSubtitle() string {
+	acc := m.login.AccountLine()
+	parts := []string{acc}
+	if h, ok := xmdocker.DFRowByType(m.df, "Images"); ok && h.SizeHuman != "" {
+		parts = append(parts, "images "+h.SizeHuman)
+	}
+	if h, ok := xmdocker.DFRowByType(m.df, "Volumes"); ok && h.SizeHuman != "" {
+		parts = append(parts, "volumes "+h.SizeHuman)
+	}
+	if h, ok := xmdocker.DFRowByType(m.df, "Build Cache"); ok && h.SizeHuman != "" {
+		parts = append(parts, "cache "+h.SizeHuman)
+	}
+	if len(parts) == 1 {
+		return acc + "  ·  volumes · networks · images · build"
+	}
+	return strings.Join(parts, "  ·  ")
 }
 
 func (m *Model) View() string {
 	inner := layout.ContentWidth(m.width)
-	body := m.tabBar().View() + "\n" + m.table.View()
+	body := m.tabBar() + "\n" + m.table.View()
 	if m.err != "" {
 		body += "\n" + theme.ErrorText().Render(components.Wrap(m.err, inner))
 	} else if m.status != "" {
@@ -232,7 +307,7 @@ func (m *Model) View() string {
 	}
 	return components.ScreenFrame{
 		Title:       "Docker",
-		Subtitle:    "containers · compose · images",
+		Subtitle:    m.headerSubtitle(),
 		Width:       m.width,
 		Body:        body,
 		LocalChrome: m.localChrome(),
@@ -240,12 +315,12 @@ func (m *Model) View() string {
 }
 
 func (m *Model) nextTab() {
-	m.tab = (m.tab + 1) % 3
+	m.tab = (m.tab + 1) % tabCount
 	m.rebuildTable()
 }
 
 func (m *Model) prevTab() {
-	m.tab = (m.tab + 2) % 3
+	m.tab = (m.tab + tabCount - 1) % tabCount
 	m.rebuildTable()
 }
 
@@ -300,6 +375,73 @@ func (m *Model) rebuildTable() {
 			rows[i] = table.Row{im.Repository, im.Tag, shortID(im.ID, 12), im.Size}
 		}
 		m.table = m.table.SetData(m.width, cols, rows, h)
+
+	case tabVolumes:
+		cols := []table.Column{
+			{Title: "Name", Width: 28},
+			{Title: "Driver", Width: 10},
+			{Title: "Links", Width: 7},
+			{Title: "Size", Width: 0},
+		}
+		rows := make([]table.Row, len(m.volumes))
+		for i, v := range m.volumes {
+			rows[i] = table.Row{v.Name, v.Driver, fmt.Sprintf("%d", v.Links), v.SizeHuman}
+		}
+		m.table = m.table.SetData(m.width, cols, rows, h)
+
+	case tabNetworks:
+		cols := []table.Column{
+			{Title: "Name", Width: 18},
+			{Title: "Driver", Width: 10},
+			{Title: "Scope", Width: 8},
+			{Title: "Ctrs", Width: 6},
+			{Title: "Subnet", Width: 0},
+		}
+		rows := make([]table.Row, len(m.networks))
+		for i, n := range m.networks {
+			name := n.Name
+			if n.Internal {
+				name += " (int)"
+			}
+			rows[i] = table.Row{name, n.Driver, n.Scope, fmt.Sprintf("%d", n.Containers), n.Subnet}
+		}
+		m.table = m.table.SetData(m.width, cols, rows, h)
+
+	case tabBuild:
+		cols := []table.Column{
+			{Title: "ID", Width: 16},
+			{Title: "Type", Width: 16},
+			{Title: "Shared", Width: 8},
+			{Title: "Use", Width: 5},
+			{Title: "Size", Width: 0},
+		}
+		rows := make([]table.Row, len(m.cache))
+		for i, c := range m.cache {
+			shared := "no"
+			if c.Shared {
+				shared = "yes"
+			}
+			rows[i] = table.Row{shortID(c.ID, 12), c.Type, shared, fmt.Sprintf("%d", c.Usage), c.SizeHuman}
+		}
+		m.table = m.table.SetData(m.width, cols, rows, h)
+	}
+}
+
+func (m *Model) refresh() tea.Cmd {
+	return tea.Batch(m.loadHeaderCmd(), m.reloadCmd())
+}
+
+func (m *Model) loadHeaderCmd() tea.Cmd {
+	sid := m.ctx.ServerID
+	return func() tea.Msg {
+		ex, ok := m.ctx.Pool.GetExecutor(sid)
+		if !ok {
+			return headerDoneMsg{}
+		}
+		mgr := xmdocker.NewManager(ex)
+		login, _ := mgr.LoginInfo()
+		df, _ := mgr.SystemDF()
+		return headerDoneMsg{login: login, df: df}
 	}
 }
 
@@ -318,6 +460,12 @@ func (m *Model) reloadCmd() tea.Cmd {
 			return m.loadCompose(ex, tab)
 		case tabImages:
 			return m.loadImages(ex, tab)
+		case tabVolumes:
+			return m.loadVolumes(ex, tab)
+		case tabNetworks:
+			return m.loadNetworks(ex, tab)
+		case tabBuild:
+			return m.loadBuild(ex, tab)
 		}
 		return loadDoneMsg{tab: tab}
 	}
@@ -440,6 +588,38 @@ func (m *Model) loadImages(ex *ssh.Executor, tab viewTab) tea.Msg {
 	return loadDoneMsg{tab: tab, images: rows, brief: fmt.Sprintf("%d images", len(rows))}
 }
 
+func (m *Model) loadVolumes(ex *ssh.Executor, tab viewTab) tea.Msg {
+	vols, err := xmdocker.NewManager(ex).ListVolumes()
+	if err != nil {
+		return loadDoneMsg{tab: tab, err: err.Error()}
+	}
+	return loadDoneMsg{tab: tab, volumes: vols, brief: fmt.Sprintf("%d volumes", len(vols))}
+}
+
+func (m *Model) loadNetworks(ex *ssh.Executor, tab viewTab) tea.Msg {
+	nets, err := xmdocker.NewManager(ex).ListNetworks()
+	if err != nil {
+		return loadDoneMsg{tab: tab, err: err.Error()}
+	}
+	return loadDoneMsg{tab: tab, networks: nets, brief: fmt.Sprintf("%d networks", len(nets))}
+}
+
+func (m *Model) loadBuild(ex *ssh.Executor, tab viewTab) tea.Msg {
+	cache, err := xmdocker.NewManager(ex).ListBuildCache()
+	if err != nil {
+		return loadDoneMsg{tab: tab, err: err.Error()}
+	}
+	var total uint64
+	for _, c := range cache {
+		total += c.SizeBytes
+	}
+	brief := fmt.Sprintf("%d cache entries", len(cache))
+	if total > 0 {
+		brief += " · " + xmdocker.FormatSize(total)
+	}
+	return loadDoneMsg{tab: tab, cache: cache, brief: brief}
+}
+
 func (m *Model) dockerStart() tea.Cmd {
 	if m.tab != tabContainers {
 		return nil
@@ -528,15 +708,25 @@ func (m *Model) composeDown() tea.Cmd {
 	}
 }
 
-func (m *Model) imagePrune() tea.Cmd {
-	if m.tab != tabImages {
+func (m *Model) pruneCurrent() tea.Cmd {
+	var cmd, status string
+	switch m.tab {
+	case tabImages:
+		cmd, status = `docker image prune -f`, "Pruning dangling images…"
+	case tabVolumes:
+		cmd, status = `docker volume prune -f`, "Pruning unused volumes…"
+	case tabNetworks:
+		cmd, status = `docker network prune -f`, "Pruning unused networks…"
+	case tabBuild:
+		cmd, status = `docker builder prune -f`, "Pruning build cache…"
+	default:
 		return nil
 	}
 	m.busy = true
-	m.status = "Pruning dangling images…"
+	m.status = status
 	sid := m.ctx.ServerID
 	return func() tea.Msg {
-		return m.runDockerAction(sid, `docker image prune -f`)
+		return m.runDockerAction(sid, cmd)
 	}
 }
 
