@@ -30,6 +30,7 @@ func runMigrations(db *gorm.DB) error {
 		&ScriptRun{},
 		&DatabaseUser{},
 		&ConnectedDomain{},
+		&NodeSettings{},
 		&Mailbox{},
 		&ProjectDatabase{},
 	)

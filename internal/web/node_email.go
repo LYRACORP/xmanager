@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -111,10 +112,11 @@ func (h *handler) postNodeEmailDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pdns := powerdns.NewClient(powerdns.LoadConfig(h.opts.DB, sid))
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
 	dnsReady := false
 	dnsErr := ""
 	if err := pdns.Ping(); err == nil {
-		if err := pdns.EnsureZone(domain, publicIP, mailMX); err != nil {
+		if err := pdns.EnsureZone(domain, publicIP, mailMX, ns.NS1, ns.NS2); err != nil {
 			dnsErr = err.Error()
 		} else {
 			dnsReady = true

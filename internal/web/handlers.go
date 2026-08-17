@@ -20,6 +20,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
@@ -153,6 +154,8 @@ type pageData struct {
 	DNSZones          []powerdns.Zone
 	DNSZone           *powerdns.Zone
 	DNSZoneName       string
+	CFRecords         []cloudflare.Record
+	NodeSettings      *storage.NodeSettings
 	MailDomains       []mailinbox.MailDomain
 	MailDomainList    []string
 	MailAPIConfig     mailinbox.Config // password cleared before render
@@ -681,11 +684,51 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		if h.opts.Config != nil {
 			data.PublicURL = h.opts.Config.Web.PublicURL
 		}
+		sid := h.localServerID()
+		var ns storage.NodeSettings
+		if err := h.opts.DB.Where("server_id = ?", sid).First(&ns).Error; err == nil {
+			data.NodeSettings = &ns
+		} else {
+			data.NodeSettings = &storage.NodeSettings{ServerID: sid}
+		}
 		if flash := r.URL.Query().Get("flash"); flash != "" {
 			data.Flash = flash
 		}
 	}
 	h.render(w, "settings", data)
+}
+
+func (h *handler) postNodeSettings(w http.ResponseWriter, r *http.Request) {
+	if !h.nodeMode {
+		http.Error(w, "node mode only", http.StatusBadRequest)
+		return
+	}
+	_ = r.ParseForm()
+	sid := h.localServerID()
+	var ns storage.NodeSettings
+	err := h.opts.DB.Where("server_id = ?", sid).First(&ns).Error
+	if err != nil {
+		ns = storage.NodeSettings{ServerID: sid}
+	}
+	ns.MainDomain = strings.ToLower(strings.TrimSpace(r.FormValue("main_domain")))
+	ns.NS1 = strings.ToLower(strings.TrimSpace(r.FormValue("ns1")))
+	ns.NS2 = strings.ToLower(strings.TrimSpace(r.FormValue("ns2")))
+	ns.PublicIP = strings.TrimSpace(r.FormValue("public_ip"))
+	if tok := strings.TrimSpace(r.FormValue("cf_api_token")); tok != "" {
+		ns.CFAPIToken = tok
+	}
+	if ns.PublicIP == "" {
+		ns.PublicIP = detectPublicIP(h.localExec())
+	}
+	flash := "Node identity saved"
+	if ns.ID == 0 {
+		if err := h.opts.DB.Create(&ns).Error; err != nil {
+			flash = "Save failed: " + err.Error()
+		}
+	} else if err := h.opts.DB.Save(&ns).Error; err != nil {
+		flash = "Save failed: " + err.Error()
+	}
+	http.Redirect(w, r, "/settings?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 // --- Webhook handler (no auth, validates secret header) ---

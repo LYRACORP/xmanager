@@ -299,17 +299,31 @@ type DatabaseUser struct {
 // ConnectedDomain is a first-class domain hub on a node (DNS + mail + project + DB links).
 type ConnectedDomain struct {
 	gorm.Model
-	ServerID   uint   `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"server_id"`
+	ServerID    uint   `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"server_id"`
+	Server      Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Domain      string `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"domain"`
+	ProjectID   *uint  `gorm:"index" json:"project_id,omitempty"`
+	Upstream    string `json:"upstream"`
+	PublicIP    string `json:"public_ip"`
+	DBType      string `json:"db_type"`
+	DBName      string `json:"db_name"`
+	DNSReady    bool   `gorm:"default:false" json:"dns_ready"`
+	MailReady   bool   `gorm:"default:false" json:"mail_ready"`
+	LastError   string `gorm:"type:text" json:"last_error"`
+	DNSProvider string `json:"dns_provider"` // "powerdns" | "cloudflare" | ""
+	CFZoneID    string `json:"cf_zone_id"`   // Cloudflare Zone ID when provider=cloudflare
+}
+
+// NodeSettings holds node-level identity used for DNS and Cloudflare integration.
+type NodeSettings struct {
+	gorm.Model
+	ServerID   uint   `gorm:"uniqueIndex;not null" json:"server_id"`
 	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	Domain     string `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"domain"`
-	ProjectID  *uint  `gorm:"index" json:"project_id,omitempty"`
-	Upstream   string `json:"upstream"`
+	MainDomain string `json:"main_domain"`  // e.g. panel.example.com
+	NS1        string `json:"ns1"`          // e.g. ns1.example.com
+	NS2        string `json:"ns2"`          // e.g. ns2.example.com
 	PublicIP   string `json:"public_ip"`
-	DBType     string `json:"db_type"`
-	DBName     string `json:"db_name"`
-	DNSReady   bool   `gorm:"default:false" json:"dns_ready"`
-	MailReady  bool   `gorm:"default:false" json:"mail_ready"`
-	LastError  string `gorm:"type:text" json:"last_error"`
+	CFAPIToken string `json:"cf_api_token"` // global Cloudflare API token
 }
 
 // Mailbox is an email address on a connected domain (Stalwart / Mail-in-a-Box API).

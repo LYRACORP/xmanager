@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
@@ -68,12 +69,16 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 	if publicIP == "" {
 		publicIP = detectPublicIP(h.localExec())
 	}
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, h.localServerID())
+	if publicIP == "" && ns.PublicIP != "" {
+		publicIP = ns.PublicIP
+	}
 	client := h.pdnsClient()
 	if err := client.Ping(); err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("PowerDNS offline — enable it under Services first: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	if err := client.EnsureZone(zone, publicIP, ""); err != nil {
+	if err := client.EnsureZone(zone, publicIP, "", ns.NS1, ns.NS2); err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("create zone failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -82,11 +87,14 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 	var cd storage.ConnectedDomain
 	err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, zone).First(&cd).Error
 	if err == gorm.ErrRecordNotFound {
-		cd = storage.ConnectedDomain{ServerID: sid, Domain: zone, PublicIP: publicIP, DNSReady: true}
+		cd = storage.ConnectedDomain{ServerID: sid, Domain: zone, PublicIP: publicIP, DNSReady: true, DNSProvider: "powerdns"}
 		_ = h.opts.DB.Create(&cd).Error
 	} else if err == nil {
 		cd.PublicIP = publicIP
 		cd.DNSReady = true
+		if cd.DNSProvider == "" {
+			cd.DNSProvider = "powerdns"
+		}
 		_ = h.opts.DB.Save(&cd).Error
 	}
 	http.Redirect(w, r, "/domains/d/"+url.PathEscape(zone)+"?flash="+urlQueryEscape("Zone "+zone+" created"), http.StatusSeeOther)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/ssh"
@@ -15,15 +16,17 @@ import (
 
 // domainConnectOpts controls what to wire when adding/updating a domain.
 type domainConnectOpts struct {
-	Domain    string
-	Upstream  string
-	ProjectID uint
-	DBType    string
-	DBName    string
-	PublicIP  string
-	SkipDNS   bool
-	SkipMail  bool
-	SkipNginx bool
+	Domain      string
+	Upstream    string
+	ProjectID   uint
+	DBType      string
+	DBName      string
+	PublicIP    string
+	DNSProvider string // "powerdns" | "cloudflare" | "" | "none"
+	CFZoneID    string
+	SkipDNS     bool
+	SkipMail    bool
+	SkipNginx   bool
 }
 
 func detectPublicIP(exec *ssh.Executor) string {
@@ -81,9 +84,26 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 	if opts.DBName != "" {
 		cd.DBName = opts.DBName
 	}
+	provider := strings.ToLower(strings.TrimSpace(opts.DNSProvider))
+	if opts.DNSProvider != "" {
+		cd.DNSProvider = provider
+	}
+	if opts.CFZoneID != "" {
+		cd.CFZoneID = strings.TrimSpace(opts.CFZoneID)
+	}
+	if provider == "none" {
+		opts.SkipDNS = true
+		cd.DNSProvider = "none"
+	}
 
 	var errs []string
 	var soft []string
+
+	ns := cloudflare.LoadNodeSettings(h.opts.DB, sid)
+	if opts.PublicIP == "" && ns.PublicIP != "" {
+		opts.PublicIP = ns.PublicIP
+		cd.PublicIP = opts.PublicIP
+	}
 
 	// Project link + ProjectDomain row
 	if cd.ProjectID != nil && *cd.ProjectID > 0 {
@@ -124,22 +144,67 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		}
 	}
 
-	// PowerDNS
+	// DNS — PowerDNS, Cloudflare, or skip
 	cd.DNSReady = false
 	if !opts.SkipDNS {
-		pdnsCfg := powerdns.LoadConfig(h.opts.DB, sid)
-		client := powerdns.NewClient(pdnsCfg)
-		mailHost := mailinbox.LoadConfig(h.opts.DB, sid).Hostname
-		if mailHost == "" || mailHost == "mail.example.com" {
-			mailHost = "mail." + domain
-		}
-		if err := client.Ping(); err != nil {
-			errs = append(errs, fmt.Sprintf("powerdns: API offline at %s — disable/enable PowerDNS under Services (API defaults to :%s; Adminer uses :8081): %v",
-				pdnsCfg.URL(), powerdns.DefaultAPIPort, truncateErr(err.Error(), 120)))
-		} else if err := client.EnsureZone(domain, opts.PublicIP, mailHost); err != nil {
-			errs = append(errs, "powerdns: "+truncateErr(err.Error(), 160))
-		} else {
-			cd.DNSReady = true
+		switch cd.DNSProvider {
+		case "cloudflare":
+			token := ns.CFAPIToken
+			if token == "" {
+				errs = append(errs, "cloudflare: API token not set — add it under Settings → Node Identity")
+			} else {
+				cfg := cloudflare.NewConfig(token, cd.CFZoneID)
+				client := cloudflare.NewClient(cfg)
+				if cd.CFZoneID == "" {
+					zid, err := client.LookupZoneID(domain)
+					if err != nil {
+						errs = append(errs, "cloudflare: "+truncateErr(err.Error(), 160))
+					} else {
+						cd.CFZoneID = zid
+						cfg.ZoneID = zid
+						client = cloudflare.NewClient(cfg)
+					}
+				}
+				if cd.CFZoneID != "" {
+					if err := client.Ping(); err != nil {
+						errs = append(errs, "cloudflare: "+truncateErr(err.Error(), 160))
+					} else {
+						cd.DNSReady = true
+					}
+				}
+			}
+		case "powerdns":
+			pdnsCfg := powerdns.LoadConfig(h.opts.DB, sid)
+			client := powerdns.NewClient(pdnsCfg)
+			mailHost := mailinbox.LoadConfig(h.opts.DB, sid).Hostname
+			if mailHost == "" || mailHost == "mail.example.com" {
+				mailHost = "mail." + domain
+			}
+			if err := client.Ping(); err != nil {
+				errs = append(errs, fmt.Sprintf("powerdns: API offline at %s — disable/enable PowerDNS under Services (API defaults to :%s; Adminer uses :8081): %v",
+					pdnsCfg.URL(), powerdns.DefaultAPIPort, truncateErr(err.Error(), 120)))
+			} else if err := client.EnsureZone(domain, opts.PublicIP, mailHost, ns.NS1, ns.NS2); err != nil {
+				errs = append(errs, "powerdns: "+truncateErr(err.Error(), 160))
+			} else {
+				cd.DNSReady = true
+			}
+		case "":
+			// Legacy rows with no provider: try PowerDNS once and stamp provider.
+			cd.DNSProvider = "powerdns"
+			pdnsCfg := powerdns.LoadConfig(h.opts.DB, sid)
+			client := powerdns.NewClient(pdnsCfg)
+			mailHost := mailinbox.LoadConfig(h.opts.DB, sid).Hostname
+			if mailHost == "" || mailHost == "mail.example.com" {
+				mailHost = "mail." + domain
+			}
+			if err := client.Ping(); err != nil {
+				errs = append(errs, fmt.Sprintf("powerdns: API offline at %s — disable/enable PowerDNS under Services (API defaults to :%s; Adminer uses :8081): %v",
+					pdnsCfg.URL(), powerdns.DefaultAPIPort, truncateErr(err.Error(), 120)))
+			} else if err := client.EnsureZone(domain, opts.PublicIP, mailHost, ns.NS1, ns.NS2); err != nil {
+				errs = append(errs, "powerdns: "+truncateErr(err.Error(), 160))
+			} else {
+				cd.DNSReady = true
+			}
 		}
 	}
 

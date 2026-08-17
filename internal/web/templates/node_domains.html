@@ -30,6 +30,22 @@
       <option value="mongodb">mongodb</option>
     </select>
     <input name="db_name" placeholder="database name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <div class="md:col-span-2 grid md:grid-cols-3 gap-3 items-end">
+      <div>
+        <label class="block text-[11px] text-gray-500 mb-1">DNS provider</label>
+        <select name="dns_provider" id="dns-provider" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm"
+                onchange="document.getElementById('cf-zone-wrap').style.display = this.value === 'cloudflare' ? 'block' : 'none'">
+          <option value="powerdns">PowerDNS (self-hosted)</option>
+          <option value="cloudflare">Cloudflare API</option>
+          <option value="none">None (links only)</option>
+        </select>
+      </div>
+      <div id="cf-zone-wrap" style="display:none">
+        <label class="block text-[11px] text-gray-500 mb-1">Cloudflare Zone ID (optional)</label>
+        <input name="cf_zone_id" placeholder="auto-lookup by domain if empty" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+      </div>
+      <p class="text-[11px] text-gray-600 md:col-span-1">PowerDNS uses NS1/NS2 from Settings. Cloudflare uses the global API token.</p>
+    </div>
     <div class="md:col-span-2">
       <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Connect domain (DNS · mail · nginx · links)</button>
     </div>
@@ -67,7 +83,7 @@
             </form>
           </div>
           <div class="flex flex-wrap gap-2 text-[11px] mb-2">
-            <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}</span>
+            <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}{{if .DNSProvider}} ({{.DNSProvider}}){{end}}</span>
             <span class="{{if .MailReady}}text-emerald-400{{else}}text-gray-500{{end}}">Mail {{if .MailReady}}✓{{else}}—{{end}}</span>
             {{if .ProjectID}}<span class="text-gray-400">project #{{.ProjectID}}</span>{{end}}
             {{if .DBName}}<span class="text-gray-400">{{.DBType}}/{{.DBName}}</span>{{end}}

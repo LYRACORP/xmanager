@@ -169,12 +169,24 @@ func zonePath(domain string) string {
 }
 
 // EnsureZone creates a Native zone if missing and upserts A (+ optional MX) records.
-func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
+// Optional nameservers (ns1, ns2, …) override the default ns1.<zone>.
+func (c *Client) EnsureZone(domain, publicIP string, mailMX string, nameservers ...string) error {
 	zone := fqdn(domain)
 	if zone == "" {
 		return fmt.Errorf("empty domain")
 	}
-	ns1 := "ns1." + zone
+
+	var nsList []string
+	for _, ns := range nameservers {
+		ns = strings.TrimSpace(strings.ToLower(ns))
+		if ns == "" {
+			continue
+		}
+		nsList = append(nsList, fqdn(ns))
+	}
+	if len(nsList) == 0 {
+		nsList = []string{"ns1." + zone}
+	}
 
 	_, code, err := c.do("GET", zonePath(domain), nil)
 	exists := err == nil && code < 400
@@ -183,7 +195,7 @@ func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
 			"name":        zone,
 			"kind":        "Native",
 			"masters":     []string{},
-			"nameservers": []string{ns1},
+			"nameservers": nsList,
 		}
 		if _, _, err := c.do("POST", "/api/v1/servers/localhost/zones", payload); err != nil {
 			msg := strings.ToLower(err.Error())
@@ -209,13 +221,18 @@ func (c *Client) EnsureZone(domain, publicIP string, mailMX string) error {
 			"changetype": "REPLACE",
 			"records":    []map[string]any{{"content": publicIP, "disabled": false}},
 		})
-		rrsets = append(rrsets, map[string]any{
-			"name":       ns1,
-			"type":       "A",
-			"ttl":        300,
-			"changetype": "REPLACE",
-			"records":    []map[string]any{{"content": publicIP, "disabled": false}},
-		})
+		// Glue A for each nameserver hostname under this zone.
+		for _, ns := range nsList {
+			if strings.HasSuffix(ns, "."+zone) || ns == zone {
+				rrsets = append(rrsets, map[string]any{
+					"name":       ns,
+					"type":       "A",
+					"ttl":        300,
+					"changetype": "REPLACE",
+					"records":    []map[string]any{{"content": publicIP, "disabled": false}},
+				})
+			}
+		}
 	}
 	if mailMX != "" {
 		mxHost := fqdn(mailMX)

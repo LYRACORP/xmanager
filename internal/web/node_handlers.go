@@ -21,6 +21,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/proxy"
 	svcs "github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/services/bugsink"
+	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/databasus"
 	"github.com/lyracorp/xmanager/internal/services/gitea"
 	"github.com/lyracorp/xmanager/internal/services/kafka"
@@ -136,6 +137,9 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /domains/d/{domain}/delete", h.requireAuth(h.postNodeDomainDelete))
 	mux.HandleFunc("POST /domains/d/{domain}/records", h.requireAuth(h.postNodeDomainRecord))
 	mux.HandleFunc("POST /domains/d/{domain}/records/delete", h.requireAuth(h.postNodeDomainRecordDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/records", h.requireAuth(h.postNodeDomainCFRecord))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/records/delete", h.requireAuth(h.postNodeDomainCFRecordDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/zone-lookup", h.requireAuth(h.postNodeDomainCFZoneLookup))
 
 	// Legacy DNS routes → Domains (nav entry removed; keep APIs for bookmarks / old forms)
 	mux.HandleFunc("GET /dns", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +171,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	}))
 
 	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+	mux.HandleFunc("POST /settings/node", h.requireAuth(h.postNodeSettings))
 	mux.HandleFunc("POST /settings/git", h.requireAuth(h.postSettingsGit))
 	mux.HandleFunc("GET /oauth/git/{provider}/connect", h.requireAuth(h.getOAuthGitConnect))
 	mux.HandleFunc("POST /oauth/git/{provider}/token", h.requireAuth(h.postOAuthGitToken))
@@ -1132,18 +1137,26 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 	dbType := strings.TrimSpace(r.FormValue("db_type"))
 	dbName := strings.TrimSpace(r.FormValue("db_name"))
 	publicIP := strings.TrimSpace(r.FormValue("public_ip"))
+	dnsProvider := strings.TrimSpace(r.FormValue("dns_provider"))
+	if dnsProvider == "" {
+		dnsProvider = "powerdns"
+	}
+	cfZoneID := strings.TrimSpace(r.FormValue("cf_zone_id"))
 
 	cd, err := h.connectDomain(domainConnectOpts{
-		Domain:    domain,
-		Upstream:  upstream,
-		ProjectID: uint(pid),
-		DBType:    dbType,
-		DBName:    dbName,
-		PublicIP:  publicIP,
+		Domain:      domain,
+		Upstream:    upstream,
+		ProjectID:   uint(pid),
+		DBType:      dbType,
+		DBName:      dbName,
+		PublicIP:    publicIP,
+		DNSProvider: dnsProvider,
+		CFZoneID:    cfZoneID,
+		SkipDNS:     dnsProvider == "none",
 	})
 	flash := "Domain connected"
 	if cd != nil && cd.DNSReady {
-		flash += " · DNS zone ready"
+		flash += " · DNS ready (" + cd.DNSProvider + ")"
 	}
 	if cd != nil && cd.MailReady {
 		flash += " · mail domain ready"
@@ -1234,17 +1247,38 @@ func (h *handler) getNodeDomainDetail(w http.ResponseWriter, r *http.Request) {
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
-	if pdnsOK {
-		if z, err := h.pdnsClient().GetZone(domain); err != nil {
+
+	switch cd.DNSProvider {
+	case "cloudflare":
+		token := cloudflare.LoadToken(h.opts.DB, sid)
+		client := cloudflare.NewClient(cloudflare.NewConfig(token, cd.CFZoneID))
+		if cd.CFZoneID == "" && token != "" {
+			if zid, err := client.LookupZoneID(domain); err == nil {
+				cd.CFZoneID = zid
+				_ = h.opts.DB.Model(&cd).Update("cf_zone_id", zid).Error
+				client = cloudflare.NewClient(cloudflare.NewConfig(token, zid))
+			}
+		}
+		if recs, err := client.ListRecords(); err != nil {
 			if data.Flash == "" {
-				data.Flash = "DNS zone: " + err.Error()
+				data.Flash = "Cloudflare: " + err.Error()
 			}
 		} else {
-			data.DNSZone = z
-			data.DNSZoneName = z.Name
+			data.CFRecords = recs
 		}
-	} else if data.Flash == "" {
-		data.Flash = "PowerDNS API offline — enable under Services to manage records"
+	case "powerdns", "":
+		if pdnsOK {
+			if z, err := h.pdnsClient().GetZone(domain); err != nil {
+				if data.Flash == "" {
+					data.Flash = "DNS zone: " + err.Error()
+				}
+			} else {
+				data.DNSZone = z
+				data.DNSZoneName = z.Name
+			}
+		} else if data.Flash == "" && cd.DNSProvider != "none" {
+			data.Flash = "PowerDNS API offline — enable under Services to manage records"
+		}
 	}
 	h.render(w, "node_domain_detail", data)
 }
@@ -1305,6 +1339,88 @@ func (h *handler) postNodeDomainRecordDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Record deleted"), http.StatusSeeOther)
+}
+
+func (h *handler) cfClientForDomain(domain string) (*cloudflare.Client, *storage.ConnectedDomain, error) {
+	sid := h.localServerID()
+	var cd storage.ConnectedDomain
+	if err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error; err != nil {
+		return nil, nil, fmt.Errorf("domain not found")
+	}
+	token := cloudflare.LoadToken(h.opts.DB, sid)
+	if token == "" {
+		return nil, &cd, fmt.Errorf("Cloudflare API token not set — Settings → Node Identity")
+	}
+	if cd.CFZoneID == "" {
+		client := cloudflare.NewClient(cloudflare.NewConfig(token, ""))
+		zid, err := client.LookupZoneID(domain)
+		if err != nil {
+			return nil, &cd, err
+		}
+		cd.CFZoneID = zid
+		_ = h.opts.DB.Model(&cd).Update("cf_zone_id", zid).Error
+	}
+	return cloudflare.NewClient(cloudflare.NewConfig(token, cd.CFZoneID)), &cd, nil
+}
+
+func (h *handler) postNodeDomainCFRecord(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	redir := "/domains/d/" + url.PathEscape(domain)
+	client, _, err := h.cfClientForDomain(domain)
+	if err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	rtype := strings.TrimSpace(r.FormValue("type"))
+	content := strings.TrimSpace(r.FormValue("content"))
+	ttl, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("ttl")))
+	proxied := r.FormValue("proxied") == "1"
+	if err := client.UpsertRecord(name, rtype, content, ttl, proxied); err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("CF record failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape(fmt.Sprintf("Cloudflare record %s %s saved", name, rtype)), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDomainCFRecordDelete(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := normalizeDomainName(r.PathValue("domain"))
+	redir := "/domains/d/" + url.PathEscape(domain)
+	client, _, err := h.cfClientForDomain(domain)
+	if err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	rtype := strings.TrimSpace(r.FormValue("type"))
+	if err := client.DeleteRecord(name, rtype); err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("CF delete failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Cloudflare record deleted"), http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDomainCFZoneLookup(w http.ResponseWriter, r *http.Request) {
+	domain := normalizeDomainName(r.PathValue("domain"))
+	redir := "/domains/d/" + url.PathEscape(domain)
+	sid := h.localServerID()
+	token := cloudflare.LoadToken(h.opts.DB, sid)
+	if token == "" {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Cloudflare API token not set"), http.StatusSeeOther)
+		return
+	}
+	client := cloudflare.NewClient(cloudflare.NewConfig(token, ""))
+	zid, err := client.LookupZoneID(domain)
+	if err != nil {
+		http.Redirect(w, r, redir+"?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	_ = h.opts.DB.Model(&storage.ConnectedDomain{}).
+		Where("server_id = ? AND domain = ?", sid, domain).
+		Updates(map[string]any{"cf_zone_id": zid, "dns_provider": "cloudflare", "dns_ready": true})
+	http.Redirect(w, r, redir+"?flash="+urlQueryEscape("Zone ID "+zid), http.StatusSeeOther)
 }
 
 func urlQueryEscape(s string) string {

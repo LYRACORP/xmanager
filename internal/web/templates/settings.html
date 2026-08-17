@@ -34,6 +34,43 @@
     {{if .NodeMode}}
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Node identity</h2>
+        <p class="text-xs text-panel-muted mt-1">Main domain and nameservers for PowerDNS; Cloudflare API token for CF-managed domains.</p>
+      </div>
+      <form method="post" action="/settings/node" class="grid md:grid-cols-2 gap-3">
+        {{with .NodeSettings}}
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Main domain</label>
+          <input name="main_domain" value="{{.MainDomain}}" placeholder="panel.example.com" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Public IP</label>
+          <input name="public_ip" value="{{.PublicIP}}" placeholder="auto-detect if empty" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">NS1</label>
+          <input name="ns1" value="{{.NS1}}" placeholder="ns1.example.com" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">NS2</label>
+          <input name="ns2" value="{{.NS2}}" placeholder="ns2.example.com" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-500 mb-1">Cloudflare API token</label>
+          <input name="cf_api_token" type="password" placeholder="{{if .CFAPIToken}}•••••••• (leave blank to keep){{else}}Global API token with Zone:DNS:Edit{{end}}" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+          <p class="text-[10px] text-gray-600 mt-1">Stored on this node. Used for all domains with DNS provider = Cloudflare.</p>
+        </div>
+        {{else}}
+        <div class="md:col-span-2 text-xs text-gray-500">Unable to load node settings.</div>
+        {{end}}
+        <div class="md:col-span-2">
+          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save node identity</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Git providers</h2>
         <p class="text-xs text-panel-muted mt-1">Connect accounts when creating a git project. Disconnect here if needed.</p>
       </div>
