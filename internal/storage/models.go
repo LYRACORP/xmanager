@@ -379,6 +379,10 @@ type ConnectedDomain struct {
 	LastError   string `gorm:"type:text" json:"last_error"`
 	DNSProvider string `json:"dns_provider"` // "powerdns" | "cloudflare" | ""
 	CFZoneID    string `json:"cf_zone_id"`   // Cloudflare Zone ID when provider=cloudflare
+	SSLEnabled  bool   `gorm:"default:true" json:"ssl_enabled"`
+	SSLProvider string `json:"ssl_provider"` // "" (auto) | letsencrypt | cloudflare | custom | caddy
+	SSLStatus   string `json:"ssl_status"`   // pending | ok | error | disabled
+	SSLError    string `gorm:"type:text" json:"ssl_error"`
 }
 
 // NodeSettings holds node-level identity used for DNS and Cloudflare integration.

@@ -78,44 +78,87 @@ func (n *NginxManager) AddVHost(domain, upstream string) error {
 	if err := n.EnsureInstalled(); err != nil {
 		return err
 	}
-	// Ensure sites dirs exist (minimal nginx packages).
+	existing := n.readVHost(domain)
+	meta := ParseVHostConfig(existing)
+	return n.writeVHost(domain, HTTPVHostConfig(domain, upstream, meta.Includes), true)
+}
+
+func (n *NginxManager) readVHost(domain string) string {
+	return n.exec.RunQuiet(fmt.Sprintf("cat /etc/nginx/sites-available/%s 2>/dev/null || cat /etc/nginx/sites-enabled/%s 2>/dev/null", domain, domain))
+}
+
+func (n *NginxManager) writeVHost(domain, config string, enable bool) error {
 	_, _ = n.exec.Run("sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled")
-	// Include sites-enabled if the stock config doesn't.
 	_, _ = n.exec.Run(`grep -q sites-enabled /etc/nginx/nginx.conf 2>/dev/null || sudo sed -i '/http {/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf 2>/dev/null || true`)
-
-	config := fmt.Sprintf(`server {
-    listen 80;
-    listen [::]:80;
-    server_name %s;
-
-    location / {
-        proxy_pass %s;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}`, domain, upstream)
 
 	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", domain)
 	enablePath := fmt.Sprintf("/etc/nginx/sites-enabled/%s", domain)
-
-	// Write via tee with a heredoc-safe approach (avoid shell metachar in echo).
-	writeCmd := fmt.Sprintf("sudo tee %s > /dev/null << 'XMEOF'\n%s\nXMEOF\nsudo ln -sf %s %s",
-		configPath, config, configPath, enablePath)
+	writeCmd := fmt.Sprintf("sudo tee %s > /dev/null << 'XMEOF'\n%s\nXMEOF", configPath, config)
+	if enable {
+		writeCmd += fmt.Sprintf("\nsudo ln -sf %s %s", configPath, enablePath)
+	}
 	if res, err := n.exec.Run(writeCmd); err != nil {
 		return err
 	} else if res != nil && res.ExitCode != 0 {
 		return fmt.Errorf("write nginx vhost: %s", strings.TrimSpace(res.Stdout+res.Stderr))
 	}
-
 	if output, err := n.ValidateConfig(); err != nil || !strings.Contains(output, "successful") {
-		_, _ = n.exec.Run(fmt.Sprintf("sudo rm -f %s", enablePath))
+		if enable {
+			_, _ = n.exec.Run(fmt.Sprintf("sudo rm -f %s", enablePath))
+		}
 		return fmt.Errorf("nginx config validation failed: %s", output)
 	}
-
 	return n.ReloadConfig()
+}
+
+// EnableSSL rewrites the vhost with TLS + HTTP redirect, preserving snippet includes.
+func (n *NginxManager) EnableSSL(domain, cert, key string) error {
+	if err := n.EnsureInstalled(); err != nil {
+		return err
+	}
+	meta := ParseVHostConfig(n.readVHost(domain))
+	upstream := strings.TrimSpace(meta.Upstream)
+	if upstream == "" {
+		return fmt.Errorf("nginx: no proxy_pass for %s", domain)
+	}
+	return n.writeVHost(domain, HTTPSVHostConfig(domain, upstream, cert, key, meta.Includes), true)
+}
+
+// DisableSSL rewrites the vhost to HTTP-only, leaving certificate files on disk.
+func (n *NginxManager) DisableSSL(domain string) error {
+	if err := n.EnsureInstalled(); err != nil {
+		return err
+	}
+	meta := ParseVHostConfig(n.readVHost(domain))
+	upstream := strings.TrimSpace(meta.Upstream)
+	if upstream == "" {
+		return fmt.Errorf("nginx: no proxy_pass for %s", domain)
+	}
+	return n.writeVHost(domain, HTTPVHostConfig(domain, upstream, meta.Includes), true)
+}
+
+// DisableVHost unlinks the site without deleting the available config (used when Caddy takes the host).
+func (n *NginxManager) DisableVHost(domain string) error {
+	_, _ = n.exec.Run(fmt.Sprintf("sudo rm -f /etc/nginx/sites-enabled/%s", domain))
+	return n.ReloadConfig()
+}
+
+// EnsureCertbot installs certbot and the nginx plugin if missing.
+func (n *NginxManager) EnsureCertbot() error {
+	if n.exec.RunQuiet("which certbot") != "" {
+		return nil
+	}
+	res, err := n.exec.Run("sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1")
+	if err != nil {
+		return fmt.Errorf("install certbot: %w", err)
+	}
+	if res != nil && res.ExitCode != 0 {
+		return fmt.Errorf("install certbot: %s", strings.TrimSpace(res.Stdout+res.Stderr))
+	}
+	if n.exec.RunQuiet("which certbot") == "" {
+		return fmt.Errorf("certbot still not found after apt install")
+	}
+	return nil
 }
 
 func (n *NginxManager) RemoveVHost(domain string) error {

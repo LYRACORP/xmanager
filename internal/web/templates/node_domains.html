@@ -47,8 +47,22 @@
       </div>
       <p class="text-[11px] text-gray-600 md:col-span-1">PowerDNS uses NS1/NS2 from Settings. Cloudflare uses the global API token.</p>
     </div>
+    <div class="md:col-span-2 flex flex-wrap items-center gap-4">
+      <input type="hidden" name="ssl_submitted" value="1">
+      <label class="text-sm text-gray-300 flex items-center gap-2">
+        <input type="checkbox" name="ssl_enabled" value="1" checked class="rounded border-gray-600">
+        Enable HTTPS (default)
+      </label>
+      <select name="ssl_provider" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <option value="">Auto (Let's Encrypt, or Cloudflare Origin if DNS is CF)</option>
+        <option value="letsencrypt">Let's Encrypt (certbot)</option>
+        <option value="cloudflare">Cloudflare Origin / Full SSL</option>
+        <option value="custom">Custom certificate</option>
+        <option value="caddy">Caddy (automatic HTTPS)</option>
+      </select>
+    </div>
     <div class="md:col-span-2">
-      <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Connect domain (DNS · mail · nginx · links)</button>
+      <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Connect domain (DNS · mail · nginx · SSL · links)</button>
     </div>
   </form>
 
@@ -68,6 +82,11 @@
         <div class="flex flex-wrap gap-2 text-[11px] mb-2">
           <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}{{if .DNSProvider}} ({{.DNSProvider}}){{end}}</span>
           <span class="{{if .MailReady}}text-emerald-400{{else}}text-gray-500{{end}}">Mail {{if .MailReady}}✓{{else}}—{{end}}</span>
+          {{if not .SSLEnabled}}<span class="text-gray-500">SSL off</span>
+          {{else if eq .SSLStatus "ok"}}<span class="text-emerald-400">SSL ✓{{if .SSLProvider}} ({{.SSLProvider}}){{end}}</span>
+          {{else if eq .SSLStatus "error"}}<span class="text-amber-400">SSL error</span>
+          {{else}}<span class="text-gray-400">SSL {{if .SSLStatus}}{{.SSLStatus}}{{else}}pending{{end}}</span>
+          {{end}}
           {{if .ProjectID}}<span class="text-gray-400">project #{{.ProjectID}}</span>{{end}}
           {{if .DBName}}<span class="text-gray-400">{{.DBType}}/{{.DBName}}</span>{{end}}
         </div>
@@ -105,6 +124,7 @@
       {{range .VHosts}}
       <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
         <span class="font-mono text-gray-200">{{.Domain}}</span>
+        {{if .SSLEnabled}}<span class="text-[10px] text-emerald-400 ml-2">ssl</span>{{else}}<span class="text-[10px] text-gray-600 ml-2">http</span>{{end}}
         <span class="text-xs text-gray-500 block">{{.Upstream}}</span>
       </li>
       {{end}}

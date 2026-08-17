@@ -281,6 +281,24 @@ func recordNameMatch(got, rawWant string) bool {
 	return strings.HasPrefix(got, rawWant+".")
 }
 
+// CreateOriginCertificate issues an Origin CA certificate (POST /certificates).
+func (c *Client) CreateOriginCertificate(payload map[string]any) (json.RawMessage, error) {
+	return c.do("POST", "/certificates", payload)
+}
+
+// SetZoneSSLMode sets the zone SSL/TLS mode (flexible, full, strict).
+func (c *Client) SetZoneSSLMode(mode string) error {
+	if c.Cfg.ZoneID == "" {
+		return fmt.Errorf("cloudflare: zone ID required")
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "strict"
+	}
+	_, err := c.do("PATCH", "/zones/"+url.PathEscape(c.Cfg.ZoneID)+"/settings/ssl", map[string]any{"value": mode})
+	return err
+}
+
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= n {

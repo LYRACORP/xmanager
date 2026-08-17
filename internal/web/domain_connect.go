@@ -10,6 +10,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/ssl"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
@@ -27,6 +28,9 @@ type domainConnectOpts struct {
 	SkipDNS     bool
 	SkipMail    bool
 	SkipNginx   bool
+	SkipSSL     bool
+	SSLEnabled  *bool
+	SSLProvider string
 }
 
 func detectPublicIP(exec *ssh.Executor) string {
@@ -95,6 +99,16 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		opts.SkipDNS = true
 		cd.DNSProvider = "none"
 	}
+	if cd.ID == 0 {
+		cd.SSLEnabled = true
+		cd.SSLStatus = "pending"
+	}
+	if opts.SSLEnabled != nil {
+		cd.SSLEnabled = *opts.SSLEnabled
+	}
+	if opts.SSLProvider != "" {
+		cd.SSLProvider = strings.ToLower(strings.TrimSpace(opts.SSLProvider))
+	}
 
 	var errs []string
 	var soft []string
@@ -110,7 +124,9 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		_ = h.opts.DB.Model(&storage.Project{}).Where("id = ?", *cd.ProjectID).Update("domain", domain)
 		var pd storage.ProjectDomain
 		if h.opts.DB.Where("project_id = ? AND domain = ?", *cd.ProjectID, domain).First(&pd).Error != nil {
-			_ = h.opts.DB.Create(&storage.ProjectDomain{ProjectID: *cd.ProjectID, Domain: domain, SSL: true}).Error
+			_ = h.opts.DB.Create(&storage.ProjectDomain{ProjectID: *cd.ProjectID, Domain: domain, SSL: cd.SSLEnabled}).Error
+		} else {
+			_ = h.opts.DB.Model(&pd).Update("ssl", cd.SSLEnabled).Error
 		}
 	}
 
@@ -231,6 +247,16 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 	} else if err := h.opts.DB.Save(&cd).Error; err != nil {
 		return nil, err
 	}
+
+	if !opts.SkipNginx && !opts.SkipSSL {
+		if sslErr := h.EnsureDomainSSL(&cd); sslErr != nil {
+			soft = append(soft, "ssl: "+truncateErr(sslErr.Error(), 160))
+			all = append(append([]string{}, soft...), errs...)
+			cd.LastError = strings.Join(all, "; ")
+			_ = h.opts.DB.Model(&cd).Update("last_error", cd.LastError).Error
+		}
+	}
+
 	// Soft warnings still surface as "saved with warnings"; hard errors too.
 	if len(all) > 0 {
 		return &cd, fmt.Errorf("%s", cd.LastError)
@@ -268,6 +294,8 @@ func (h *handler) disconnectDomain(domain string, deleteDNS, deleteNginx bool) e
 				}
 			}
 		}
+		ssl.RemoveCaddySite(exec, domain)
+		ssl.RemoveCaddySite(exec, "webmail."+domain)
 	}
 
 	if deleteDNS {
@@ -459,6 +487,14 @@ func (h *handler) ensureWebmailHost(host string, ctx webmailDNSContext) error {
 				notes = append(notes, "nginx: "+err.Error())
 			} else {
 				_ = hostfirewall.Allow([]int{80, 443}, "tcp")
+				var parent *storage.ConnectedDomain
+				var row storage.ConnectedDomain
+				if h.opts.DB.Where("server_id = ? AND domain = ?", sid, ctx.ZoneDomain).First(&row).Error == nil {
+					parent = &row
+				}
+				if sslErr := h.EnsureHostSSL(host, upstream, parent); sslErr != nil {
+					notes = append(notes, "ssl: "+sslErr.Error())
+				}
 			}
 		}
 	}

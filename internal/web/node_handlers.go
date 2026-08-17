@@ -189,6 +189,10 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /domains/d/{domain}/cf/records", h.requireAuth(h.postNodeDomainCFRecord))
 	mux.HandleFunc("POST /domains/d/{domain}/cf/records/delete", h.requireAuth(h.postNodeDomainCFRecordDelete))
 	mux.HandleFunc("POST /domains/d/{domain}/cf/zone-lookup", h.requireAuth(h.postNodeDomainCFZoneLookup))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl", h.requireAuth(h.postNodeDomainSSL))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/issue", h.requireAuth(h.postNodeDomainSSLIssue))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/custom", h.requireAuth(h.postNodeDomainSSLCustom))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/disable", h.requireAuth(h.postNodeDomainSSLDisable))
 
 	// Legacy DNS routes → Domains (nav entry removed; keep APIs for bookmarks / old forms)
 	mux.HandleFunc("GET /dns", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
@@ -1281,6 +1285,7 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 		dnsProvider = "powerdns"
 	}
 	cfZoneID := strings.TrimSpace(r.FormValue("cf_zone_id"))
+	sslOn := parseFormSSLEnabled(r.FormValue("ssl_enabled"), r.FormValue("ssl_submitted") == "1")
 
 	cd, err := h.connectDomain(domainConnectOpts{
 		Domain:      domain,
@@ -1292,6 +1297,8 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 		DNSProvider: dnsProvider,
 		CFZoneID:    cfZoneID,
 		SkipDNS:     dnsProvider == "none",
+		SSLEnabled:  sslOn,
+		SSLProvider: strings.TrimSpace(r.FormValue("ssl_provider")),
 	})
 	flash := "Domain connected"
 	if cd != nil && cd.DNSReady {
@@ -1299,6 +1306,9 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 	}
 	if cd != nil && cd.MailReady {
 		flash += " · mail domain ready"
+	}
+	if cd != nil && cd.SSLEnabled && cd.SSLStatus != "" {
+		flash += " · SSL " + cd.SSLStatus
 	}
 	if err != nil {
 		flash = "Domain saved with warnings: " + err.Error()
