@@ -14,6 +14,8 @@ const (
 	KindSSHFail   = "ssh_fail"
 	KindFail2ban  = "fail2ban"
 	KindScan      = "scan"
+	KindWAFBlock  = "waf_block"
+	KindRateLimit = "rate_limit"
 )
 
 const maxEventRows = 20000

@@ -49,6 +49,9 @@
           {{if eq .Name "reqdump"}}
           <p class="text-xs text-gray-600 mt-2">Forensic HTTP capture (panel, nginx mirror, honeypot). Off by default — configure on <a class="text-indigo-400" href="/security">Security</a>.</p>
           {{end}}
+          {{if eq .Name "modsecurity"}}
+          <p class="text-xs text-gray-600 mt-2">Install OWASP ModSecurity + CRS on nginx. Toggle rules on <a class="text-indigo-400" href="/security">Security</a>.</p>
+          {{end}}
         </div>
         <div class="shrink-0">
           {{if .Enabled}}

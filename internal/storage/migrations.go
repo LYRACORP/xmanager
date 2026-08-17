@@ -17,6 +17,8 @@ func runMigrations(db *gorm.DB) error {
 		&ActivityLog{},
 		&SecurityEvent{},
 		&RequestDump{},
+		&SecurityPolicy{},
+		&TrafficHit{},
 		&AIConfigRecord{},
 		&User{},
 		&Project{},

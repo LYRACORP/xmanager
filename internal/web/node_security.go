@@ -14,6 +14,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/securityevents"
 	svcReqdump "github.com/lyracorp/xmanager/internal/services/reqdump"
 	"github.com/lyracorp/xmanager/internal/storage"
+	"github.com/lyracorp/xmanager/internal/waf"
 )
 
 type securityPageView struct {
@@ -26,6 +27,10 @@ type securityPageView struct {
 	Dumps         []storage.RequestDump
 	DumpConfig    reqdump.Config
 	HoneypotPorts string
+	Policy        security.Policy
+	Modsec        wafModsecView
+	BlockIPsText  string
+	AllowIPsText  string
 }
 
 func (h *handler) reloadReqDump() {
@@ -55,6 +60,8 @@ func (h *handler) getNodeSecurity(w http.ResponseWriter, r *http.Request) {
 	events, _ := securityevents.List(h.opts.DB, securityevents.Filter{ServerID: sid, Limit: 100})
 	dumps, _ := reqdump.List(h.opts.DB, reqdump.ListFilter{ServerID: sid, Limit: 50})
 	dumpCfg := reqdump.LoadConfig(h.opts.DB, sid)
+	policy := security.LoadPolicy(h.opts.DB, sid)
+	modsec := waf.DetectModsec(exec)
 
 	data := h.basePage(sess, "Security")
 	data.ActiveNav = "security"
@@ -68,7 +75,13 @@ func (h *handler) getNodeSecurity(w http.ResponseWriter, r *http.Request) {
 		Dumps:         dumps,
 		DumpConfig:    dumpCfg,
 		HoneypotPorts: dumpCfg.HoneypotPorts,
+		Policy:        policy,
+		Modsec:        wafModsecView{Installed: modsec.Installed, Enabled: modsec.Enabled, Detail: modsec.Detail},
+		BlockIPsText:  strings.Join(policy.BlockIPs, "\n"),
+		AllowIPsText:  strings.Join(policy.AllowIPs, "\n"),
 	}
+	data.SecurityPolicy = policy
+	data.ModsecStatus = data.Security.Modsec
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
@@ -153,7 +166,7 @@ func (h *handler) postNodeSecurityDump(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/security?flash=save+failed", http.StatusSeeOther)
 		return
 	}
-	h.reloadReqDump()
+	h.reloadSecurityAll()
 	http.Redirect(w, r, "/security?flash=dump+settings+saved", http.StatusSeeOther)
 }
 
@@ -200,5 +213,5 @@ func panelProtectedPorts() map[int]string {
 }
 
 func (h *handler) lookupReqdumpService() *svcReqdump.Service {
-	return svcReqdump.New(h.opts.DB, h.localServerID(), h.reloadReqDump)
+	return svcReqdump.New(h.opts.DB, h.localServerID(), h.reloadSecurityAll)
 }

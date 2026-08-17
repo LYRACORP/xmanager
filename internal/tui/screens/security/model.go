@@ -3,12 +3,14 @@ package security
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lyracorp/xmanager/internal/reqdump"
 	"github.com/lyracorp/xmanager/internal/security"
 	"github.com/lyracorp/xmanager/internal/securityevents"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/traffic"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
@@ -24,17 +26,21 @@ const (
 	tabSSL
 	tabEvents
 	tabDump
+	tabTraffic
+	tabPolicy
 )
 
 type loadMsg struct {
-	fw     security.FirewallStatus
-	ssh    security.SSHConfig
-	certs  []security.SSLCert
-	f2b    security.Fail2banStatus
-	fails  []security.AuthFail
-	events []string
-	dump   reqdump.Config
-	err    error
+	fw      security.FirewallStatus
+	ssh     security.SSHConfig
+	certs   []security.SSLCert
+	f2b     security.Fail2banStatus
+	fails   []security.AuthFail
+	events  []string
+	dump    reqdump.Config
+	policy  security.Policy
+	traffic traffic.Analysis
+	err     error
 }
 
 type Model struct {
@@ -51,6 +57,8 @@ type Model struct {
 	fails   []security.AuthFail
 	events  []string
 	dump    reqdump.Config
+	policy  security.Policy
+	traffic traffic.Analysis
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -91,7 +99,12 @@ func buildLoadMsg(ex *ssh.Executor, db *gorm.DB, serverID uint) loadMsg {
 		}
 	}
 	dumpCfg := reqdump.LoadConfig(db, serverID)
-	return loadMsg{fw: fw, ssh: sshCfg, certs: certs, f2b: f2b, fails: fails, events: evLines, dump: dumpCfg}
+	pol := security.LoadPolicy(db, serverID)
+	var ta traffic.Analysis
+	if db != nil {
+		ta, _ = traffic.Analyze(db, serverID, time.Now().Add(-time.Hour))
+	}
+	return loadMsg{fw: fw, ssh: sshCfg, certs: certs, f2b: f2b, fails: fails, events: evLines, dump: dumpCfg, policy: pol, traffic: ta}
 }
 
 func truncate(s string, n int) string {
@@ -117,6 +130,8 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		m.fails = msg.fails
 		m.events = msg.events
 		m.dump = msg.dump
+		m.policy = msg.policy
+		m.traffic = msg.traffic
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -137,6 +152,10 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			m.tab = tabEvents
 		case "6":
 			m.tab = tabDump
+		case "7":
+			m.tab = tabTraffic
+		case "8":
+			m.tab = tabPolicy
 		case "h":
 			if m.tab == tabSSH {
 				return m, m.hardenSSH()
@@ -179,7 +198,7 @@ func (m *Model) renewSSL() tea.Cmd {
 
 func (m *Model) KeyBindings() []components.KeyBinding {
 	return []components.KeyBinding{
-		{Key: "1-6", Desc: "tabs"},
+		{Key: "1-8", Desc: "tabs"},
 		{Key: "h", Desc: "harden ssh (tab 3)"},
 		{Key: "u", Desc: "renew ssl (tab 4)"},
 		{Key: "r", Desc: "refresh"},
@@ -189,7 +208,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 
 func (m *Model) View() string {
 	header := theme.ScreenChrome("Security", "firewall · ssh · ssl · dumps", m.width)
-	tabs := []string{"Overview", "Firewall", "SSH", "SSL", "Events", "Dump"}
+	tabs := []string{"Overview", "Firewall", "SSH", "SSL", "Events", "Dump", "Traffic", "Policy"}
 	var tabBar strings.Builder
 	for i, name := range tabs {
 		if tab(i) == m.tab {
@@ -211,7 +230,8 @@ func (m *Model) View() string {
 		body.WriteString(fmt.Sprintf("  SSH port %s · root %s · password %s\n", m.ssh.Port, m.ssh.PermitRootLogin, m.ssh.PasswordAuthentication))
 		body.WriteString(fmt.Sprintf("  SSL certs: %d\n", len(m.certs)))
 		body.WriteString(fmt.Sprintf("  fail2ban: %s\n", onOff(m.f2b.Installed)))
-		body.WriteString(fmt.Sprintf("  Request dump: %s\n", onOff(m.dump.Enabled)))
+		body.WriteString(fmt.Sprintf("  Policy enabled: %s\n", onOff(m.policy.Enabled)))
+		body.WriteString(fmt.Sprintf("  WAF builtin: %s · rate %d rpm\n", onOff(m.policy.WAFBuiltin), m.policy.RateRPM))
 	case tabFirewall:
 		body.WriteString("  " + strings.ReplaceAll(truncate(m.fw.Raw, 2000), "\n", "\n  "))
 	case tabSSH:
@@ -235,6 +255,20 @@ func (m *Model) View() string {
 		body.WriteString("  Honeypot ports: " + m.dump.HoneypotPorts + "\n")
 		body.WriteString("\n  Request dump listeners run in the node web panel process.\n")
 		body.WriteString("  Toggle via web /security or /apps on the node panel host.\n")
+	case tabTraffic:
+		body.WriteString(fmt.Sprintf("  Last hour: allowed=%d blocked=%d panel=%d nginx=%d\n",
+			m.traffic.Allowed, m.traffic.Blocked, m.traffic.Panel, m.traffic.Nginx))
+		for _, e := range m.traffic.TopIPs {
+			body.WriteString(fmt.Sprintf("  IP %s (%d)\n", e.Key, e.Count))
+		}
+		for _, e := range m.traffic.TopPaths {
+			body.WriteString(fmt.Sprintf("  %s (%d)\n", truncate(e.Key, 40), e.Count))
+		}
+	case tabPolicy:
+		body.WriteString(fmt.Sprintf("  Enabled: %s\n", onOff(m.policy.Enabled)))
+		body.WriteString(fmt.Sprintf("  Rate: %d rpm burst %d conn %d\n", m.policy.RateRPM, m.policy.RateBurst, m.policy.ConnLimit))
+		body.WriteString(fmt.Sprintf("  WAF: builtin=%v modsec=%v analysis=%v\n", m.policy.WAFBuiltin, m.policy.WAFModsec, m.policy.AnalysisEnabled))
+		body.WriteString("\n  Edit policy and ModSecurity install via web /security.\n")
 	}
 	return header + "\n" + tabBar.String() + "\n\n" + body.String()
 }

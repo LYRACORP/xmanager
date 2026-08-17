@@ -182,6 +182,29 @@ type RequestDump struct {
 	Status     int       `json:"status"`
 }
 
+// SecurityPolicy stores WAF, rate limit, and traffic control settings per server.
+type SecurityPolicy struct {
+	gorm.Model
+	ServerID   uint   `gorm:"uniqueIndex;not null" json:"server_id"`
+	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Enabled    bool   `gorm:"default:false" json:"enabled"`
+	ConfigJSON string `gorm:"type:text" json:"config_json"`
+}
+
+// TrafficHit is one request sample for traffic analysis.
+type TrafficHit struct {
+	ID       uint      `gorm:"primaryKey" json:"id"`
+	At       time.Time `gorm:"index" json:"at"`
+	ServerID uint      `gorm:"index" json:"server_id"`
+	Source   string    `gorm:"index;size:16" json:"source"` // panel | nginx
+	IP       string    `gorm:"index;size:64" json:"ip"`
+	Method   string    `gorm:"size:16" json:"method"`
+	Path     string    `gorm:"size:512" json:"path"`
+	Status   int       `json:"status"`
+	Blocked  bool      `json:"blocked"`
+	Rule     string    `gorm:"size:64" json:"rule"`
+}
+
 type AIConfigRecord struct {
 	gorm.Model
 	Provider        string `json:"provider"`

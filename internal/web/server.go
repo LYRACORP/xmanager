@@ -91,21 +91,28 @@ func Run(opts Options) error {
 		}
 		panelPort := port
 		h.dumpMgr = reqdump.NewManager(opts.DB, h.localSrvID, panelPort)
+		h.secStack = newSecurityStack(opts.DB, h.localSrvID, h.dumpMgr)
 		h.node = nodemetrics.NewCollector(5 * time.Second)
 		h.node.Start()
 		defer h.node.Stop()
 		h.startChartSampler()
 		defer h.stopChartSampler()
 		h.ensureDefaultNodeServices()
-		h.reloadReqDump()
-		defer h.dumpMgr.Stop()
+		h.reloadSecurityAll()
+		defer func() {
+			h.dumpMgr.Stop()
+			h.secStack.stop()
+		}()
+		h.secStack.startNginxPoller(h.exec)
 	}
 
 	mux := http.NewServeMux()
 	h.register(mux)
 
 	handler := http.Handler(mux)
-	if h.dumpMgr != nil {
+	if h.secStack != nil {
+		handler = h.secStack.wrap(mux)
+	} else if h.dumpMgr != nil {
 		handler = h.dumpMgr.Middleware(mux)
 	}
 

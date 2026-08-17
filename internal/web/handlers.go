@@ -23,6 +23,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
 	"github.com/lyracorp/xmanager/internal/reqdump"
+	"github.com/lyracorp/xmanager/internal/security"
 	"github.com/lyracorp/xmanager/internal/securityevents"
 	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
@@ -47,6 +48,7 @@ type handler struct {
 	diskCache    *diskUsageCache
 	chartStop    chan struct{}
 	dumpMgr      *reqdump.Manager
+	secStack     *securityStack
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -262,6 +264,9 @@ type pageData struct {
 	LogsFragmentQS string
 	// Security
 	Security       securityPageView
+	SecurityPolicy security.Policy
+	ModsecStatus   wafModsecView
+	TrafficRange   string
 	RequestDump    *storage.RequestDump
 	RequestDumpHex string
 }

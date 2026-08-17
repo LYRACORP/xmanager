@@ -128,6 +128,12 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /security/ssl/renew", h.requireAuth(h.postNodeSecuritySSLRenew))
 	mux.HandleFunc("POST /security/fail2ban/unban", h.requireAuth(h.postNodeSecurityFail2banUnban))
 	mux.HandleFunc("POST /security/dump", h.requireAuth(h.postNodeSecurityDump))
+	mux.HandleFunc("POST /security/policy", h.requireAuth(h.postNodeSecurityPolicy))
+	mux.HandleFunc("POST /security/ip/block", h.requireAuth(h.postNodeSecurityIPBlock))
+	mux.HandleFunc("POST /security/ip/unblock", h.requireAuth(h.postNodeSecurityIPUnblock))
+	mux.HandleFunc("POST /security/waf/modsec/install", h.requireAuth(h.postNodeSecurityModsecInstall))
+	mux.HandleFunc("POST /security/waf/modsec/remove", h.requireAuth(h.postNodeSecurityModsecRemove))
+	mux.HandleFunc("GET /api/security/traffic", h.requireAuth(h.getAPISecurityTraffic))
 	mux.HandleFunc("POST /internal/reqdump", h.postInternalReqdump)
 
 	mux.HandleFunc("GET /apps", h.requireAuth(h.getNodeApps))
@@ -1090,6 +1096,8 @@ func (h *handler) lookupNodeService(name string) svcs.Service {
 		return databasus.New(db, sid)
 	case "reqdump":
 		return h.lookupReqdumpService()
+	case "modsecurity":
+		return h.lookupModsecurityService()
 	default:
 		return nil
 	}
@@ -1100,7 +1108,7 @@ func (h *handler) getNodeApps(w http.ResponseWriter, r *http.Request) {
 	names := []string{
 		"registry", "gitea", "rustfs", "rabbitmq", "kafka",
 		"mattermost", "bugsink", "umami", "powerdns", "mailinbox", "netdata",
-		"uptimekuma", "databasus", "reqdump",
+		"uptimekuma", "databasus", "reqdump", "modsecurity",
 	}
 	exec := h.localExec()
 	var list []nodeServiceView

@@ -75,6 +75,72 @@
   </section>
 
   <section class="mb-8">
+    <h2 class="text-lg font-semibold mb-3">Traffic analysis</h2>
+    <p class="text-xs text-gray-500 mb-3">Panel + nginx request samples when analysis is enabled in policy below.</p>
+    <div class="flex gap-2 mb-3">
+      <button type="button" class="traffic-range text-xs px-2 py-1 rounded border border-gray-700" data-range="1h">1h</button>
+      <button type="button" class="traffic-range text-xs px-2 py-1 rounded border border-gray-700" data-range="6h">6h</button>
+      <button type="button" class="traffic-range text-xs px-2 py-1 rounded border border-gray-700" data-range="1d">1d</button>
+    </div>
+    <canvas id="traffic-chart" height="80" class="w-full bg-gray-900 border border-gray-800 rounded-lg mb-3"></canvas>
+    <div class="grid md:grid-cols-2 gap-4 text-sm">
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+        <div class="text-gray-500 text-xs mb-2">Top IPs</div>
+        <ul id="traffic-top-ips" class="font-mono text-xs text-gray-400 space-y-1"></ul>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+        <div class="text-gray-500 text-xs mb-2">Top paths</div>
+        <ul id="traffic-top-paths" class="font-mono text-xs text-gray-400 space-y-1"></ul>
+      </div>
+    </div>
+    <p id="traffic-summary" class="text-xs text-gray-500 mt-3"></p>
+  </section>
+
+  <section class="mb-8">
+    <h2 class="text-lg font-semibold mb-3">WAF, rate limiting &amp; traffic control</h2>
+    <p class="text-xs text-gray-500 mb-4">Applies to panel (8080) and managed nginx vhosts (80/443). Default off.</p>
+    <form method="post" action="/security/policy" class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+      <label class="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" name="enabled" value="on" {{if .Security.Policy.Enabled}}checked{{end}}>
+        Enable security policy
+      </label>
+      <div class="grid md:grid-cols-3 gap-3 text-sm">
+        <label class="text-gray-400">Rate RPM <input name="rate_rpm" value="{{.Security.Policy.RateRPM}}" class="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono mt-1"></label>
+        <label class="text-gray-400">Burst <input name="rate_burst" value="{{.Security.Policy.RateBurst}}" class="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono mt-1"></label>
+        <label class="text-gray-400">Conn limit <input name="conn_limit" value="{{.Security.Policy.ConnLimit}}" class="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono mt-1"></label>
+      </div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="analysis_enabled" value="on" {{if .Security.Policy.AnalysisEnabled}}checked{{end}}> Traffic analysis</label>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="waf_builtin" value="on" {{if .Security.Policy.WAFBuiltin}}checked{{end}}> Built-in WAF (panel)</label>
+      <div class="flex flex-wrap gap-3 text-xs text-gray-400">
+        <label><input type="checkbox" name="waf_sqli" value="on" {{if .Security.Policy.WAFSQLi}}checked{{end}}> SQLi</label>
+        <label><input type="checkbox" name="waf_xss" value="on" {{if .Security.Policy.WAFXSS}}checked{{end}}> XSS</label>
+        <label><input type="checkbox" name="waf_traversal" value="on" {{if .Security.Policy.WAFTraversal}}checked{{end}}> Traversal</label>
+        <label><input type="checkbox" name="waf_bad_bots" value="on" {{if .Security.Policy.WAFBadBots}}checked{{end}}> Bad bots</label>
+      </div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="waf_modsec" value="on" {{if .Security.Policy.WAFModsec}}checked{{end}}> ModSecurity (nginx)</label>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="modsec_detect_only" value="on" {{if .Security.Policy.ModsecDetectOnly}}checked{{end}}> ModSecurity detection-only</label>
+      <label class="text-sm text-gray-400">Paranoia (1–2) <input name="modsec_paranoia" value="{{.Security.Policy.ModsecParanoia}}" class="ml-2 w-16 bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono"></label>
+      <label class="text-sm text-gray-400">Auto fail2ban after N blocks (0=off) <input name="auto_fail2ban" value="{{.Security.Policy.AutoFail2ban}}" class="ml-2 w-16 bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono"></label>
+      <label class="text-sm text-gray-400 block">Block IPs (one per line)
+        <textarea name="block_ips" rows="3" class="w-full mt-1 bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono text-xs">{{.Security.BlockIPsText}}</textarea>
+      </label>
+      <label class="text-sm text-gray-400 block">Allow IPs (one per line)
+        <textarea name="allow_ips" rows="2" class="w-full mt-1 bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono text-xs">{{.Security.AllowIPsText}}</textarea>
+      </label>
+      <button type="submit" class="text-xs bg-indigo-900/50 text-indigo-300 border border-indigo-800 px-3 py-1.5 rounded">Save policy</button>
+    </form>
+    <div class="mt-3 flex flex-wrap gap-2">
+      <form method="post" action="/security/waf/modsec/install"><button type="submit" class="text-xs bg-emerald-900/40 text-emerald-300 border border-emerald-800 px-3 py-1.5 rounded">Install ModSecurity + CRS</button></form>
+      <form method="post" action="/security/waf/modsec/remove"><button type="submit" class="text-xs bg-red-900/40 text-red-300 border border-red-800 px-3 py-1.5 rounded">Remove ModSecurity includes</button></form>
+    </div>
+    <p class="text-xs text-gray-600 mt-2 font-mono">ModSecurity: {{if .Security.Modsec.Installed}}installed{{else}}not installed{{end}}{{if .Security.Modsec.Enabled}} · active{{end}}</p>
+    <form method="post" action="/security/ip/block" class="mt-4 flex gap-2 items-end">
+      <label class="text-sm text-gray-400">Quick block IP <input name="ip" placeholder="203.0.113.5" class="ml-2 bg-gray-950 border border-gray-700 rounded px-2 py-1 font-mono"></label>
+      <button type="submit" class="text-xs bg-red-900/50 text-red-300 border border-red-800 px-3 py-1.5 rounded">Block</button>
+    </form>
+  </section>
+
+  <section class="mb-8">
     <h2 class="text-lg font-semibold mb-3">fail2ban</h2>
     {{if .Security.Fail2ban.Installed}}
     <pre class="text-xs bg-gray-900 border border-gray-800 rounded-xl p-4 text-gray-400 font-mono mb-3">{{.Security.Fail2ban.Raw}}</pre>
@@ -174,5 +240,45 @@
     </table>
   </section>
 </div>
+<script>
+(function(){
+  var range='1h';
+  var canvas=document.getElementById('traffic-chart');
+  if(!canvas)return;
+  var ctx=canvas.getContext('2d');
+  function draw(series){
+    if(!series||!series.length){ctx.clearRect(0,0,canvas.width,canvas.height);return;}
+    var w=canvas.width=canvas.offsetWidth*2;
+    var h=canvas.height=160;
+    ctx.clearRect(0,0,w,h);
+    var max=1;
+    series.forEach(function(p){if(p.n>max)max=p.n;});
+    ctx.strokeStyle='#6366f1';
+    ctx.beginPath();
+    series.forEach(function(p,i){
+      var x=i/(series.length-1||1)*(w-20)+10;
+      var y=h-10-(p.n/max)*(h-20);
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+  function load(){
+    fetch('/api/security/traffic?range='+range).then(function(r){return r.json();}).then(function(d){
+      var a=d.analysis||{};
+      draw(a.series||[]);
+      var ips=document.getElementById('traffic-top-ips');
+      var paths=document.getElementById('traffic-top-paths');
+      ips.innerHTML=(a.top_ips||[]).map(function(x){return '<li>'+x.key+' ('+x.count+')</li>';}).join('')||'<li class="text-gray-600">No data</li>';
+      paths.innerHTML=(a.top_paths||[]).map(function(x){return '<li>'+x.key+' ('+x.count+')</li>';}).join('')||'<li class="text-gray-600">No data</li>';
+      document.getElementById('traffic-summary').textContent='Allowed: '+(a.allowed||0)+' · Blocked: '+(a.blocked||0)+' · Panel: '+(a.panel||0)+' · Nginx: '+(a.nginx||0);
+    }).catch(function(){});
+  }
+  document.querySelectorAll('.traffic-range').forEach(function(btn){
+    btn.addEventListener('click',function(){range=btn.dataset.range;load();});
+  });
+  load();
+  setInterval(load,30000);
+})();
+</script>
 {{template "foot" .}}
 {{end}}
