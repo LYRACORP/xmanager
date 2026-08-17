@@ -1,0 +1,58 @@
+{{define "node_system_services"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">Services</h1>
+      <p class="text-panel-muted text-sm mt-1">Linux systemd units on this host — start, stop, restart</p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs">
+      <a href="/services?filter=all" class="px-2.5 py-1 rounded border {{if eq .SystemSvcFilter "all"}}border-indigo-600 text-indigo-300{{else}}border-gray-700 text-gray-500 hover:border-gray-500{{end}}">All</a>
+      <a href="/services?filter=running" class="px-2.5 py-1 rounded border {{if eq .SystemSvcFilter "running"}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500 hover:border-gray-500{{end}}">Running</a>
+      <a href="/services?filter=failed" class="px-2.5 py-1 rounded border {{if eq .SystemSvcFilter "failed"}}border-red-800 text-red-300{{else}}border-gray-700 text-gray-500 hover:border-gray-500{{end}}">Failed</a>
+    </div>
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-[11px] uppercase text-gray-500 border-b border-gray-800">
+        <tr>
+          <th class="text-left px-3 py-2 font-medium">Unit</th>
+          <th class="text-left px-3 py-2 font-medium hidden md:table-cell">Load</th>
+          <th class="text-left px-3 py-2 font-medium">Active</th>
+          <th class="text-left px-3 py-2 font-medium hidden lg:table-cell">Sub</th>
+          <th class="text-left px-3 py-2 font-medium hidden xl:table-cell">Description</th>
+          <th class="text-right px-3 py-2 font-medium">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/80">
+        {{range .SystemServices}}
+        <tr class="hover:bg-gray-800/40">
+          <td class="px-3 py-2 font-mono text-xs text-gray-200">{{.Unit}}</td>
+          <td class="px-3 py-2 text-xs text-gray-500 hidden md:table-cell">{{.Load}}</td>
+          <td class="px-3 py-2 text-xs">
+            <span class="{{if .Running}}text-emerald-400{{else if .Failed}}text-red-400{{else}}text-gray-500{{end}}">{{.Active}}</span>
+          </td>
+          <td class="px-3 py-2 text-xs text-gray-500 hidden lg:table-cell">{{.Sub}}</td>
+          <td class="px-3 py-2 text-xs text-gray-500 truncate max-w-xs hidden xl:table-cell">{{.Description}}</td>
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            <form method="post" action="/services/{{pathEscape .Unit}}/start" class="inline"><button class="text-xs text-emerald-400 hover:underline mr-2">Start</button></form>
+            <form method="post" action="/services/{{pathEscape .Unit}}/stop" class="inline"><button class="text-xs text-amber-400 hover:underline mr-2">Stop</button></form>
+            <form method="post" action="/services/{{pathEscape .Unit}}/restart" class="inline"><button class="text-xs text-indigo-300 hover:underline">Restart</button></form>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="6" class="px-3 py-6 text-gray-600 text-sm">No units match this filter.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-[11px] text-gray-600">Optional stacks (PowerDNS, Gitea, mailinbox, …) live under <a href="/apps" class="text-indigo-400 hover:underline">Apps</a>.</p>
+</div>
+{{template "foot" .}}
+{{end}}

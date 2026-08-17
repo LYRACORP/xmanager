@@ -162,6 +162,9 @@ type pageData struct {
 	MailAPIConfig    mailinbox.Config // password cleared before render
 	WebmailURL       string
 	MailAdminURL     string
+	WebmailHosts     []webmailHostView
+	SystemServices   []systemServiceView
+	SystemSvcFilter  string
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int

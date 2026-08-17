@@ -49,7 +49,7 @@ func (h *handler) getNodeStorage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data.StorageReady = false
 		if data.Flash == "" {
-			data.Flash = "RustFS offline — enable it under Services first"
+			data.Flash = "RustFS offline — enable it under Apps first"
 		}
 		h.render(w, "node_storage", data)
 		return

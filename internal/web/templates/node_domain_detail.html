@@ -55,7 +55,7 @@
     <div class="px-4 py-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-gray-300">DNS records</h2>
       {{if and .Domain (eq .Domain.DNSProvider "powerdns") (not .PowerDNSReady)}}
-      <a href="/services" class="text-xs text-indigo-400 hover:underline">Enable PowerDNS under Services</a>
+      <a href="/apps" class="text-xs text-indigo-400 hover:underline">Enable PowerDNS under Apps</a>
       {{end}}
       {{if and .Domain (eq .Domain.DNSProvider "cloudflare") (not .Domain.CFZoneID)}}
       <form method="post" action="/domains/d/{{pathEscape .Domain.Domain}}/cf/zone-lookup">
@@ -183,7 +183,7 @@
       </form>
     </div>
     {{else}}
-    <p class="px-4 py-6 text-sm text-gray-600">No PowerDNS zone loaded. Enable PowerDNS under Services, set NS1/NS2 in Settings, then reconnect this domain.</p>
+    <p class="px-4 py-6 text-sm text-gray-600">No PowerDNS zone loaded. Enable PowerDNS under Apps, set NS1/NS2 in Settings, then reconnect this domain.</p>
     {{end}}
 
     {{else}}
@@ -203,6 +203,7 @@
   {{if .Mailboxes}}
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
     <h2 class="text-sm font-semibold text-gray-300 mb-3">Mailboxes on this domain</h2>
+    <p class="text-xs text-gray-500 mb-3"><a href="/email" class="text-indigo-400 hover:underline">Manage in Email</a></p>
     <ul class="space-y-2 text-sm">
       {{range .Mailboxes}}
       <li class="flex justify-between items-center gap-2">
@@ -212,6 +213,8 @@
       {{end}}
     </ul>
   </div>
+  {{else}}
+  <p class="text-xs text-gray-500"><a href="/email" class="text-indigo-400 hover:underline">Create mailboxes in Email</a></p>
   {{end}}
 
   {{if .Domain}}

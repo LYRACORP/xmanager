@@ -75,7 +75,7 @@ func (h *handler) postNodeDNSZone(w http.ResponseWriter, r *http.Request) {
 	}
 	client := h.pdnsClient()
 	if err := client.Ping(); err != nil {
-		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("PowerDNS offline — enable it under Services first: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("PowerDNS offline — enable it under Apps first: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	if err := client.EnsureZone(zone, publicIP, "", ns.NS1, ns.NS2); err != nil {

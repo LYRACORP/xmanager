@@ -113,10 +113,19 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /logs", h.requireAuth(h.getNodeLogs))
 	mux.HandleFunc("GET /api/node/logs", h.requireAuth(h.getNodeLogsFragment))
 
-	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeServices))
-	mux.HandleFunc("POST /services/{name}/enable", h.requireAuth(h.postNodeServiceEnable))
-	mux.HandleFunc("POST /services/{name}/disable", h.requireAuth(h.postNodeServiceDisable))
-	mux.HandleFunc("POST /services/rustfs/bucket", h.requireAuth(h.postNodeRustfsBucket))
+	mux.HandleFunc("GET /apps", h.requireAuth(h.getNodeApps))
+	mux.HandleFunc("POST /apps/{name}/enable", h.requireAuth(h.postNodeAppEnable))
+	mux.HandleFunc("POST /apps/{name}/disable", h.requireAuth(h.postNodeAppDisable))
+	mux.HandleFunc("POST /apps/rustfs/bucket", h.requireAuth(h.postNodeRustfsBucket))
+	// Legacy stack URLs → Apps
+	mux.HandleFunc("GET /services/stacks", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/apps", http.StatusSeeOther)
+	}))
+
+	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeSystemServices))
+	mux.HandleFunc("POST /services/{unit}/start", h.requireAuth(h.postNodeSystemServiceAction))
+	mux.HandleFunc("POST /services/{unit}/stop", h.requireAuth(h.postNodeSystemServiceAction))
+	mux.HandleFunc("POST /services/{unit}/restart", h.requireAuth(h.postNodeSystemServiceAction))
 
 	mux.HandleFunc("GET /storage", h.requireAuth(h.getNodeStorage))
 	mux.HandleFunc("POST /storage/buckets", h.requireAuth(h.postNodeStorageBucketCreate))
@@ -156,6 +165,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /email/domains", h.requireAuth(h.postNodeEmailDomain))
 	mux.HandleFunc("POST /email/accounts", h.requireAuth(h.postNodeEmailAccount))
 	mux.HandleFunc("POST /email/accounts/delete", h.requireAuth(h.postNodeEmailAccountDelete))
+	mux.HandleFunc("POST /email/webmail", h.requireAuth(h.postNodeEmailEnsureWebmail))
 	mux.HandleFunc("POST /email/config", h.requireAuth(h.postNodeEmailConfig))
 
 	mux.HandleFunc("GET /alerts", h.requireAuth(h.getNodeAlerts))
@@ -985,7 +995,7 @@ func (h *handler) lookupNodeService(name string) svcs.Service {
 	}
 }
 
-func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
+func (h *handler) getNodeApps(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	names := []string{
 		"registry", "gitea", "rustfs", "rabbitmq", "kafka",
@@ -1010,16 +1020,16 @@ func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
 			Default: isDefaultNodeService(n),
 		})
 	}
-	data := h.basePage(sess, "Services")
-	data.ActiveNav = "services"
+	data := h.basePage(sess, "Apps")
+	data.ActiveNav = "apps"
 	data.NodeServices = list
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
-	h.render(w, "node_services", data)
+	h.render(w, "node_apps", data)
 }
 
-func (h *handler) postNodeServiceEnable(w http.ResponseWriter, r *http.Request) {
+func (h *handler) postNodeAppEnable(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	name := r.PathValue("name")
 	svc := h.lookupNodeService(name)
@@ -1049,28 +1059,39 @@ func (h *handler) postNodeServiceEnable(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if svc == nil {
-		http.Redirect(w, r, "/services?flash=unknown+service", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps?flash=unknown+service", http.StatusSeeOther)
 		return
 	}
 	if err := svc.Enable(h.localExec(), cfg); err != nil {
-		http.Redirect(w, r, "/services?flash="+url.QueryEscape("enable failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/apps?flash="+url.QueryEscape("enable failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/services?flash="+url.QueryEscape(name+" enabled"), http.StatusSeeOther)
+	http.Redirect(w, r, "/apps?flash="+url.QueryEscape(name+" enabled"), http.StatusSeeOther)
 }
 
-func (h *handler) postNodeServiceDisable(w http.ResponseWriter, r *http.Request) {
+func (h *handler) postNodeAppDisable(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	svc := h.lookupNodeService(name)
 	if svc == nil {
-		http.Redirect(w, r, "/services", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps", http.StatusSeeOther)
 		return
 	}
 	if err := svc.Disable(h.localExec()); err != nil {
-		http.Redirect(w, r, "/services?flash="+url.QueryEscape("disable failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/apps?flash="+url.QueryEscape("disable failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/services?flash="+url.QueryEscape(name+" disabled"), http.StatusSeeOther)
+	http.Redirect(w, r, "/apps?flash="+url.QueryEscape(name+" disabled"), http.StatusSeeOther)
+}
+
+// Keep old names as aliases so any leftover callers compile during transition.
+func (h *handler) getNodeServices(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/apps", http.StatusSeeOther)
+}
+func (h *handler) postNodeServiceEnable(w http.ResponseWriter, r *http.Request) {
+	h.postNodeAppEnable(w, r)
+}
+func (h *handler) postNodeServiceDisable(w http.ResponseWriter, r *http.Request) {
+	h.postNodeAppDisable(w, r)
 }
 
 func (h *handler) postNodeRustfsBucket(w http.ResponseWriter, r *http.Request) {
@@ -1205,7 +1226,7 @@ func (h *handler) postNodeMailbox(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		flash = "Mailbox failed: " + err.Error()
 	}
-	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeMailboxDelete(w http.ResponseWriter, r *http.Request) {
@@ -1214,7 +1235,7 @@ func (h *handler) postNodeMailboxDelete(w http.ResponseWriter, r *http.Request) 
 	if err := h.deleteMailboxAPI(uint(id)); err != nil {
 		flash = err.Error()
 	}
-	http.Redirect(w, r, "/domains?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) getNodeDomainDetail(w http.ResponseWriter, r *http.Request) {
@@ -1279,7 +1300,7 @@ func (h *handler) getNodeDomainDetail(w http.ResponseWriter, r *http.Request) {
 				data.DNSZoneName = z.Name
 			}
 		} else if data.Flash == "" && cd.DNSProvider != "none" {
-			data.Flash = "PowerDNS API offline — enable under Services to manage records"
+			data.Flash = "PowerDNS API offline — enable under Apps to manage records"
 		}
 	}
 	h.render(w, "node_domain_detail", data)

@@ -4,12 +4,13 @@
 <div class="xm-page space-y-4">
   <div>
     <h1 class="text-3xl font-bold tracking-tight">Domains</h1>
-    <p class="text-panel-muted text-sm mt-1">Connect domains to projects, databases, PowerDNS, and mailboxes</p>
+    <p class="text-panel-muted text-sm mt-1">Connect domains to projects, databases, DNS, and nginx</p>
   </div>
 
   <div class="flex flex-wrap gap-3 text-xs mb-6">
     <span class="px-2 py-1 rounded border {{if .PowerDNSReady}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">PowerDNS API {{if .PowerDNSReady}}ready{{else}}offline{{end}}</span>
     <span class="px-2 py-1 rounded border {{if .MailAPIReady}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">Mail API ({{.MailAPIMode}}) {{if .MailAPIReady}}ready{{else}}offline{{end}}</span>
+    <a href="/email" class="px-2 py-1 rounded border border-indigo-800 text-indigo-300 hover:border-indigo-600">Manage mailboxes in Email →</a>
   </div>
 
   {{if .Flash}}<p class="text-amber-300 mb-4 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
@@ -51,96 +52,64 @@
     </div>
   </form>
 
-  <form method="post" action="/domains/mailbox" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-8 grid md:grid-cols-2 gap-3">
-    <div class="md:col-span-2 text-sm font-semibold text-gray-300">Create mailbox</div>
-    <input name="local_part" required placeholder="local-part" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
-    <input name="domain" required placeholder="domain.com" list="connected-domains" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
-    <datalist id="connected-domains">
-      {{range .ConnectedDomains}}<option value="{{.Domain}}"></option>{{end}}
-    </datalist>
-    <input name="password" type="password" required placeholder="mailbox password" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
-    <select name="project_id" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
-      <option value="0">— optional project —</option>
-      {{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-    </select>
-    <div class="md:col-span-2">
-      <button class="bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg">Create mailbox via API</button>
-    </div>
-  </form>
-
-  <div class="grid lg:grid-cols-2 gap-6">
-    <div>
-      <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Connected domains</h2>
-      <ul class="space-y-3 text-sm">
-        {{range .ConnectedDomains}}
-        <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3">
-          <div class="flex flex-wrap items-start justify-between gap-2 mb-1">
-            <a href="/domains/d/{{pathEscape .Domain}}" class="font-mono text-indigo-300 hover:text-indigo-200 hover:underline">{{.Domain}}</a>
-            <form method="post" action="/domains/d/{{pathEscape .Domain}}/delete"
-                  onsubmit="return confirm('Remove {{.Domain}}? Nginx vhost will also be removed.')">
-              <input type="hidden" name="delete_nginx" value="1">
-              <button type="submit" class="text-xs text-red-400 border border-red-900/50 rounded px-2 py-0.5 hover:bg-red-950/40">Remove</button>
-            </form>
-          </div>
-          <div class="flex flex-wrap gap-2 text-[11px] mb-2">
-            <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}{{if .DNSProvider}} ({{.DNSProvider}}){{end}}</span>
-            <span class="{{if .MailReady}}text-emerald-400{{else}}text-gray-500{{end}}">Mail {{if .MailReady}}✓{{else}}—{{end}}</span>
-            {{if .ProjectID}}<span class="text-gray-400">project #{{.ProjectID}}</span>{{end}}
-            {{if .DBName}}<span class="text-gray-400">{{.DBType}}/{{.DBName}}</span>{{end}}
-          </div>
-          {{if .Upstream}}<div class="text-xs text-gray-500 mb-2">{{.Upstream}}</div>{{end}}
-          {{if .LastError}}<div class="text-xs text-amber-400/90 mb-2">{{.LastError}}</div>{{end}}
-          <p class="text-[11px] text-gray-600 mb-2">Click the domain name to manage DNS records</p>
-          <form method="post" action="/domains/connect" class="flex flex-wrap gap-2 items-center mt-1">
-            <input type="hidden" name="domain" value="{{.Domain}}">
-            <select name="project_id" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
-              <option value="0">project</option>
-              {{range $.Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-            </select>
-            <select name="db_type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
-              <option value="">db</option>
-              <option value="mysql">mysql</option>
-              <option value="postgres">postgres</option>
-              <option value="mongodb">mongodb</option>
-            </select>
-            <input name="db_name" placeholder="db name" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-28">
-            <input name="upstream" placeholder="upstream" value="{{.Upstream}}" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-40">
-            <button class="text-xs text-indigo-300 border border-indigo-800 rounded px-2 py-1">Update links</button>
+  <div>
+    <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Connected domains</h2>
+    <ul class="space-y-3 text-sm">
+      {{range .ConnectedDomains}}
+      <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3">
+        <div class="flex flex-wrap items-start justify-between gap-2 mb-1">
+          <a href="/domains/d/{{pathEscape .Domain}}" class="font-mono text-indigo-300 hover:text-indigo-200 hover:underline">{{.Domain}}</a>
+          <form method="post" action="/domains/d/{{pathEscape .Domain}}/delete"
+                onsubmit="return confirm('Remove {{.Domain}}? Nginx vhost will also be removed.')">
+            <input type="hidden" name="delete_nginx" value="1">
+            <button type="submit" class="text-xs text-red-400 border border-red-900/50 rounded px-2 py-0.5 hover:bg-red-950/40">Remove</button>
           </form>
-        </li>
-        {{else}}
-        <li class="text-gray-600">None yet — add a domain above</li>
-        {{end}}
-      </ul>
-
-      {{if .VHosts}}
-      <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3 mt-6">Nginx vhosts</h2>
-      <ul class="space-y-2 text-sm">
-        {{range .VHosts}}
-        <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
-          <span class="font-mono text-gray-200">{{.Domain}}</span>
-          <span class="text-xs text-gray-500 block">{{.Upstream}}</span>
-        </li>
-        {{end}}
-      </ul>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px] mb-2">
+          <span class="{{if .DNSReady}}text-emerald-400{{else}}text-gray-500{{end}}">DNS {{if .DNSReady}}✓{{else}}—{{end}}{{if .DNSProvider}} ({{.DNSProvider}}){{end}}</span>
+          <span class="{{if .MailReady}}text-emerald-400{{else}}text-gray-500{{end}}">Mail {{if .MailReady}}✓{{else}}—{{end}}</span>
+          {{if .ProjectID}}<span class="text-gray-400">project #{{.ProjectID}}</span>{{end}}
+          {{if .DBName}}<span class="text-gray-400">{{.DBType}}/{{.DBName}}</span>{{end}}
+        </div>
+        {{if .Upstream}}<div class="text-xs text-gray-500 mb-2">{{.Upstream}}</div>{{end}}
+        {{if .LastError}}<div class="text-xs text-amber-400/90 mb-2">{{.LastError}}</div>{{end}}
+        <p class="text-[11px] text-gray-600 mb-2">
+          Click the domain name to manage DNS records ·
+          <a href="/email" class="text-indigo-400 hover:underline">mailboxes in Email</a>
+        </p>
+        <form method="post" action="/domains/connect" class="flex flex-wrap gap-2 items-center mt-1">
+          <input type="hidden" name="domain" value="{{.Domain}}">
+          <select name="project_id" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            <option value="0">project</option>
+            {{range $.Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+          <select name="db_type" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            <option value="">db</option>
+            <option value="mysql">mysql</option>
+            <option value="postgres">postgres</option>
+            <option value="mongodb">mongodb</option>
+          </select>
+          <input name="db_name" placeholder="db name" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-28">
+          <input name="upstream" placeholder="upstream" value="{{.Upstream}}" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-40">
+          <button class="text-xs text-indigo-300 border border-indigo-800 rounded px-2 py-1">Update links</button>
+        </form>
+      </li>
+      {{else}}
+      <li class="text-gray-600">None yet — add a domain above</li>
       {{end}}
-    </div>
-    <div>
-      <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Mailboxes</h2>
-      <ul class="space-y-2 text-sm">
-        {{range .Mailboxes}}
-        <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 flex justify-between items-center gap-2">
-          <div>
-            <span class="font-mono text-emerald-300">{{.Address}}</span>
-            {{if .ProjectID}}<span class="text-xs text-gray-500 block">project #{{.ProjectID}}</span>{{end}}
-          </div>
-          <form method="post" action="/domains/mailboxes/{{.ID}}/delete"><button class="text-xs text-red-400">Delete</button></form>
-        </li>
-        {{else}}
-        <li class="text-gray-600">None — enable mailinbox (or point mode=mailinabox at a MiaB /admin API)</li>
-        {{end}}
-      </ul>
-    </div>
+    </ul>
+
+    {{if .VHosts}}
+    <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3 mt-6">Nginx vhosts</h2>
+    <ul class="space-y-2 text-sm">
+      {{range .VHosts}}
+      <li class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
+        <span class="font-mono text-gray-200">{{.Domain}}</span>
+        <span class="text-xs text-gray-500 block">{{.Upstream}}</span>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
   </div>
 </div>
 {{template "foot" .}}

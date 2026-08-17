@@ -21,11 +21,21 @@ func mailConfigForPage(cfg mailinbox.Config) mailinbox.Config {
 	return cfg
 }
 
+func mailAPIReady(cfg mailinbox.Config, client *mailinbox.Client) bool {
+	return client.Ping() == nil
+}
+
 func (h *handler) getNodeEmail(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	sid := h.localServerID()
 	cfg := mailinbox.LoadConfig(h.opts.DB, sid)
 	client := mailinbox.NewClient(cfg)
+
+	var connected []storage.ConnectedDomain
+	h.opts.DB.Where("server_id = ?", sid).Order("domain asc").Find(&connected)
+
+	var mailboxes []storage.Mailbox
+	h.opts.DB.Where("server_id = ?", sid).Order("address asc").Find(&mailboxes)
 
 	data := h.basePage(sess, "Email")
 	data.ActiveNav = "email"
@@ -33,14 +43,23 @@ func (h *handler) getNodeEmail(w http.ResponseWriter, r *http.Request) {
 	data.MailAPIConfig = mailConfigForPage(cfg)
 	data.WebmailURL = cfg.ResolvedWebmailURL()
 	data.MailAdminURL = cfg.AdminURL()
+	data.ConnectedDomains = connected
+	data.Mailboxes = mailboxes
+	data.MailAPIReady = mailAPIReady(cfg, client)
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
 
-	miabOK := cfg.Mode == mailinbox.ModeMiaB && client.Ping() == nil
-	data.MailAPIReady = miabOK
+	for _, cd := range connected {
+		data.MailDomainList = append(data.MailDomainList, cd.Domain)
+		data.WebmailHosts = append(data.WebmailHosts, webmailHostView{
+			Domain: cd.Domain,
+			Host:   "webmail." + cd.Domain,
+			URL:    webmailURLForDomain(cd.Domain),
+		})
+	}
 
-	if miabOK {
+	if cfg.Mode == mailinbox.ModeMiaB && data.MailAPIReady {
 		users, err := client.ListUsers()
 		if err != nil {
 			if data.Flash == "" {
@@ -49,13 +68,20 @@ func (h *handler) getNodeEmail(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data.MailDomains = users
 			h.syncMailboxesFromAPI(sid, users)
+			h.opts.DB.Where("server_id = ?", sid).Order("address asc").Find(&mailboxes)
+			data.Mailboxes = mailboxes
 		}
 		domains, err := client.ListDomains()
 		if err == nil {
-			data.MailDomainList = domains
-		} else if len(data.MailDomains) > 0 {
-			for _, d := range data.MailDomains {
-				data.MailDomainList = append(data.MailDomainList, d.Domain)
+			seen := map[string]bool{}
+			for _, d := range data.MailDomainList {
+				seen[d] = true
+			}
+			for _, d := range domains {
+				if d != "" && !seen[d] {
+					seen[d] = true
+					data.MailDomainList = append(data.MailDomainList, d)
+				}
 			}
 		}
 	}
@@ -98,8 +124,9 @@ func (h *handler) postNodeEmailDomain(w http.ResponseWriter, r *http.Request) {
 
 	sid := h.localServerID()
 	cfg := mailinbox.LoadConfig(h.opts.DB, sid)
-	if cfg.Mode != mailinbox.ModeMiaB {
-		http.Redirect(w, r, "/email?flash="+urlQueryEscape("Email requires Mail-in-a-Box mode — save connection below"), http.StatusSeeOther)
+	client := mailinbox.NewClient(cfg)
+	if err := client.Ping(); err != nil {
+		http.Redirect(w, r, "/email?flash="+urlQueryEscape("mail API offline — enable mailinbox under Apps"), http.StatusSeeOther)
 		return
 	}
 
@@ -123,16 +150,22 @@ func (h *handler) postNodeEmailDomain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mailReady := mailinbox.NewClient(cfg).Ping() == nil
+	if err := client.EnsureDomain(domain); err != nil && cfg.Mode != mailinbox.ModeMiaB {
+		// soft — MiaB creates on first mailbox
+		_ = err
+	}
+
+	mailReady := client.Ping() == nil
 	var cd storage.ConnectedDomain
 	err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error
 	if err == gorm.ErrRecordNotFound {
 		cd = storage.ConnectedDomain{
-			ServerID:  sid,
-			Domain:    domain,
-			PublicIP:  publicIP,
-			DNSReady:  dnsReady,
-			MailReady: mailReady,
+			ServerID:    sid,
+			Domain:      domain,
+			PublicIP:    publicIP,
+			DNSReady:    dnsReady,
+			MailReady:   mailReady,
+			DNSProvider: "powerdns",
 		}
 		_ = h.opts.DB.Create(&cd).Error
 	} else if err == nil {
@@ -150,7 +183,11 @@ func (h *handler) postNodeEmailDomain(w http.ResponseWriter, r *http.Request) {
 	} else if dnsErr != "" {
 		flash += " · DNS failed: " + dnsErr
 	}
-	flash += " · add an account to create it on Mail-in-a-Box"
+	if wmErr := h.EnsureWebmail(domain); wmErr != nil {
+		flash += " · webmail: " + wmErr.Error()
+	} else {
+		flash += " · webmail." + domain + " ready"
+	}
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
@@ -164,27 +201,13 @@ func (h *handler) postNodeEmailAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid := h.localServerID()
-	cfg := mailinbox.LoadConfig(h.opts.DB, sid)
-	if cfg.Mode != mailinbox.ModeMiaB {
-		http.Redirect(w, r, "/email?flash="+urlQueryEscape("Email requires Mail-in-a-Box mode"), http.StatusSeeOther)
-		return
-	}
-	client := mailinbox.NewClient(cfg)
-	if err := client.CreateMailbox(local, domain, password); err != nil {
+	mb, err := h.createMailboxAPI(local, domain, password, 0)
+	if err != nil {
 		http.Redirect(w, r, "/email?flash="+urlQueryEscape("create account failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	addr := strings.ToLower(local + "@" + domain)
-	var mb storage.Mailbox
-	err := h.opts.DB.Where("server_id = ? AND address = ?", sid, addr).First(&mb).Error
-	if err == gorm.ErrRecordNotFound {
-		_ = h.opts.DB.Create(&storage.Mailbox{ServerID: sid, Domain: domain, Address: addr}).Error
-	}
-	_ = h.opts.DB.Model(&storage.ConnectedDomain{}).
-		Where("server_id = ? AND domain = ?", sid, domain).
-		Update("mail_ready", true)
-	http.Redirect(w, r, "/email?flash="+urlQueryEscape("Account "+addr+" created"), http.StatusSeeOther)
+	flash := "Account " + mb.Address + " created · webmail at " + webmailURLForDomain(domain)
+	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeEmailAccountDelete(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +227,20 @@ func (h *handler) postNodeEmailAccountDelete(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape("Deleted "+email), http.StatusSeeOther)
 }
 
+func (h *handler) postNodeEmailEnsureWebmail(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	domain := strings.ToLower(strings.TrimSpace(r.FormValue("domain")))
+	if domain == "" {
+		http.Redirect(w, r, "/email?flash="+urlQueryEscape("domain required"), http.StatusSeeOther)
+		return
+	}
+	flash := "Webmail ensured for " + domain + " → " + webmailURLForDomain(domain)
+	if err := h.EnsureWebmail(domain); err != nil {
+		flash = "Webmail for " + domain + ": " + err.Error()
+	}
+	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
+}
+
 func (h *handler) postNodeEmailConfig(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	sid := h.localServerID()
@@ -214,16 +251,21 @@ func (h *handler) postNodeEmailConfig(w http.ResponseWriter, r *http.Request) {
 	adminPass := r.FormValue("admin_password")
 	hostname := strings.TrimSpace(r.FormValue("hostname"))
 	webmail := strings.TrimSpace(r.FormValue("webmail_url"))
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	if mode != mailinbox.ModeMiaB && mode != mailinbox.ModeStalwart {
+		mode = existing.Mode
+		if mode == "" {
+			mode = mailinbox.ModeStalwart
+		}
+	}
 
 	cfgMap := map[string]string{
-		"mode": mailinbox.ModeMiaB,
+		"mode": mode,
 	}
 	if apiBase != "" {
 		cfgMap["api_base"] = apiBase
 	} else if existing.APIBase != "" {
 		cfgMap["api_base"] = existing.APIBase
-	} else {
-		cfgMap["api_base"] = "https://127.0.0.1/admin"
 	}
 	if adminUser != "" {
 		cfgMap["admin_user"] = adminUser
@@ -245,6 +287,9 @@ func (h *handler) postNodeEmailConfig(w http.ResponseWriter, r *http.Request) {
 	} else if existing.WebmailURL != "" {
 		cfgMap["webmail_url"] = existing.WebmailURL
 	}
+	if existing.HTTPSPort != "" {
+		cfgMap["https_port"] = existing.HTTPSPort
+	}
 
 	svc := mailinbox.New(h.opts.DB, sid)
 	if err := svc.Enable(h.localExec(), cfgMap); err != nil {
@@ -252,7 +297,7 @@ func (h *handler) postNodeEmailConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flash := "Mail-in-a-Box connection saved"
+	flash := "Mail connection saved (" + mode + ")"
 	if err := mailinbox.NewClient(mailinbox.LoadConfig(h.opts.DB, sid)).Ping(); err != nil {
 		flash = fmt.Sprintf("Saved, but API not reachable: %v", err)
 	}
