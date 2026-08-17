@@ -47,6 +47,21 @@ type ServerMetricSnapshot struct {
 	Online         bool      `json:"online"`
 }
 
+// MetricSample is a compact host or DB engine point for web panel charts.
+// Kind is "host" or "db:<engine>". Net fields are bytes/sec (not cumulative).
+type MetricSample struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ServerID  uint      `gorm:"uniqueIndex:idx_metric_sample_skt;not null" json:"server_id"`
+	Kind      string    `gorm:"uniqueIndex:idx_metric_sample_skt;size:32;not null" json:"kind"`
+	SampledAt time.Time `gorm:"uniqueIndex:idx_metric_sample_skt;index;not null" json:"sampled_at"`
+	CPUPct    float64   `json:"cpu_pct"`
+	RAMPct    float64   `json:"ram_pct"`
+	DiskPct   float64   `json:"disk_pct"`
+	NetRxBps  float64   `json:"net_rx_bps"`
+	NetTxBps  float64   `json:"net_tx_bps"`
+	MemMB     float64   `json:"mem_mb"`
+}
+
 type ErrorEvent struct {
 	gorm.Model
 	ServerID    uint      `gorm:"index;not null" json:"server_id"`

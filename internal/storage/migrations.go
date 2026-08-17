@@ -7,6 +7,7 @@ func runMigrations(db *gorm.DB) error {
 		&Server{},
 		&ServerProfile{},
 		&ServerMetricSnapshot{},
+		&MetricSample{},
 		&ErrorEvent{},
 		&AlertRule{},
 		&DeployHistory{},

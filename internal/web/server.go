@@ -74,11 +74,11 @@ func Run(opts Options) error {
 	}
 
 	h := &handler{
-		opts:        opts,
-		tmpl:        tmpl,
-		sess:        newSessionStore(),
-		staticFS:    staticFS,
-		nodeMode:    opts.Config.Web.IsNode(),
+		opts:         opts,
+		tmpl:         tmpl,
+		sess:         newSessionStore(),
+		staticFS:     staticFS,
+		nodeMode:     opts.Config.Web.IsNode(),
 		oauthStates:  newOAuthStateStore(),
 		deviceStates: newDeviceStateStore(),
 	}
@@ -91,6 +91,8 @@ func Run(opts Options) error {
 		h.node = nodemetrics.NewCollector(5 * time.Second)
 		h.node.Start()
 		defer h.node.Stop()
+		h.startChartSampler()
+		defer h.stopChartSampler()
 		h.ensureDefaultNodeServices()
 	}
 

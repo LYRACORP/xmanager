@@ -43,6 +43,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
 	mux.HandleFunc("GET /api/node/disk-usage", h.requireAuth(h.getNodeDiskUsageFragment))
 	mux.HandleFunc("GET /api/node/net.json", h.requireAuth(h.getNodeNetJSON))
+	mux.HandleFunc("GET /api/node/charts", h.requireAuth(h.getNodeCharts))
 	mux.HandleFunc("POST /api/node/ports/open", h.requireAuth(h.postNodePortsOpen))
 	mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
 
@@ -95,6 +96,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /databases", h.requireAuth(h.getNodeDatabases))
 	mux.HandleFunc("GET /databases/{type}/{name}", h.requireAuth(h.getNodeDatabaseDetail))
 	mux.HandleFunc("GET /api/databases/{type}/stats", h.requireAuth(h.getAPIDatabaseEngineStats))
+	mux.HandleFunc("GET /api/databases/{type}/charts", h.requireAuth(h.getDatabaseCharts))
 	mux.HandleFunc("GET /api/databases/{type}/{name}/metrics", h.requireAuth(h.getAPIDatabaseDetailMetrics))
 	mux.HandleFunc("POST /databases", h.requireAuth(h.postNodeDatabases))
 	mux.HandleFunc("POST /databases/install", h.requireAuth(h.postNodeDatabaseInstall))

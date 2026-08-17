@@ -47,11 +47,19 @@
   </div>
 
   <div class="xm-card p-5 space-y-4">
-    <div class="flex items-center justify-between gap-2">
-      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Live network</h2>
-      <div class="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
-        <span id="net-iface-label">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
-        <span>last 5 min</span>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">Network</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="net-iface-label" class="text-[10px] text-zinc-500 font-mono">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
+        <div id="host-chart-range" class="flex flex-wrap gap-1">
+          <button type="button" data-range="live" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-indigo-600 border-indigo-500 text-white">Live</button>
+          <button type="button" data-range="1h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1h</button>
+          <button type="button" data-range="6h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">6h</button>
+          <button type="button" data-range="1d" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1d</button>
+          <button type="button" data-range="1w" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1w</button>
+          <button type="button" data-range="1m" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1m</button>
+          <button type="button" data-range="1y" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1y</button>
+        </div>
       </div>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -72,6 +80,33 @@
     </div>
   </div>
 
+  <div class="xm-card p-5 space-y-4">
+    <h2 class="text-sm font-semibold text-panel-muted uppercase tracking-wide">CPU · RAM · Disk</h2>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <p class="text-xs text-panel-muted uppercase tracking-wide">CPU %</p>
+          <p class="text-sm font-mono text-indigo-300" id="cpu-chart-val">{{printf "%.1f" .Node.CPUPct}}%</p>
+        </div>
+        <canvas id="cpu-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+      </div>
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <p class="text-xs text-panel-muted uppercase tracking-wide">RAM %</p>
+          <p class="text-sm font-mono text-sky-300" id="ram-chart-val">{{printf "%.1f" .Node.RAMPct}}%</p>
+        </div>
+        <canvas id="ram-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+      </div>
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <p class="text-xs text-panel-muted uppercase tracking-wide">Disk %</p>
+          <p class="text-sm font-mono text-emerald-300" id="disk-chart-val">{{printf "%.1f" .Node.DiskPct}}%</p>
+        </div>
+        <canvas id="disk-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+      </div>
+    </div>
+  </div>
+
   <div id="node-disk-usage"
        hx-get="/api/node/disk-usage"
        hx-trigger="load, every 60s"
@@ -88,8 +123,10 @@
 </div>
 <script>
 (function () {
-  var rxHist = [], txHist = [], timeHist = [];
-  var maxPts = 60; // ~5 min at 5s
+  var range = 'live';
+  var rxHist = [], txHist = [], cpuHist = [], ramHist = [], diskHist = [], timeHist = [];
+  var maxPts = 60;
+  var liveTimer = null, histTimer = null;
   function bpsToKbps(bps) { return (Number(bps) || 0) * 8 / 1000; }
   function formatKbps(kbps) {
     if (kbps < 1) return kbps.toFixed(2) + ' Kbps';
@@ -104,6 +141,15 @@
     if (n <= 2) return 2 * p;
     if (n <= 5) return 5 * p;
     return 10 * p;
+  }
+  function fmtX(ts) {
+    var d = new Date(ts * 1000);
+    if (range === '1w' || range === '1m' || range === '1y') {
+      return (d.getMonth() + 1) + '/' + d.getDate();
+    }
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    return hh + ':' + mm;
   }
   function drawChart(canvasId, data, times, color, fill) {
     var c = document.getElementById(canvasId);
@@ -121,7 +167,6 @@
     var plotW = cw - padL - padR, plotH = ch - padT - padB;
     var max = niceMax(Math.max.apply(null, data.concat([0.1])));
 
-    // grid + y labels
     ctx.strokeStyle = '#27272a';
     ctx.fillStyle = '#71717a';
     ctx.font = '10px monospace';
@@ -137,23 +182,18 @@
       ctx.fillText(label, padL - 4, gy + 3);
     }
 
-    // x time labels
     ctx.textAlign = 'center';
     if (times.length) {
       var idxs = [0, Math.floor((times.length - 1) / 2), times.length - 1];
       idxs.forEach(function (i) {
         if (i < 0 || !times[i]) return;
         var x = padL + (i / Math.max(times.length - 1, 1)) * plotW;
-        var d = new Date(times[i] * 1000);
-        var hh = String(d.getHours()).padStart(2, '0');
-        var mm = String(d.getMinutes()).padStart(2, '0');
-        ctx.fillText(hh + ':' + mm, x, ch - 6);
+        ctx.fillText(fmtX(times[i]), x, ch - 6);
       });
     }
 
     if (!data.length) return;
 
-    // filled area
     ctx.beginPath();
     data.forEach(function (v, i) {
       var x = padL + (i / Math.max(data.length - 1, 1)) * plotW;
@@ -168,7 +208,6 @@
     ctx.fillStyle = fill;
     ctx.fill();
 
-    // stroke
     ctx.beginPath();
     data.forEach(function (v, i) {
       var x = padL + (i / Math.max(data.length - 1, 1)) * plotW;
@@ -182,34 +221,89 @@
   function drawAll() {
     drawChart('net-tx-chart', txHist, timeHist, '#38bdf8', 'rgba(56,189,248,0.25)');
     drawChart('net-rx-chart', rxHist, timeHist, '#34d399', 'rgba(52,211,153,0.25)');
+    drawChart('cpu-chart', cpuHist, timeHist, '#818cf8', 'rgba(129,140,248,0.25)');
+    drawChart('ram-chart', ramHist, timeHist, '#38bdf8', 'rgba(56,189,248,0.25)');
+    drawChart('disk-chart', diskHist, timeHist, '#34d399', 'rgba(52,211,153,0.25)');
+  }
+  function setVal(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+  function applyLivePoint(d) {
+    var rx = bpsToKbps(d.rx_bps);
+    var tx = bpsToKbps(d.tx_bps);
+    rxHist.push(rx);
+    txHist.push(tx);
+    cpuHist.push(Number(d.cpu_pct) || 0);
+    ramHist.push(Number(d.ram_pct) || 0);
+    diskHist.push(Number(d.disk_pct) || 0);
+    timeHist.push(Number(d.t) || Math.floor(Date.now() / 1000));
+    if (rxHist.length > maxPts) {
+      rxHist.shift(); txHist.shift(); cpuHist.shift(); ramHist.shift(); diskHist.shift(); timeHist.shift();
+    }
+    setVal('net-rx-rate', formatKbps(rx));
+    setVal('net-tx-rate', formatKbps(tx));
+    if (d.iface) setVal('net-iface-label', d.iface);
+    setVal('cpu-chart-val', (Number(d.cpu_pct) || 0).toFixed(1) + '%');
+    setVal('ram-chart-val', (Number(d.ram_pct) || 0).toFixed(1) + '%');
+    setVal('disk-chart-val', (Number(d.disk_pct) || 0).toFixed(1) + '%');
+    if (d.uptime) {
+      setVal('home-uptime', d.uptime);
+      setVal('home-uptime-header', d.uptime);
+    }
+    drawAll();
   }
   function pollNet() {
     fetch('/api/node/net.json')
       .then(function (r) { return r.json(); })
+      .then(applyLivePoint).catch(function () {});
+  }
+  function loadHist() {
+    fetch('/api/node/charts?range=' + encodeURIComponent(range))
+      .then(function (r) { return r.json(); })
       .then(function (d) {
-        var rx = bpsToKbps(d.rx_bps);
-        var tx = bpsToKbps(d.tx_bps);
-        rxHist.push(rx);
-        txHist.push(tx);
-        timeHist.push(Number(d.t) || Math.floor(Date.now() / 1000));
-        if (rxHist.length > maxPts) { rxHist.shift(); txHist.shift(); timeHist.shift(); }
-        var rxEl = document.getElementById('net-rx-rate');
-        var txEl = document.getElementById('net-tx-rate');
-        var ifEl = document.getElementById('net-iface-label');
-        if (rxEl) rxEl.textContent = formatKbps(rx);
-        if (txEl) txEl.textContent = formatKbps(tx);
-        if (ifEl && d.iface) ifEl.textContent = d.iface;
-        if (d.uptime) {
-          var up = document.getElementById('home-uptime');
-          var upH = document.getElementById('home-uptime-header');
-          if (up) up.textContent = d.uptime;
-          if (upH) upH.textContent = d.uptime;
+        timeHist = d.t || [];
+        cpuHist = d.cpu || [];
+        ramHist = d.ram || [];
+        diskHist = d.disk || [];
+        rxHist = (d.rx_bps || []).map(bpsToKbps);
+        txHist = (d.tx_bps || []).map(bpsToKbps);
+        var n = timeHist.length;
+        if (n) {
+          setVal('net-rx-rate', formatKbps(rxHist[n - 1] || 0));
+          setVal('net-tx-rate', formatKbps(txHist[n - 1] || 0));
+          setVal('cpu-chart-val', (cpuHist[n - 1] || 0).toFixed(1) + '%');
+          setVal('ram-chart-val', (ramHist[n - 1] || 0).toFixed(1) + '%');
+          setVal('disk-chart-val', (diskHist[n - 1] || 0).toFixed(1) + '%');
         }
         drawAll();
       }).catch(function () {});
   }
-  pollNet();
-  setInterval(pollNet, 5000);
+  function clearTimers() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+    if (histTimer) { clearInterval(histTimer); histTimer = null; }
+  }
+  function setRange(next) {
+    range = next || 'live';
+    document.querySelectorAll('#host-chart-range .chart-range').forEach(function (btn) {
+      var on = btn.getAttribute('data-range') === range;
+      btn.className = 'chart-range text-[10px] px-2 py-1 rounded-lg border ' +
+        (on ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-900 border-zinc-700 text-panel-muted');
+    });
+    clearTimers();
+    rxHist = []; txHist = []; cpuHist = []; ramHist = []; diskHist = []; timeHist = [];
+    if (range === 'live') {
+      pollNet();
+      liveTimer = setInterval(pollNet, 5000);
+    } else {
+      loadHist();
+      histTimer = setInterval(loadHist, 30000);
+    }
+  }
+  document.querySelectorAll('#host-chart-range .chart-range').forEach(function (btn) {
+    btn.addEventListener('click', function () { setRange(btn.getAttribute('data-range')); });
+  });
+  setRange('live');
   window.addEventListener('resize', drawAll);
 })();
 </script>

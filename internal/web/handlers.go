@@ -43,6 +43,7 @@ type handler struct {
 	deviceStates *deviceStateStore
 	relayStates  *relayStateStore
 	diskCache    *diskUsageCache
+	chartStop    chan struct{}
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -461,6 +462,9 @@ func (h *handler) getNodeNetJSON(w http.ResponseWriter, r *http.Request) {
 		"t":          snap.SampledAt.Unix(),
 		"uptime":     nodemetrics.FormatUptime(snap.UptimeSec),
 		"uptime_sec": snap.UptimeSec,
+		"cpu_pct":    snap.CPUPct,
+		"ram_pct":    snap.RAMPct,
+		"disk_pct":   snap.DiskPct,
 	})
 }
 
