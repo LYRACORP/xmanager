@@ -4,7 +4,7 @@
 <div class="xm-page space-y-4">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <div>
-      <h1 class="text-2xl font-bold tracking-tight">FTP files</h1>
+      <h1>FTP files</h1>
       {{if .FTPUser}}
       <p class="text-panel-muted text-sm mt-1 font-mono">{{.FTPUser.Username}} · {{.FileRoot}}</p>
       {{end}}
@@ -12,7 +12,7 @@
     <a href="/ftp" class="text-xs text-indigo-300 hover:underline">← FTP users</a>
   </div>
 
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   {{if .FTPUser}}
   {{$id := .FTPUser.ID}}

@@ -4,12 +4,12 @@
 <div class="xm-page space-y-6">
   <div class="flex items-center justify-between gap-3">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight">New project</h1>
+      <h1>New project</h1>
       <p class="text-panel-muted text-sm mt-1">Choose a source, then configure</p>
     </div>
     <a href="/projects" class="xm-btn xm-btn-ghost text-xs">← Back</a>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   {{if not .CreateType}}
   <div class="grid md:grid-cols-2 gap-4">

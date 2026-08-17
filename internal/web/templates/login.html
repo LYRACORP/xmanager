@@ -1,36 +1,33 @@
 {{define "login"}}
 {{template "head" .}}
-<div class="min-h-screen flex items-center justify-center p-6">
-  <div class="w-full max-w-sm">
-    <div class="text-center mb-8">
-      <div class="xm-brand-mark mx-auto mb-3" style="width:2.5rem;height:2.5rem;font-size:1.1rem">X</div>
-      <h1 class="text-2xl font-bold tracking-tight">XManager</h1>
+<div class="xm-auth">
+  <div class="xm-auth-lede">
+    <div>
+      <p class="xm-brand-sub">XManager</p>
+      <h1>Sign in</h1>
       {{if .NodeMode}}
-      <p class="text-panel-muted mt-1 text-sm">Sign in to this server panel</p>
+      <p>This host’s node panel. Use the account created at first setup.</p>
       {{else}}
-      <p class="text-panel-muted mt-1 text-sm">Sign in to your control panel</p>
+      <p>Control plane for the servers you manage from this box.</p>
       {{end}}
     </div>
-    <div class="xm-card p-8">
-      {{if .Flash}}
-      <div class="mb-4 p-3 bg-red-900/40 border border-red-700/60 rounded-lg text-red-300 text-sm">{{.Flash}}</div>
-      {{end}}
-      <form action="/login" method="post" class="space-y-5">
-        <div>
-          <label class="block text-sm font-medium text-panel-muted mb-1">Username</label>
-          <input type="text" name="username" required autofocus
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-gray-100
-                   focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-panel-muted mb-1">Password</label>
-          <input type="password" name="password" required
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-gray-100
-                   focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
-        </div>
-        <button type="submit" class="xm-btn xm-btn-primary w-full justify-center py-2.5">Sign in</button>
-      </form>
-    </div>
+    <p class="xm-auth-foot">SSH orchestrator · no agent on the host</p>
+  </div>
+  <div class="xm-auth-form">
+    {{if .Flash}}
+    <div class="xm-flash xm-flash-error">{{.Flash}}</div>
+    {{end}}
+    <form action="/login" method="post" class="space-y-4">
+      <div>
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" required autofocus autocomplete="username">
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="xm-btn xm-btn-primary w-full">Sign in</button>
+    </form>
   </div>
 </div>
 {{template "foot" .}}

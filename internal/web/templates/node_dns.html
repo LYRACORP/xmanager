@@ -3,7 +3,7 @@
 {{template "nav" .}}
 <div class="xm-page space-y-4">
   <div>
-    <h1 class="text-3xl font-bold tracking-tight">DNS</h1>
+    <h1>DNS</h1>
     <p class="text-panel-muted text-sm mt-1">PowerDNS zones and records (SQLite backend)</p>
   </div>
 
@@ -23,7 +23,7 @@
     <div class="md:col-span-3 text-sm font-semibold text-gray-300">Add zone</div>
     <input name="zone" required placeholder="example.com" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" {{if not .PowerDNSReady}}disabled{{end}}>
     <input name="public_ip" placeholder="public IP (auto if empty)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" {{if not .PowerDNSReady}}disabled{{end}}>
-    <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-40" {{if not .PowerDNSReady}}disabled{{end}}>Create zone</button>
+    <button class="xm-btn xm-btn-primary" {{if not .PowerDNSReady}}disabled{{end}}>Create zone</button>
   </form>
 
   <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">Zones</h2>

@@ -3,10 +3,10 @@
 {{template "nav" .}}
 <div class="xm-page max-w-lg space-y-6">
   <div>
-    <h1 class="text-2xl font-bold tracking-tight">Connect {{.BootstrapProvider}}</h1>
+    <h1>Connect {{.BootstrapProvider}}</h1>
     <p class="text-panel-muted text-sm mt-1">{{.BootstrapHint}}</p>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   <div class="xm-card p-6 space-y-4">
     <a href="{{.BootstrapTokenURL}}" target="_blank" rel="noopener" id="git-open-forge"

@@ -4,12 +4,12 @@
 <div class="xm-page space-y-6">
   <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight">One-click apps</h1>
+      <h1>One-click apps</h1>
       <p class="text-panel-muted text-sm mt-1">CapRover-compatible templates</p>
     </div>
     <a href="/projects/new" class="xm-btn xm-btn-ghost text-xs">← Custom create</a>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   <form method="get" action="/oneclick" class="flex gap-2">
     <input name="q" value="{{.TemplateQuery}}" placeholder="Search templates…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
@@ -48,12 +48,12 @@
 <div class="xm-page space-y-6 max-w-2xl">
   <div class="flex items-center justify-between gap-3">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight">{{if .TemplateApp}}{{.TemplateApp.DisplayName}}{{else}}Template{{end}}</h1>
+      <h1>{{if .TemplateApp}}{{.TemplateApp.DisplayName}}{{else}}Template{{end}}</h1>
       <p class="text-panel-muted text-sm mt-1">{{if .TemplateApp}}{{.TemplateApp.Description}}{{end}}</p>
     </div>
     <a href="/oneclick" class="xm-btn xm-btn-ghost text-xs">← Catalog</a>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   {{if .TemplateApp}}
   {{if .TemplateApp.Instructions.Start}}

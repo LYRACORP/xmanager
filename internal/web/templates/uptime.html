@@ -4,11 +4,11 @@
 <main class="p-6 max-w-screen-xl mx-auto">
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-100">Uptime Monitors</h1>
+      <h1>Uptime Monitors</h1>
       <p class="text-gray-500 text-sm mt-0.5">HTTP and TCP endpoint health checks</p>
     </div>
     <button onclick="document.getElementById('new-monitor-modal').classList.remove('hidden')"
-            class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            class="xm-btn xm-btn-primary">
       + Add Monitor
     </button>
   </div>
@@ -48,10 +48,9 @@
     {{end}}
   </div>
   {{else}}
-  <div class="flex flex-col items-center justify-center py-24 text-gray-600">
-    <span class="text-5xl mb-4">📡</span>
-    <p class="text-lg font-medium">No monitors yet</p>
-    <p class="text-sm mt-1">Add an HTTP or TCP monitor to track uptime.</p>
+  <div class="xm-empty">
+    <h3>No monitors yet</h3>
+    <p>Add an HTTP or TCP monitor to track uptime.</p>
   </div>
   {{end}}
 </main>
@@ -81,7 +80,7 @@
       </div>
       <div class="flex gap-3 pt-2">
         <button type="submit"
-          class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 rounded-lg text-sm transition-colors">
+          class="flex-1 xm-btn xm-btn-primary">
           Add Monitor
         </button>
         <button type="button"

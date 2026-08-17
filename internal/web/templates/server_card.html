@@ -1,62 +1,52 @@
 {{define "server_card"}}
-<div class="bg-gray-900 rounded-xl border border-gray-800 hover:border-indigo-600/50 transition-colors p-5"
+<div class="xm-card p-5"
      hx-get="/api/servers/{{.Server.ID}}/metrics"
      hx-trigger="every 5s"
      hx-swap="outerHTML">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="font-semibold text-gray-100 text-base truncate">{{.Server.Name}}</h3>
+  <div class="flex items-center justify-between mb-3 gap-2">
+    <h3 class="text-base truncate">{{.Server.Name}}</h3>
     {{if .Snapshot.Online}}
-    <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full border border-emerald-700/40">
-      <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>online
-    </span>
+    <span class="xm-pill xm-pill-ok">online</span>
     {{else}}
-    <span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 bg-red-900/30 px-2 py-0.5 rounded-full border border-red-700/40">
-      <span class="w-1.5 h-1.5 bg-red-400 rounded-full"></span>offline
-    </span>
+    <span class="xm-pill xm-pill-danger">offline</span>
     {{end}}
   </div>
 
-  <p class="text-xs text-gray-500 mb-4 font-mono">{{.Server.Host}}:{{.Server.Port}} · {{.Server.User}}</p>
-  {{if .Server.Tags}}<p class="text-xs text-indigo-400/70 mb-3">{{.Server.Tags}}</p>{{end}}
+  <p class="text-xs text-muted mb-4 xm-mono">{{.Server.Host}}:{{.Server.Port}} · {{.Server.User}}</p>
+  {{if .Server.Tags}}<p class="text-xs text-muted mb-3">{{.Server.Tags}}</p>{{end}}
 
   <div class="space-y-2">
     <div>
-      <div class="flex justify-between text-xs text-gray-400 mb-0.5">
+      <div class="flex justify-between text-xs text-muted mb-0.5">
         <span>CPU</span><span>{{printf "%.1f" .Snapshot.CPUPct}}%</span>
       </div>
-      <div class="bg-gray-800 rounded-full h-1.5">
-        <div class="h-1.5 rounded-full {{if gt .Snapshot.CPUPct 85.0}}bg-red-500{{else if gt .Snapshot.CPUPct 65.0}}bg-yellow-500{{else}}bg-indigo-500{{end}}"
-             style="width: {{printf "%.0f" .Snapshot.CPUPct}}%"></div>
+      <div class="xm-meter {{if gt .Snapshot.CPUPct 85.0}}is-danger{{else if gt .Snapshot.CPUPct 65.0}}is-warn{{end}}">
+        <span style="width: {{printf "%.0f" .Snapshot.CPUPct}}%"></span>
       </div>
     </div>
     <div>
-      <div class="flex justify-between text-xs text-gray-400 mb-0.5">
+      <div class="flex justify-between text-xs text-muted mb-0.5">
         <span>RAM</span><span>{{printf "%.1f" .Snapshot.RAMPct}}%</span>
       </div>
-      <div class="bg-gray-800 rounded-full h-1.5">
-        <div class="h-1.5 rounded-full {{if gt .Snapshot.RAMPct 85.0}}bg-red-500{{else if gt .Snapshot.RAMPct 65.0}}bg-yellow-500{{else}}bg-sky-500{{end}}"
-             style="width: {{printf "%.0f" .Snapshot.RAMPct}}%"></div>
+      <div class="xm-meter {{if gt .Snapshot.RAMPct 85.0}}is-danger{{else if gt .Snapshot.RAMPct 65.0}}is-warn{{end}}">
+        <span style="width: {{printf "%.0f" .Snapshot.RAMPct}}%"></span>
       </div>
     </div>
     <div>
-      <div class="flex justify-between text-xs text-gray-400 mb-0.5">
+      <div class="flex justify-between text-xs text-muted mb-0.5">
         <span>Disk</span><span>{{printf "%.1f" .Snapshot.DiskPct}}%</span>
       </div>
-      <div class="bg-gray-800 rounded-full h-1.5">
-        <div class="h-1.5 rounded-full {{if gt .Snapshot.DiskPct 85.0}}bg-red-500{{else if gt .Snapshot.DiskPct 65.0}}bg-yellow-500{{else}}bg-emerald-500{{end}}"
-             style="width: {{printf "%.0f" .Snapshot.DiskPct}}%"></div>
+      <div class="xm-meter {{if gt .Snapshot.DiskPct 85.0}}is-danger{{else if gt .Snapshot.DiskPct 65.0}}is-warn{{end}}">
+        <span style="width: {{printf "%.0f" .Snapshot.DiskPct}}%"></span>
       </div>
     </div>
   </div>
 
-  <div class="mt-3 pt-3 border-t border-gray-800 flex justify-between text-xs text-gray-500">
-    <span>🐳 {{.Snapshot.ContainerCount}} containers</span>
+  <div class="mt-3 pt-3 border-t border-rule flex justify-between text-xs text-muted">
+    <span class="xm-mono">{{.Snapshot.ContainerCount}} containers</span>
     <span>seen {{.LastSeen}}</span>
   </div>
 
-  <a href="/servers/{{.Server.ID}}"
-     class="mt-3 block text-center text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-    View Details →
-  </a>
+  <a href="/servers/{{.Server.ID}}" class="mt-3 block text-sm">View details</a>
 </div>
 {{end}}

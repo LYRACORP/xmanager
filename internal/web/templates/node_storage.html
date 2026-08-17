@@ -5,7 +5,7 @@
 
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold tracking-tight">Storage</h1>
+      <h1>Storage</h1>
       <p class="text-panel-muted text-xs mt-0.5">RustFS object storage · S3-compatible buckets</p>
     </div>
     {{if .StorageConsoleURL}}
@@ -15,7 +15,7 @@
   </div>
 
   {{if .Flash}}
-  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  <p class="xm-flash xm-flash-warn">{{.Flash}}</p>
   {{end}}
 
   {{if not .StorageReady}}

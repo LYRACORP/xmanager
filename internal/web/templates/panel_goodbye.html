@@ -1,8 +1,17 @@
 {{define "panel_goodbye"}}
 {{template "head" .}}
-<div class="max-w-lg mx-auto p-8 space-y-3">
-  <h1 class="text-2xl font-bold tracking-tight">{{.Title}}</h1>
-  {{if .Flash}}<p class="text-panel-muted text-sm">{{.Flash}}</p>{{end}}
+<div class="xm-auth">
+  <div class="xm-auth-lede">
+    <div>
+      <p class="xm-brand-sub">XManager</p>
+      <h1>{{.Title}}</h1>
+      {{if .Flash}}<p>{{.Flash}}</p>{{end}}
+    </div>
+    <p class="xm-auth-foot">Panel session ended</p>
+  </div>
+  <div class="xm-auth-form">
+    <p class="text-muted">This node panel is no longer serving the UI.</p>
+  </div>
 </div>
 {{template "foot" .}}
 {{end}}

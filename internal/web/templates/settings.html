@@ -3,10 +3,10 @@
 {{template "nav" .}}
 <div class="xm-page max-w-3xl">
   <div class="mb-6">
-    <h1 class="text-2xl font-bold text-gray-100">Settings</h1>
+    <h1>Settings</h1>
     <p class="text-gray-500 text-sm mt-0.5">Panel configuration</p>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm mb-4">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn mb-4">{{.Flash}}</p>{{end}}
 
   <div class="space-y-4">
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
@@ -28,7 +28,7 @@
           <input name="confirm_password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
         </div>
         <div class="md:col-span-2">
-          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Update password</button>
+          <button class="xm-btn xm-btn-primary">Update password</button>
         </div>
       </form>
     </div>
@@ -59,7 +59,7 @@
             <input name="code" required inputmode="numeric" autocomplete="one-time-code" maxlength="8"
               class="w-36 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
           </div>
-          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Confirm and enable</button>
+          <button class="xm-btn xm-btn-primary">Confirm and enable</button>
         </form>
       </div>
       {{else if .TOTPEnabled}}
@@ -88,7 +88,7 @@
       </form>
       {{else}}
       <form method="post" action="/settings/2fa/start">
-        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Enable 2FA</button>
+        <button class="xm-btn xm-btn-primary">Enable 2FA</button>
       </form>
       {{end}}
     </div>
@@ -110,7 +110,7 @@
             placeholder="8–64 letters or digits">
         </div>
         <div class="flex flex-wrap gap-2">
-          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save</button>
+          <button class="xm-btn xm-btn-primary">Save</button>
           <button name="generate" value="1" class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg">Generate new</button>
         </div>
       </form>
@@ -136,7 +136,7 @@
             <option value="admin">admin</option>
           </select>
         </div>
-        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg h-[38px]">Create user</button>
+        <button class="xm-btn xm-btn-primary">Create user</button>
       </form>
       {{if .PanelUsers}}
       <div class="overflow-x-auto border border-gray-800 rounded-lg">
@@ -213,7 +213,7 @@
             value="{{with .Config}}{{.Log.RetentionDays}}{{else}}30{{end}}"
             class="w-28 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
         </div>
-        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save</button>
+        <button class="xm-btn xm-btn-primary">Save</button>
       </form>
     </div>
 
@@ -267,7 +267,7 @@
         <div class="md:col-span-2 text-xs text-gray-500">Unable to load node settings.</div>
         {{end}}
         <div class="md:col-span-2">
-          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save node identity</button>
+          <button class="xm-btn xm-btn-primary">Save node identity</button>
         </div>
       </form>
     </div>

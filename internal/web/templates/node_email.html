@@ -4,7 +4,7 @@
 <div class="xm-page space-y-4">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight">Email</h1>
+      <h1>Email</h1>
       <p class="text-panel-muted text-sm mt-1">Mailboxes on connected domains · webmail.&lt;domain&gt; + shared webmail.&lt;main_domain&gt;</p>
     </div>
     <div class="flex flex-wrap gap-2">
@@ -40,7 +40,7 @@
       <input name="admin_password" type="password" placeholder="admin password (leave blank to keep)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
       <input name="webmail_url" placeholder="legacy webmail URL override (optional)" value="{{.MailAPIConfig.WebmailURL}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm md:col-span-2">
       <div class="md:col-span-2">
-        <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Save connection</button>
+        <button class="xm-btn xm-btn-primary">Save connection</button>
         <span class="text-xs text-gray-500 ml-2">Prefer enabling the mailinbox stack under Apps</span>
       </div>
     </form>
@@ -72,7 +72,7 @@
     <form method="post" action="/email/domains" class="mt-3 grid md:grid-cols-2 gap-3">
       <input name="domain" required placeholder="example.com" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
       <input name="public_ip" placeholder="public IP for DNS (auto if empty)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
-      <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg w-fit">Register domain</button>
+      <button class="xm-btn xm-btn-primary w-fit">Register domain</button>
     </form>
   </details>
 

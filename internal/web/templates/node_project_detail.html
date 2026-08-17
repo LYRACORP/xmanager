@@ -6,7 +6,7 @@
   <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
     <div>
       <a href="/projects" class="text-xs text-panel-muted hover:text-gray-300">← Projects</a>
-      <h1 class="text-3xl font-bold tracking-tight mt-1">{{.Name}}</h1>
+      <h1 class="mt-1">{{.Name}}</h1>
       <div class="flex flex-wrap gap-2 mt-2 text-xs items-center">
         <span class="font-mono text-indigo-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{{.Type}}</span>
         <span class="px-2 py-0.5 rounded-full border text-[10px] uppercase
@@ -24,7 +24,7 @@
     </div>
   </div>
 
-  {{if $.Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{$.Flash}}</p>{{end}}
+  {{if $.Flash}}<p class="xm-flash xm-flash-warn">{{$.Flash}}</p>{{end}}
 
   <div class="flex flex-wrap gap-1 border-b border-zinc-800 pb-0">
     {{$id := .ID}}

@@ -1,33 +1,30 @@
 {{define "setup"}}
 {{template "head" .}}
-<div class="min-h-screen flex items-center justify-center p-6">
-  <div class="w-full max-w-sm">
-    <div class="text-center mb-8">
-      <div class="xm-brand-mark mx-auto mb-3" style="width:2.5rem;height:2.5rem;font-size:1.1rem">X</div>
-      <h1 class="text-2xl font-bold tracking-tight">XManager</h1>
-      <p class="text-panel-muted mt-1 text-sm">Create the first admin account</p>
+<div class="xm-auth">
+  <div class="xm-auth-lede">
+    <div>
+      <p class="xm-brand-sub">XManager</p>
+      <h1>Create admin</h1>
+      <p>No users exist yet. This account owns the panel on first boot.</p>
     </div>
-    <div class="xm-card p-8">
-      {{if .Flash}}
-      <div class="mb-4 p-3 bg-red-900/40 border border-red-700/60 rounded-lg text-red-300 text-sm">{{.Flash}}</div>
-      {{end}}
-      <div class="mb-5 p-3 bg-emerald-950/40 border border-emerald-800/50 rounded-lg text-emerald-200/90 text-sm">
-        No users exist yet. Set up your admin credentials below.
+    <p class="xm-auth-foot">First-run setup</p>
+  </div>
+  <div class="xm-auth-form">
+    {{if .Flash}}
+    <div class="xm-flash xm-flash-error">{{.Flash}}</div>
+    {{end}}
+    <div class="xm-flash xm-flash-ok">Set the admin username and password below.</div>
+    <form action="/setup" method="post" class="space-y-4">
+      <div>
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" required autofocus autocomplete="username">
       </div>
-      <form action="/setup" method="post" class="space-y-5">
-        <div>
-          <label class="block text-sm font-medium text-panel-muted mb-1">Username</label>
-          <input type="text" name="username" required autofocus
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-panel-muted mb-1">Password</label>
-          <input type="password" name="password" required
-            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
-        </div>
-        <button type="submit" class="xm-btn xm-btn-primary w-full justify-center py-2.5">Create admin</button>
-      </form>
-    </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" required autocomplete="new-password">
+      </div>
+      <button type="submit" class="xm-btn xm-btn-primary w-full">Create admin</button>
+    </form>
   </div>
 </div>
 {{template "foot" .}}

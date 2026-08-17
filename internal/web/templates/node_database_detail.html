@@ -6,7 +6,7 @@
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
       <a href="/databases" class="text-xs text-panel-muted hover:text-gray-300">← Databases</a>
-      <h1 class="text-2xl font-bold tracking-tight mt-1 font-mono">{{.DBDetail.Name}}</h1>
+      <h1 class="mt-1 font-mono">{{.DBDetail.Name}}</h1>
       <p class="text-panel-muted text-xs mt-0.5">{{.DBDetail.Type}} · {{.DBDetail.Engine.Container}} · :{{.DBDetail.Engine.Port}}</p>
     </div>
     <div class="flex flex-wrap gap-2">
@@ -45,13 +45,13 @@
     <div class="flex flex-wrap items-center justify-between gap-2">
       <p class="text-[11px] text-panel-muted uppercase tracking-widest font-semibold">Engine resource usage</p>
       <div id="db-chart-range" class="flex flex-wrap gap-1">
-        <button type="button" data-range="live" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-indigo-600 border-indigo-500 text-white">Live</button>
-        <button type="button" data-range="1h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1h</button>
-        <button type="button" data-range="6h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">6h</button>
-        <button type="button" data-range="1d" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1d</button>
-        <button type="button" data-range="1w" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1w</button>
-        <button type="button" data-range="1m" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1m</button>
-        <button type="button" data-range="1y" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1y</button>
+        <button type="button" data-range="live" class="chart-range is-on">Live</button>
+        <button type="button" data-range="1h" class="chart-range">1h</button>
+        <button type="button" data-range="6h" class="chart-range">6h</button>
+        <button type="button" data-range="1d" class="chart-range">1d</button>
+        <button type="button" data-range="1w" class="chart-range">1w</button>
+        <button type="button" data-range="1m" class="chart-range">1m</button>
+        <button type="button" data-range="1y" class="chart-range">1y</button>
       </div>
     </div>
     <div id="db-metrics"
@@ -123,8 +123,8 @@
     ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
     var cw = c.offsetWidth, ch = 56;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#71717a';
-    ctx.font = '10px monospace';
+    ctx.fillStyle = window.xmToken ? window.xmToken('--color-ink-2') : '#5c6578';
+    ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillText(label, 8, 12);
     if (!data.length) return;
     var max = Math.max.apply(null, data.concat([1]));
@@ -139,8 +139,9 @@
     ctx.stroke();
   }
   function drawAll() {
-    drawChart('db-cpu-chart', cpuHist, '#818cf8', 'CPU %');
-    drawChart('db-mem-chart', memHist, '#38bdf8', 'Memory');
+    var accent = window.xmToken ? window.xmToken('--color-accent') : '#2f6bff';
+    drawChart('db-cpu-chart', cpuHist, accent, 'CPU %');
+    drawChart('db-mem-chart', memHist, accent, 'Memory');
   }
   function pollLive() {
     fetch('/api/databases/' + encodeURIComponent(dbType) + '/stats')
@@ -170,8 +171,7 @@
     range = next || 'live';
     document.querySelectorAll('#db-chart-range .chart-range').forEach(function (btn) {
       var on = btn.getAttribute('data-range') === range;
-      btn.className = 'chart-range text-[10px] px-2 py-1 rounded-lg border ' +
-        (on ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-900 border-zinc-700 text-panel-muted');
+      btn.className = 'chart-range' + (on ? ' is-on' : '');
     });
     clearTimers();
     cpuHist = []; memHist = [];

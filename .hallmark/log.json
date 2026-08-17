@@ -1,0 +1,13 @@
+[
+  {
+    "scope": "app",
+    "date": "2026-08-17",
+    "genre": "modern-minimal",
+    "theme": "Cobalt",
+    "macrostructure": "Workbench",
+    "nav": "index-rail+cmdk",
+    "footer": "Ft2",
+    "design-system": "design.md",
+    "target": "internal/web"
+  }
+]

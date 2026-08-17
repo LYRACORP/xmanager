@@ -1,17 +1,64 @@
 {{define "head"}}<!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{.Title}} — XManager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            panel: { DEFAULT: '#141416', raised: '#1c1c1f', border: '#2a2a2e', muted: '#8b8b93' },
-            accent: { DEFAULT: '#6ee7b7', dim: '#34d399' }
+            paper: { DEFAULT: 'var(--color-paper)', 2: 'var(--color-paper-2)' },
+            ink: { DEFAULT: 'var(--color-ink)', 2: 'var(--color-ink-2)' },
+            muted: 'var(--color-ink-2)',
+            rule: 'var(--color-rule)',
+            accent: { DEFAULT: 'var(--color-accent)', ink: 'var(--color-accent-ink)', dim: 'var(--color-accent)' },
+            graphite: 'var(--color-graphite)',
+            danger: 'var(--color-danger)',
+            ok: 'var(--color-ok)',
+            warn: 'var(--color-warn)',
+            panel: { DEFAULT: 'var(--color-paper-2)', raised: 'var(--color-paper)', border: 'var(--color-rule)', muted: 'var(--color-ink-2)' },
+            gray: {
+              50: 'var(--color-paper)', 100: 'var(--color-ink)', 200: 'var(--color-ink)',
+              300: 'var(--color-ink)', 400: 'var(--color-ink-2)', 500: 'var(--color-ink-2)',
+              600: 'var(--color-ink-2)', 700: 'var(--color-rule)', 800: 'var(--color-rule)',
+              900: 'var(--color-paper-2)', 950: 'var(--color-paper-2)'
+            },
+            zinc: {
+              50: 'var(--color-paper)', 100: 'var(--color-ink)', 200: 'var(--color-ink)',
+              300: 'var(--color-ink)', 400: 'var(--color-ink-2)', 500: 'var(--color-ink-2)',
+              600: 'var(--color-ink-2)', 700: 'var(--color-rule)', 800: 'var(--color-rule)',
+              900: 'var(--color-paper)', 950: 'var(--color-graphite)'
+            },
+            indigo: {
+              300: 'var(--color-accent)', 400: 'var(--color-accent)', 500: 'var(--color-accent)',
+              600: 'var(--color-accent)', 700: 'var(--color-accent)'
+            },
+            emerald: {
+              200: 'var(--color-ok)', 300: 'var(--color-ok)', 400: 'var(--color-ok)',
+              500: 'var(--color-ok)', 600: 'var(--color-ok)', 800: 'var(--color-ok)', 900: 'var(--color-ok)', 950: 'var(--color-ok-soft)'
+            },
+            sky: {
+              300: 'var(--color-accent)', 400: 'var(--color-accent)', 500: 'var(--color-accent)', 700: 'var(--color-accent)'
+            },
+            red: {
+              300: 'var(--color-danger)', 400: 'var(--color-danger)', 500: 'var(--color-danger)',
+              700: 'var(--color-danger)', 800: 'var(--color-danger)', 900: 'var(--color-danger)'
+            },
+            amber: {
+              200: 'var(--color-warn)', 300: 'var(--color-warn)', 900: 'var(--color-warn)', 950: 'var(--color-warn-soft)'
+            },
+            yellow: { 500: 'var(--color-warn)' }
+          },
+          fontFamily: {
+            sans: ['var(--font-body)'],
+            display: ['var(--font-display)'],
+            mono: ['var(--font-mono)']
           }
         }
       }
@@ -20,92 +67,56 @@
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="h-full bg-[#0c0c0e] text-gray-100 antialiased">
+<body>
 {{end}}
 
 {{define "nav"}}
 {{if .NodeMode}}
 <div class="xm-app">
-  <aside class="xm-sidebar">
-    <div class="xm-brand">
-      <div class="xm-brand-mark">X</div>
-      <div>
-        <div class="xm-brand-title">XManager</div>
-        <div class="xm-brand-sub">Server panel</div>
-      </div>
-    </div>
+  <button type="button" class="xm-nav-backdrop" hidden data-close-nav aria-label="Close menu"></button>
+  <aside class="xm-sidebar" id="xm-sidebar">
+    <a href="/" class="xm-brand" data-cmdk data-cmdk-label="Home">
+      <span class="xm-brand-title">XManager</span>
+      <span class="xm-brand-sub">node</span>
+    </a>
 
     <div class="xm-nav-section">Workspace</div>
-    <a href="/" class="xm-nav-link {{if eq .ActiveNav "home"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⌂</span> Home
-    </a>
-    <a href="/projects" class="xm-nav-link {{if eq .ActiveNav "projects"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">▣</span> Projects
-    </a>
+    <a href="/" class="xm-nav-link {{if eq .ActiveNav "home"}}xm-nav-active{{end}}" data-cmdk>Home</a>
+    <a href="/projects" class="xm-nav-link {{if eq .ActiveNav "projects"}}xm-nav-active{{end}}" data-cmdk>Projects</a>
     {{if .IsAdmin}}
-    <a href="/docker" class="xm-nav-link {{if eq .ActiveNav "docker"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⬡</span> Docker
-    </a>
-    <a href="/cron" class="xm-nav-link {{if eq .ActiveNav "cron"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">◷</span> Schedules
-    </a>
+    <a href="/docker" class="xm-nav-link {{if eq .ActiveNav "docker"}}xm-nav-active{{end}}" data-cmdk>Docker</a>
+    <a href="/cron" class="xm-nav-link {{if eq .ActiveNav "cron"}}xm-nav-active{{end}}" data-cmdk>Schedules</a>
     {{end}}
 
     <div class="xm-nav-section">Data &amp; network</div>
-    <a href="/databases" class="xm-nav-link {{if eq .ActiveNav "databases"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⧉</span> Databases
-    </a>
+    <a href="/databases" class="xm-nav-link {{if eq .ActiveNav "databases"}}xm-nav-active{{end}}" data-cmdk>Databases</a>
     {{if .IsAdmin}}
-    <a href="/backup" class="xm-nav-link {{if eq .ActiveNav "backup"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⇩</span> Backup
-    </a>
+    <a href="/backup" class="xm-nav-link {{if eq .ActiveNav "backup"}}xm-nav-active{{end}}" data-cmdk>Backup</a>
     {{end}}
-    <a href="/storage" class="xm-nav-link {{if eq .ActiveNav "storage"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">▤</span> Storage
-    </a>
-    <a href="/ftp" class="xm-nav-link {{if eq .ActiveNav "ftp"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⇅</span> FTP
-    </a>
-    <a href="/domains" class="xm-nav-link {{if eq .ActiveNav "domains"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">◎</span> Domains
-    </a>
-    <a href="/email" class="xm-nav-link {{if eq .ActiveNav "email"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">✉</span> Email
-    </a>
+    <a href="/storage" class="xm-nav-link {{if eq .ActiveNav "storage"}}xm-nav-active{{end}}" data-cmdk>Storage</a>
+    <a href="/ftp" class="xm-nav-link {{if eq .ActiveNav "ftp"}}xm-nav-active{{end}}" data-cmdk>FTP</a>
+    <a href="/domains" class="xm-nav-link {{if eq .ActiveNav "domains"}}xm-nav-active{{end}}" data-cmdk>Domains</a>
+    <a href="/email" class="xm-nav-link {{if eq .ActiveNav "email"}}xm-nav-active{{end}}" data-cmdk>Email</a>
     {{if .IsAdmin}}
-    <a href="/apps" class="xm-nav-link {{if eq .ActiveNav "apps"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">▣</span> Apps
-    </a>
-    <a href="/services" class="xm-nav-link {{if eq .ActiveNav "services"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⚙</span> Services
-    </a>
+    <a href="/apps" class="xm-nav-link {{if eq .ActiveNav "apps"}}xm-nav-active{{end}}" data-cmdk>Apps</a>
+    <a href="/services" class="xm-nav-link {{if eq .ActiveNav "services"}}xm-nav-active{{end}}" data-cmdk>Services</a>
     {{end}}
 
     {{if .IsAdmin}}
     <div class="xm-nav-section">System</div>
-    <a href="/security" class="xm-nav-link {{if eq .ActiveNav "security"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⛨</span> Security
-    </a>
-    <a href="/time" class="xm-nav-link {{if eq .ActiveNav "time"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">⌚</span> Date &amp; time
-    </a>
-    <a href="/logs" class="xm-nav-link {{if eq .ActiveNav "logs"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">≡</span> Logs
-    </a>
-    <a href="/alerts" class="xm-nav-link {{if eq .ActiveNav "alerts"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">◉</span> Alerts
-    </a>
+    <a href="/security" class="xm-nav-link {{if eq .ActiveNav "security"}}xm-nav-active{{end}}" data-cmdk>Security</a>
+    <a href="/time" class="xm-nav-link {{if eq .ActiveNav "time"}}xm-nav-active{{end}}" data-cmdk>Date &amp; time</a>
+    <a href="/logs" class="xm-nav-link {{if eq .ActiveNav "logs"}}xm-nav-active{{end}}" data-cmdk>Logs</a>
+    <a href="/alerts" class="xm-nav-link {{if eq .ActiveNav "alerts"}}xm-nav-active{{end}}" data-cmdk>Alerts</a>
     {{end}}
-    <a href="/settings" class="xm-nav-link {{if eq .ActiveNav "settings"}}xm-nav-active{{end}}">
-      <span class="xm-nav-ico">☰</span> Settings
-    </a>
+    <a href="/settings" class="xm-nav-link {{if eq .ActiveNav "settings"}}xm-nav-active{{end}}" data-cmdk>Settings</a>
 
     <div class="xm-sidebar-foot">
       <div class="xm-user">
         <div class="xm-avatar">{{if .Session}}{{slice .Session.Username 0 1}}{{else}}?{{end}}</div>
         <div class="min-w-0">
-          <div class="truncate text-sm text-gray-200">{{if .Session}}{{.Session.Username}}{{else}}guest{{end}}</div>
-          <div class="text-[11px] text-panel-muted">{{if .UserRole}}{{.UserRole}}{{else}}user{{end}} · node panel</div>
+          <div class="truncate text-sm">{{if .Session}}{{.Session.Username}}{{else}}guest{{end}}</div>
+          <div class="text-muted" style="font-size:var(--text-xs)">{{if .UserRole}}{{.UserRole}}{{else}}user{{end}}</div>
         </div>
       </div>
       <form action="/logout" method="post">
@@ -116,30 +127,37 @@
 
   <div class="xm-main">
     <header class="xm-topbar">
+      <button type="button" class="xm-menu-btn" data-open-nav aria-label="Open menu">Menu</button>
       <div class="xm-crumb">{{.Title}}</div>
       <div class="flex items-center gap-2">
-        <span class="xm-pill xm-pill-ok">node</span>
+        <button type="button" class="xm-cmdk-btn" data-open-cmdk aria-label="Open command palette">
+          Go to <kbd>⌘K</kbd>
+        </button>
+        <span class="xm-pill">node</span>
       </div>
     </header>
     <div class="xm-content">
 {{else}}
-<nav class="bg-[#141416] border-b border-[#2a2a2e] px-4 py-3 sticky top-0 z-10">
-  <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-    <a href="/" class="text-xl font-bold tracking-tight text-accent">XManager</a>
-    <div class="flex flex-wrap gap-4 text-sm font-medium">
-      <a href="/" class="text-gray-300 hover:text-white transition-colors">Fleet</a>
-      <a href="/projects" class="text-gray-300 hover:text-white transition-colors">Projects</a>
-      <a href="/uptime" class="text-gray-300 hover:text-white transition-colors">Uptime</a>
-      <a href="/settings" class="text-gray-300 hover:text-white transition-colors">Settings</a>
-    </div>
-    <div class="flex items-center gap-4 text-sm text-gray-400">
-      {{if .Session}}<span class="text-gray-300">{{.Session.Username}}</span>{{end}}
-      <form action="/logout" method="post" class="inline">
-        <button type="submit" class="text-red-400 hover:text-red-300 transition-colors">Logout</button>
+<div class="xm-control">
+<header class="xm-control-nav">
+  <div class="xm-control-inner">
+    <button type="button" class="xm-menu-btn" data-open-nav aria-label="Open menu">Menu</button>
+    <a href="/" class="xm-brand-title" data-cmdk data-cmdk-label="Fleet">XManager</a>
+    <nav class="xm-control-links">
+      <a href="/" {{if eq .ActiveNav "home"}}aria-current="page"{{end}} data-cmdk>Fleet</a>
+      <a href="/projects" {{if eq .ActiveNav "projects"}}aria-current="page"{{end}} data-cmdk>Projects</a>
+      <a href="/uptime" {{if eq .ActiveNav "uptime"}}aria-current="page"{{end}} data-cmdk>Uptime</a>
+      <a href="/settings" {{if eq .ActiveNav "settings"}}aria-current="page"{{end}} data-cmdk>Settings</a>
+    </nav>
+    <div class="xm-control-right">
+      <button type="button" class="xm-cmdk-btn" data-open-cmdk aria-label="Open command palette">Go to <kbd>⌘K</kbd></button>
+      {{if .Session}}<span>{{.Session.Username}}</span>{{end}}
+      <form action="/logout" method="post">
+        <button type="submit" class="xm-logout" style="width:auto">Sign out</button>
       </form>
     </div>
   </div>
-</nav>
+</header>
 {{end}}
 {{end}}
 
@@ -148,7 +166,10 @@
     </div>
   </div>
 </div>
+{{else if .Session}}
+</div>
 {{end}}
+<script src="/static/app.js"></script>
 </body>
 </html>
 {{end}}

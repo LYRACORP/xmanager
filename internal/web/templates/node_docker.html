@@ -4,7 +4,7 @@
 <div class="xm-page space-y-6">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold tracking-tight">Docker</h1>
+      <h1>Docker</h1>
       <p class="text-gray-500 text-sm mt-0.5">Containers, images, volumes, networks, build cache, and optional Swarm on this host</p>
     </div>
     <nav class="flex flex-wrap gap-3 text-xs text-indigo-300">
@@ -16,7 +16,7 @@
       <a href="#docker-build" class="hover:underline">Build cache</a>
     </nav>
   </div>
-  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+  {{if .Flash}}<p class="xm-flash xm-flash-warn">{{.Flash}}</p>{{end}}
 
   <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
     <div class="xm-card p-4">
@@ -355,7 +355,7 @@
 {{template "nav" .}}
 <div class="xm-page">
   <div class="flex items-center justify-between mb-4">
-    <h1 class="text-2xl font-bold">Logs · {{.ContainerID}}</h1>
+    <h1>Logs · {{.ContainerID}}</h1>
     <a href="/docker" class="text-sm text-indigo-400">← Docker</a>
   </div>
   {{if .Flash}}<p class="text-amber-300 mb-4">{{.Flash}}</p>{{end}}

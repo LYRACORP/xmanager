@@ -5,7 +5,7 @@
 
   <div class="flex items-end justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold tracking-tight">Databases</h1>
+      <h1>Databases</h1>
       <p class="text-panel-muted text-xs mt-0.5">Install and manage database engines · everything runs in Docker</p>
     </div>
     <button onclick="xmDBTab('advanced')" id="tab-adv-btn"
@@ -13,7 +13,7 @@
   </div>
 
   {{if .Flash}}
-  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  <p class="xm-flash xm-flash-warn">{{.Flash}}</p>
   {{end}}
 
   {{/* ── NORMAL WIZARD ─────────────────────────────────────────── */}}

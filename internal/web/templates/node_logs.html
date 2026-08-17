@@ -3,18 +3,18 @@
 {{template "nav" .}}
 <div class="xm-page space-y-4">
   <div>
-    <h1 class="text-2xl font-bold tracking-tight">Logs</h1>
+    <h1>Logs</h1>
     <p class="text-panel-muted text-xs mt-0.5">Host · panel · projects · Docker · activity audit</p>
   </div>
 
   {{if .Flash}}
-  <p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>
+  <p class="xm-flash xm-flash-warn">{{.Flash}}</p>
   {{end}}
 
   <div class="flex flex-wrap gap-1.5">
     {{range .LogsTabSources}}
     <a href="/logs?source={{.ID}}{{if and (eq .ID "projects") $.LogsProject}}&project={{$.LogsProject}}{{end}}{{if and (eq .ID "docker") $.LogsContainer}}&container={{$.LogsContainer}}{{end}}"
-       class="text-xs px-3 py-1.5 rounded-lg border {{if eq $.LogsSource .ID}}bg-indigo-600 border-indigo-500 text-white{{else}}bg-zinc-900 border-zinc-700 text-panel-muted hover:text-gray-200{{end}}">{{.Label}}</a>
+       class="chart-range {{if eq $.LogsSource .ID}}is-on{{end}}">{{.Label}}</a>
     {{end}}
   </div>
 

@@ -7,9 +7,9 @@
     <div class="flex flex-wrap items-center gap-2">
       <div class="inline-flex rounded-lg border border-zinc-800 overflow-hidden">
         <a href="/projects/{{.ID}}?tab=files&scope=container{{if $.FileContainer}}&container={{pathEscape $.FileContainer}}{{end}}"
-           class="px-3 py-1.5 {{if eq $.FileScope "container"}}bg-indigo-600 text-white{{else}}text-panel-muted hover:text-gray-200{{end}}">Container</a>
+           class="chart-range {{if eq $.FileScope "container"}}is-on{{end}}">Container</a>
         <a href="/projects/{{.ID}}?tab=files&scope=host"
-           class="px-3 py-1.5 border-l border-zinc-800 {{if ne $.FileScope "container"}}bg-indigo-600 text-white{{else}}text-panel-muted hover:text-gray-200{{end}}">Host</a>
+           class="chart-range {{if ne $.FileScope "container"}}is-on{{end}}">Host</a>
       </div>
       {{if and (eq $.FileScope "container") $.TermContainers}}
       <form method="get" action="/projects/{{.ID}}" class="inline-flex items-center gap-1">

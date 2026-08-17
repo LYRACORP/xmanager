@@ -4,18 +4,18 @@
 <div class="xm-page space-y-6">
   <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-bold tracking-tight text-white">Welcome back{{if .WelcomeName}}, {{.WelcomeName}}{{end}}</h1>
-      <p class="text-panel-muted text-sm mt-1">
+      <h1>Welcome back{{if .WelcomeName}}, {{.WelcomeName}}{{end}}</h1>
+      <p class="text-muted text-sm mt-1">
         {{if .Node.Hostname}}{{.Node.Hostname}}{{else}}This host{{end}}
-        · <span class="text-emerald-400/90">uptime <span id="home-uptime-header">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</span></span>{{if .HostTime.Timezone}}
-        · <span class="font-mono text-gray-400">{{.HostTime.Timezone}}</span>{{end}}
+        · <span class="xm-mono">uptime <span id="home-uptime-header">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</span></span>{{if .HostTime.Timezone}}
+        · <span class="xm-mono text-muted">{{.HostTime.Timezone}}</span>{{end}}
         · live metrics every 5s
       </p>
     </div>
     <a href="/projects" class="xm-btn xm-btn-ghost">Go to projects →</a>
   </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
     <div class="xm-stat">
       <div class="xm-stat-label">Projects</div>
       <div class="xm-stat-value">{{.StatProjects}}</div>
@@ -40,9 +40,9 @@
       <div class="xm-stat-label">Containers</div>
       <div class="xm-stat-value">{{.StatContainers}}</div>
     </div>
-    <div class="xm-stat">
+    <div class="xm-stat md:col-span-2">
       <div class="xm-stat-label">Uptime</div>
-      <div class="xm-stat-value text-xl mt-2 font-mono text-emerald-300" id="home-uptime">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</div>
+      <div class="xm-stat-value xm-mono" id="home-uptime">{{if .UptimeHuman}}{{.UptimeHuman}}{{else}}—{{end}}</div>
       <div class="xm-stat-sub">system since boot</div>
     </div>
   </div>
@@ -53,13 +53,13 @@
       <div class="flex flex-wrap items-center gap-2">
         <span id="net-iface-label" class="text-[10px] text-zinc-500 font-mono">{{if .Node.NetIface}}{{.Node.NetIface}}{{else}}—{{end}}</span>
         <div id="host-chart-range" class="flex flex-wrap gap-1">
-          <button type="button" data-range="live" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-indigo-600 border-indigo-500 text-white">Live</button>
-          <button type="button" data-range="1h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1h</button>
-          <button type="button" data-range="6h" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">6h</button>
-          <button type="button" data-range="1d" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1d</button>
-          <button type="button" data-range="1w" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1w</button>
-          <button type="button" data-range="1m" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1m</button>
-          <button type="button" data-range="1y" class="chart-range text-[10px] px-2 py-1 rounded-lg border bg-zinc-900 border-zinc-700 text-panel-muted">1y</button>
+          <button type="button" data-range="live" class="chart-range is-on">Live</button>
+          <button type="button" data-range="1h" class="chart-range">1h</button>
+          <button type="button" data-range="6h" class="chart-range">6h</button>
+          <button type="button" data-range="1d" class="chart-range">1d</button>
+          <button type="button" data-range="1w" class="chart-range">1w</button>
+          <button type="button" data-range="1m" class="chart-range">1m</button>
+          <button type="button" data-range="1y" class="chart-range">1y</button>
         </div>
       </div>
     </div>
@@ -69,14 +69,14 @@
           <p class="text-xs text-panel-muted uppercase tracking-wide">Kbps transmitting</p>
           <p class="text-sm font-mono text-sky-300" id="net-tx-rate">{{.NetTxRate}}</p>
         </div>
-        <canvas id="net-tx-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+        <canvas id="net-tx-chart" height="140" class="w-full xm-chart"></canvas>
       </div>
       <div>
         <div class="flex items-baseline justify-between mb-2">
           <p class="text-xs text-panel-muted uppercase tracking-wide">Kbps receiving</p>
           <p class="text-sm font-mono text-emerald-300" id="net-rx-rate">{{.NetRxRate}}</p>
         </div>
-        <canvas id="net-rx-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+        <canvas id="net-rx-chart" height="140" class="w-full xm-chart"></canvas>
       </div>
     </div>
   </div>
@@ -89,21 +89,21 @@
           <p class="text-xs text-panel-muted uppercase tracking-wide">CPU %</p>
           <p class="text-sm font-mono text-indigo-300" id="cpu-chart-val">{{printf "%.1f" .Node.CPUPct}}%</p>
         </div>
-        <canvas id="cpu-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+        <canvas id="cpu-chart" height="140" class="w-full xm-chart"></canvas>
       </div>
       <div>
         <div class="flex items-baseline justify-between mb-2">
           <p class="text-xs text-panel-muted uppercase tracking-wide">RAM %</p>
           <p class="text-sm font-mono text-sky-300" id="ram-chart-val">{{printf "%.1f" .Node.RAMPct}}%</p>
         </div>
-        <canvas id="ram-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+        <canvas id="ram-chart" height="140" class="w-full xm-chart"></canvas>
       </div>
       <div>
         <div class="flex items-baseline justify-between mb-2">
           <p class="text-xs text-panel-muted uppercase tracking-wide">Disk %</p>
           <p class="text-sm font-mono text-emerald-300" id="disk-chart-val">{{printf "%.1f" .Node.DiskPct}}%</p>
         </div>
-        <canvas id="disk-chart" height="140" class="w-full rounded-lg bg-zinc-950 border border-zinc-800"></canvas>
+        <canvas id="disk-chart" height="140" class="w-full xm-chart"></canvas>
       </div>
     </div>
   </div>
@@ -168,9 +168,9 @@
     var plotW = cw - padL - padR, plotH = ch - padT - padB;
     var max = niceMax(Math.max.apply(null, data.concat([0.1])));
 
-    ctx.strokeStyle = '#27272a';
-    ctx.fillStyle = '#71717a';
-    ctx.font = '10px monospace';
+    ctx.strokeStyle = window.xmToken ? window.xmToken('--color-rule') : '#d4d8e0';
+    ctx.fillStyle = window.xmToken ? window.xmToken('--color-ink-2') : '#5c6578';
+    ctx.font = '10px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
     for (var g = 0; g <= 4; g++) {
       var gy = padT + plotH * (g / 4);
@@ -219,12 +219,20 @@
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
+  function tokenFill(varName, a) {
+    var c = window.xmToken ? window.xmToken(varName) : 'rgb(47,107,255)';
+    var m = String(c).match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (!m) return c;
+    return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + a + ')';
+  }
   function drawAll() {
-    drawChart('net-tx-chart', txHist, timeHist, '#38bdf8', 'rgba(56,189,248,0.25)');
-    drawChart('net-rx-chart', rxHist, timeHist, '#34d399', 'rgba(52,211,153,0.25)');
-    drawChart('cpu-chart', cpuHist, timeHist, '#818cf8', 'rgba(129,140,248,0.25)');
-    drawChart('ram-chart', ramHist, timeHist, '#38bdf8', 'rgba(56,189,248,0.25)');
-    drawChart('disk-chart', diskHist, timeHist, '#34d399', 'rgba(52,211,153,0.25)');
+    var accent = window.xmToken ? window.xmToken('--color-accent') : '#2f6bff';
+    var fill = tokenFill('--color-accent', 0.22);
+    drawChart('net-tx-chart', txHist, timeHist, accent, fill);
+    drawChart('net-rx-chart', rxHist, timeHist, accent, fill);
+    drawChart('cpu-chart', cpuHist, timeHist, accent, fill);
+    drawChart('ram-chart', ramHist, timeHist, accent, fill);
+    drawChart('disk-chart', diskHist, timeHist, accent, fill);
   }
   function setVal(id, text) {
     var el = document.getElementById(id);
@@ -288,8 +296,7 @@
     range = next || 'live';
     document.querySelectorAll('#host-chart-range .chart-range').forEach(function (btn) {
       var on = btn.getAttribute('data-range') === range;
-      btn.className = 'chart-range text-[10px] px-2 py-1 rounded-lg border ' +
-        (on ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-900 border-zinc-700 text-panel-muted');
+      btn.className = 'chart-range' + (on ? ' is-on' : '');
     });
     clearTimers();
     rxHist = []; txHist = []; cpuHist = []; ramHist = []; diskHist = []; timeHist = [];
