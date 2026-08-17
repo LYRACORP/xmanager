@@ -33,6 +33,66 @@
       </form>
     </div>
 
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Two-factor authentication</h2>
+        <p class="text-xs text-panel-muted mt-1">Optional TOTP with Google Authenticator, Authy, 1Password, or any similar app.</p>
+      </div>
+      {{if .TOTPRecovery}}
+      <div class="bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm space-y-2">
+        <p class="text-amber-200">Save these recovery codes now. They will not be shown again.</p>
+        <ul class="font-mono text-emerald-300 grid grid-cols-2 gap-1">
+          {{range .TOTPRecovery}}<li>{{.}}</li>{{end}}
+        </ul>
+      </div>
+      {{end}}
+      {{if .TOTPQR}}
+      <div class="space-y-3">
+        <p class="text-sm text-gray-300">Scan this QR code, then enter a 6-digit code to confirm.</p>
+        <img src="{{.TOTPQR}}" alt="Authenticator QR" width="200" height="200" class="rounded-lg bg-white p-2">
+        {{if .TOTPManual}}
+        <p class="text-xs text-gray-500">Or enter this key manually: <span class="font-mono text-gray-300 break-all">{{.TOTPManual}}</span></p>
+        {{end}}
+        <form method="post" action="/settings/2fa/confirm" class="flex flex-wrap items-end gap-2">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Authenticator code</label>
+            <input name="code" required inputmode="numeric" autocomplete="one-time-code" maxlength="8"
+              class="w-36 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+          </div>
+          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Confirm and enable</button>
+        </form>
+      </div>
+      {{else if .TOTPEnabled}}
+      <p class="text-sm text-emerald-400">Enabled{{if .TOTPRecoveryLeft}} · {{.TOTPRecoveryLeft}} recovery codes left{{end}}</p>
+      <form method="post" action="/settings/2fa/disable" class="grid md:grid-cols-3 gap-2 items-end">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Authenticator code</label>
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Or recovery code</label>
+          <input name="recovery" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <button class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg">Disable 2FA</button>
+      </form>
+      <form method="post" action="/settings/2fa/recovery" class="grid md:grid-cols-3 gap-2 items-end">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Authenticator code</label>
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Or recovery code</label>
+          <input name="recovery" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <button class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg">New recovery codes</button>
+      </form>
+      {{else}}
+      <form method="post" action="/settings/2fa/start">
+        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Enable 2FA</button>
+      </form>
+      {{end}}
+    </div>
+
     {{if .IsAdmin}}
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
@@ -86,6 +146,7 @@
               <th class="text-left px-3 py-2">User</th>
               <th class="text-left px-3 py-2">Role</th>
               <th class="text-left px-3 py-2">Status</th>
+              <th class="text-left px-3 py-2">2FA</th>
               <th class="text-right px-3 py-2">Actions</th>
             </tr>
           </thead>
@@ -95,6 +156,7 @@
               <td class="px-3 py-2 font-mono text-gray-200">{{.Username}}</td>
               <td class="px-3 py-2 text-xs text-gray-400">{{.Role}}</td>
               <td class="px-3 py-2 text-xs {{if .Enabled}}text-emerald-400{{else}}text-red-400{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+              <td class="px-3 py-2 text-xs {{if .TOTPEnabled}}text-emerald-400{{else}}text-gray-500{{end}}">{{if .TOTPEnabled}}on{{else}}off{{end}}</td>
               <td class="px-3 py-2 text-right space-y-2">
                 <form method="post" action="/settings/users/{{.ID}}/password" class="flex flex-wrap gap-2 justify-end">
                   <input name="password" type="password" placeholder="new password" required class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-36">
@@ -103,6 +165,11 @@
                 <form method="post" action="/settings/users/{{.ID}}/toggle" class="inline">
                   <button class="text-xs {{if .Enabled}}text-amber-300{{else}}text-emerald-300{{end}} underline">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
                 </form>
+                {{if and .TOTPEnabled (ne $.Session.UserID .ID)}}
+                <form method="post" action="/settings/users/{{.ID}}/2fa/reset" class="inline" onsubmit="return confirm('Clear 2FA for {{.Username}}? They can sign in with password and re-enroll.')">
+                  <button class="text-xs text-amber-300 underline">Reset 2FA</button>
+                </form>
+                {{end}}
               </td>
             </tr>
             {{end}}

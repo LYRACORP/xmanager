@@ -51,6 +51,9 @@ type handler struct {
 	dumpMgr      *reqdump.Manager
 	secStack     *securityStack
 	access       *accessGate
+	pending2FA   *pending2FAStore
+	totpEnroll   *totpEnrollStore
+	totpReveal   *totpRevealStore
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -281,6 +284,12 @@ type pageData struct {
 	// Host date / time
 	HostTime  hosttime.Status
 	Timezones []string
+	// TOTP 2FA
+	TOTPEnabled      bool
+	TOTPQR           template.URL
+	TOTPManual       string
+	TOTPRecovery     []string
+	TOTPRecoveryLeft int
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -288,6 +297,8 @@ func (h *handler) register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /login", h.getLogin)
 	mux.HandleFunc("POST /login", h.postLogin)
+	mux.HandleFunc("GET /login/2fa", h.getLogin2FA)
+	mux.HandleFunc("POST /login/2fa", h.postLogin2FA)
 	mux.HandleFunc("POST /logout", h.requireAuth(h.postLogout))
 
 	mux.HandleFunc("GET /setup", h.getSetup)
@@ -313,6 +324,10 @@ func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/password", h.requireAuth(h.postSettingsPassword))
 	mux.HandleFunc("POST /settings/access-key", h.requireAdminAuth(h.postSettingsAccessKey))
 	mux.HandleFunc("POST /settings/logs", h.requireAuth(h.postSettingsLogs))
+	mux.HandleFunc("POST /settings/2fa/start", h.requireAuth(h.postSettings2FAStart))
+	mux.HandleFunc("POST /settings/2fa/confirm", h.requireAuth(h.postSettings2FAConfirm))
+	mux.HandleFunc("POST /settings/2fa/disable", h.requireAuth(h.postSettings2FADisable))
+	mux.HandleFunc("POST /settings/2fa/recovery", h.requireAuth(h.postSettings2FARecovery))
 
 	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
 }
@@ -354,6 +369,14 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 			Detail:   "invalid credentials",
 		})
 		h.render(w, "login", pageData{Title: "Login", NodeMode: h.nodeMode, Flash: "Invalid username or password."})
+		return
+	}
+
+	if u.TOTPEnabled {
+		h.ensureTOTPStores()
+		tok := h.pending2FA.put(pending2FA{UserID: u.ID, Username: u.Username, Role: u.Role})
+		setPending2FACookie(w, tok)
+		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
 	}
 
@@ -751,6 +774,21 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
+	}
+	if sess != nil && h.opts.DB != nil {
+		h.ensureTOTPStores()
+		var u storage.User
+		if err := h.opts.DB.First(&u, sess.UserID).Error; err == nil {
+			data.TOTPEnabled = u.TOTPEnabled
+			data.TOTPRecoveryLeft = auth.RecoveryRemaining(u.TOTPRecovery)
+		}
+		if en, ok := h.totpEnroll.get(sess.UserID); ok {
+			data.TOTPQR = template.URL(en.QR)
+			data.TOTPManual = en.Secret
+		}
+		if codes := h.totpReveal.take(sess.UserID); len(codes) > 0 {
+			data.TOTPRecovery = codes
+		}
 	}
 	if h.nodeMode {
 		if data.IsAdmin {

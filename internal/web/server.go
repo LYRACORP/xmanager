@@ -82,6 +82,9 @@ func Run(opts Options) error {
 		nodeMode:     opts.Config.Web.IsNode(),
 		oauthStates:  newOAuthStateStore(),
 		deviceStates: newDeviceStateStore(),
+		pending2FA:   newPending2FAStore(),
+		totpEnroll:   newTOTPEnrollStore(),
+		totpReveal:   newTOTPRevealStore(),
 	}
 
 	if h.nodeMode {

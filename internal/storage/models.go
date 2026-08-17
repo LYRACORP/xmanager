@@ -224,6 +224,9 @@ type User struct {
 	PasswordHash string `gorm:"not null" json:"-"`
 	Role         string `gorm:"default:admin" json:"role"` // admin | user (legacy operator/viewer treated as user)
 	Enabled      bool   `gorm:"default:true" json:"enabled"`
+	TOTPSecret   string `json:"-"`
+	TOTPEnabled  bool   `gorm:"default:false" json:"totp_enabled"`
+	TOTPRecovery string `json:"-"`
 }
 
 type Project struct {
