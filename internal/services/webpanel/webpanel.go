@@ -52,6 +52,49 @@ func (w *WebPanel) SetPool(p *ssh.Pool) { w.pool = p }
 // SetProgress registers a callback for step-by-step install/upgrade progress.
 func (w *WebPanel) SetProgress(fn ProgressFunc) { w.onProgress = fn }
 
+func (w *WebPanel) needsSudo() bool {
+	u := strings.TrimSpace(w.sshCfg.User)
+	return u != "" && u != "root"
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// sudoPrefix returns a pipe/sudo prefix for privileged commands (non-root only).
+func (w *WebPanel) sudoPrefix() string {
+	if pass := w.sshCfg.Password; pass != "" {
+		return fmt.Sprintf("printf '%%s\\n' %s | sudo -S -p ''", shellQuote(pass))
+	}
+	return "sudo -n"
+}
+
+// priv wraps cmd so it runs as root when the SSH user is not root.
+func (w *WebPanel) priv(cmd string) string {
+	if !w.needsSudo() {
+		return cmd
+	}
+	return w.sudoPrefix() + " bash -c " + shellQuote(cmd)
+}
+
+// ensurePriv fails early when non-root install cannot elevate.
+func (w *WebPanel) ensurePriv() error {
+	if !w.needsSudo() {
+		return nil
+	}
+	if strings.TrimSpace(w.sshCfg.Password) != "" {
+		// Probe sudo -S with the stored password.
+		if err := w.run(w.priv("true")); err != nil {
+			return fmt.Errorf("sudo failed for user %q — check the Password on the server entry (same as sudo -i): %w", w.sshCfg.User, err)
+		}
+		return nil
+	}
+	if err := w.run("sudo -n true"); err != nil {
+		return fmt.Errorf("user %q cannot sudo without a password — store the Ubuntu password on the server entry in the TUI, or configure NOPASSWD sudo", w.sshCfg.User)
+	}
+	return nil
+}
+
 func (w *WebPanel) report(pct float64, detail string) {
 	if w.onProgress == nil {
 		return
@@ -184,8 +227,13 @@ func (w *WebPanel) detectRemoteArch() string {
 }
 
 func (w *WebPanel) enableBinary(port string, force bool) error {
+	w.report(0.03, "Checking remote privileges…")
+	if err := w.ensurePriv(); err != nil {
+		return err
+	}
+
 	w.report(0.05, "Creating install directories…")
-	if err := w.run("mkdir -p " + installDir + " /root/.config/xmanager"); err != nil {
+	if err := w.run(w.priv("mkdir -p " + installDir + " /root/.config/xmanager")); err != nil {
 		return fmt.Errorf("creating dirs: %w", err)
 	}
 
@@ -215,8 +263,13 @@ poller:
 `, port)
 
 	w.report(0.60, "Writing node web panel config…")
-	cmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", configPath, configYAML)
-	if err := w.run(cmd); err != nil {
+	tmpCfg := fmt.Sprintf("/tmp/xm-web-config.%d.yaml", time.Now().UnixNano())
+	writeTmp := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", tmpCfg, configYAML)
+	if err := w.run(writeTmp); err != nil {
+		return fmt.Errorf("writing config staging: %w", err)
+	}
+	if err := w.run(w.priv(fmt.Sprintf("mkdir -p /root/.config/xmanager && mv -f %s %s && chmod 600 %s", tmpCfg, configPath, configPath))); err != nil {
+		_, _ = w.exec.Run("rm -f " + tmpCfg)
 		return fmt.Errorf("writing config: %w", err)
 	}
 
@@ -238,8 +291,13 @@ WantedBy=multi-user.target
 `, binPath)
 
 	w.report(0.68, "Installing systemd unit…")
-	unitCmd := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", unitPath, unit)
-	if err := w.run(unitCmd); err != nil {
+	tmpUnit := fmt.Sprintf("/tmp/xm-web.%d.service", time.Now().UnixNano())
+	unitStage := fmt.Sprintf("cat > %s << 'XEOF'\n%sXEOF", tmpUnit, unit)
+	if err := w.run(unitStage); err != nil {
+		return fmt.Errorf("writing systemd unit staging: %w", err)
+	}
+	if err := w.run(w.priv(fmt.Sprintf("mv -f %s %s && chmod 644 %s", tmpUnit, unitPath, unitPath))); err != nil {
+		_, _ = w.exec.Run("rm -f " + tmpUnit)
 		return fmt.Errorf("writing systemd unit: %w", err)
 	}
 
@@ -250,13 +308,13 @@ WantedBy=multi-user.target
 	}
 	// Wait for the process to stay up (crash-loop Restart=on-failure can briefly look active).
 	w.report(0.78, "Starting xmanager-web service…")
-	start := `systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && sleep 2 && systemctl is-active xmanager-web`
+	start := w.priv(`systemctl daemon-reload && systemctl enable xmanager-web && systemctl restart xmanager-web && sleep 2 && systemctl is-active xmanager-web`)
 	if err := w.run(start); err != nil {
 		// Last resort: system OpenSSH (independent of the Go pool).
 		if err2 := w.runSystemSSH(start); err2 != nil {
 			logs := ""
 			if w.exec != nil {
-				logs = w.exec.RunQuiet("journalctl -u xmanager-web -n 40 --no-pager 2>/dev/null || true")
+				logs = w.exec.RunQuiet(w.priv("journalctl -u xmanager-web -n 40 --no-pager 2>/dev/null || true"))
 			}
 			return fmt.Errorf("starting xmanager-web: %v (ssh fallback: %w)\n%s", err, err2, logs)
 		}
@@ -264,7 +322,8 @@ WantedBy=multi-user.target
 	// Confirm listener actually binds (is-active alone is not enough after a panic).
 	_ = w.reconnect()
 	w.report(0.88, fmt.Sprintf("Verifying listener on :%s…", port))
-	listenCheck := fmt.Sprintf(`for i in 1 2 3 4 5; do ss -ltn 2>/dev/null | grep -q ':%s ' && exit 0; sleep 1; done; journalctl -u xmanager-web -n 40 --no-pager; exit 1`, port)
+	listenCheck := fmt.Sprintf(`for i in 1 2 3 4 5; do ss -ltn 2>/dev/null | grep -q ':%s ' && exit 0; sleep 1; done; %s; exit 1`,
+		port, w.priv("journalctl -u xmanager-web -n 40 --no-pager"))
 	if err := w.run(listenCheck); err != nil {
 		if err2 := w.runSystemSSH(listenCheck); err2 != nil {
 			return fmt.Errorf("xmanager-web not listening on :%s: %v (ssh fallback: %w)", port, err, err2)
@@ -665,10 +724,8 @@ func (w *WebPanel) uploadViaSFTP(localPath string) error {
 	}
 	defer sftp.Close()
 
-	if err := sftp.MkdirAll(installDir); err != nil {
-		return err
-	}
-	tmp := fmt.Sprintf("%s/xmanager.%d", installDir, time.Now().UnixNano())
+	// Non-root users cannot write /opt or /usr/local — stage in /tmp then sudo install.
+	tmp := fmt.Sprintf("/tmp/xmanager.%d", time.Now().UnixNano())
 	total := int64(len(data))
 	w.report(0.40, fmt.Sprintf("Uploading binary to remote… 0/%s", formatByteSize(total)))
 	lastPct := -1
@@ -690,7 +747,15 @@ func (w *WebPanel) uploadViaSFTP(localPath string) error {
 	if err != nil {
 		return fmt.Errorf("writing: %w", err)
 	}
-	return w.run(fmt.Sprintf("mv -f %s %s && chmod +x %s && ln -sfn %s /usr/local/bin/vpsm", tmp, binPath, binPath, binPath))
+	installCmd := fmt.Sprintf(
+		"install -m 755 %s %s && ln -sfn %s /usr/local/bin/vpsm && mkdir -p %s /root/.config/xmanager && rm -f %s",
+		tmp, binPath, binPath, installDir, tmp,
+	)
+	if err := w.run(w.priv(installCmd)); err != nil {
+		_, _ = w.exec.Run("rm -f " + tmp)
+		return err
+	}
+	return nil
 }
 
 func formatByteSize(n int64) string {
@@ -712,7 +777,8 @@ func (w *WebPanel) uploadViaSCP(localPath string) error {
 		port = 22
 	}
 	keyPath := expandHome(w.sshCfg.KeyPath)
-	target := fmt.Sprintf("%s@%s:%s", w.sshCfg.User, w.sshCfg.Host, binPath)
+	tmp := fmt.Sprintf("/tmp/xmanager.%d", time.Now().UnixNano())
+	target := fmt.Sprintf("%s@%s:%s", w.sshCfg.User, w.sshCfg.Host, tmp)
 
 	args := []string{
 		"-P", strconv.Itoa(port),
@@ -739,10 +805,11 @@ func (w *WebPanel) uploadViaSCP(localPath string) error {
 		return fmt.Errorf("%w (%s)", err, strings.TrimSpace(string(out)))
 	}
 
-	return w.runSystemSSH(fmt.Sprintf(
-		"chmod +x %s && ln -sfn %s /usr/local/bin/vpsm && mkdir -p %s /root/.config/xmanager",
-		binPath, binPath, installDir,
-	))
+	installCmd := fmt.Sprintf(
+		"install -m 755 %s %s && ln -sfn %s /usr/local/bin/vpsm && mkdir -p %s /root/.config/xmanager && rm -f %s",
+		tmp, binPath, binPath, installDir, tmp,
+	)
+	return w.runSystemSSH(w.priv(installCmd))
 }
 
 func expandHome(path string) string {
@@ -759,9 +826,9 @@ func expandHome(path string) string {
 func (w *WebPanel) Disable(exec *ssh.Executor) error {
 	w.exec = exec
 	w.report(0.20, "Stopping xmanager-web…")
-	_ = w.run("systemctl disable --now xmanager-web 2>/dev/null || true")
+	_ = w.run(w.priv("systemctl disable --now xmanager-web 2>/dev/null || true"))
 	w.report(0.50, "Removing systemd unit…")
-	_ = w.run("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true")
+	_ = w.run(w.priv("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true"))
 	if exec != nil {
 		w.report(0.75, "Cleaning leftover containers…")
 		_ = w.ComposeDown(exec, installDir)
