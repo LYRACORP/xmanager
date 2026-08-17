@@ -109,19 +109,25 @@ func Run(opts Options) error {
 	mux := http.NewServeMux()
 	h.register(mux)
 
-	handler := http.Handler(mux)
-	if h.secStack != nil {
-		handler = h.secStack.wrap(mux)
-	} else if h.dumpMgr != nil {
-		handler = h.dumpMgr.Middleware(mux)
+	key, err := config.EnsureAccessKey(opts.Config)
+	if err != nil {
+		return fmt.Errorf("panel access key: %w", err)
 	}
 
-	fmt.Printf("XManager web listening on http://%s (role=%s)\n", addr, opts.Config.Web.Role)
+	inner := http.Handler(mux)
+	if h.secStack != nil {
+		inner = h.secStack.wrap(mux)
+	} else if h.dumpMgr != nil {
+		inner = h.dumpMgr.Middleware(mux)
+	}
+	h.access = newAccessGate(key, inner)
+
+	fmt.Printf("XManager web listening on http://%s/%s/ (role=%s)\n", addr, key, opts.Config.Web.Role)
 	// No WriteTimeout/ReadTimeout: WebSocket terminals are long-lived hijacked
 	// connections; header timeout still bounds slowloris on new requests.
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           h.access,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

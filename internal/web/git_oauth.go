@@ -172,23 +172,32 @@ func gitProviderLabels() []struct{ ID, Label string } {
 }
 
 func (h *handler) publicPanelURL(r *http.Request) string {
+	base := ""
 	if h.opts.Config != nil {
 		if u := strings.TrimRight(strings.TrimSpace(h.opts.Config.Web.PublicURL), "/"); u != "" {
-			return u
+			base = u
 		}
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+	if base == "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		}
+		host := r.Host
+		if host == "" {
+			host = "127.0.0.1:8080"
+		}
+		base = scheme + "://" + host
 	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
+	if h.access != nil {
+		if key := h.access.getKey(); key != "" {
+			return strings.TrimRight(base, "/") + "/" + key
+		}
 	}
-	host := r.Host
-	if host == "" {
-		host = "127.0.0.1:8080"
-	}
-	return scheme + "://" + host
+	return base
 }
 
 func (h *handler) oauthRedirectURI(r *http.Request, provider string) string {
@@ -860,7 +869,7 @@ func (h *handler) getAPIGitRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := pageData{
-		GitRepos:     repos,
+		GitRepos:      repos,
 		GitProvider:   provider,
 		TemplateQuery: q,
 		NodeMode:      true,

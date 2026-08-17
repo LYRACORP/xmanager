@@ -36,6 +36,27 @@
     {{if .IsAdmin}}
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Panel URL</h2>
+        <p class="text-xs text-panel-muted mt-1">The panel is only reachable at this secret path. Root URLs return 404. Changing it invalidates the old bookmark immediately.</p>
+      </div>
+      {{if .PanelURL}}
+      <p class="text-sm font-mono text-emerald-300 break-all">{{.PanelURL}}</p>
+      {{end}}
+      <form method="post" action="/settings/access-key" class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Access key</label>
+          <input name="access_key" value="{{.AccessKey}}" pattern="[a-zA-Z0-9]{8,64}" maxlength="64"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono"
+            placeholder="8–64 letters or digits">
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save</button>
+          <button name="generate" value="1" class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg">Generate new</button>
+        </div>
+      </form>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Users</h2>
         <p class="text-xs text-panel-muted mt-1">Create panel accounts · admins see everything · users see only their resources.</p>
       </div>

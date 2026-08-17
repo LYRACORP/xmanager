@@ -49,6 +49,7 @@ type handler struct {
 	chartStop    chan struct{}
 	dumpMgr      *reqdump.Manager
 	secStack     *securityStack
+	access       *accessGate
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -118,74 +119,76 @@ type projectFileCrumb struct {
 
 // pageData is the common template context passed to all pages.
 type pageData struct {
-	Title            string
-	Flash            string
-	Session          *session
-	IsAdmin          bool
-	UserRole         string
-	NodeMode         bool
-	ActiveNav        string
-	ServerID         uint
-	ServerCards      []serverCardData
-	ServerCard       serverCardData
-	Projects         []storage.Project
-	ProjectViews     []projectCardView
-	ProjectTypes     []string
-	AllServers       []storage.Server
-	Monitors         []storage.UptimeMonitor
-	Config           interface{}
-	Node             nodemetrics.Snapshot
-	NetRx            string
-	NetTx            string
-	UptimeHuman      string
-	Containers       []docker.Container
-	DockerHost       docker.HostSnapshot
-	Swarm            docker.SwarmInfo
-	SwarmNodes       []docker.SwarmNode
-	SwarmServices    []docker.SwarmService
-	SwarmWorkerJoin  string
-	SwarmManagerJoin string
-	ContainerID      string
-	LogText          string
-	CronJobs         []storage.CronJob
-	CronJobViews     []cronJobView
-	CronRuns         []storage.CronRun
-	CronJobID        uint
-	NodeDBs          []nodeDBView
-	DBDetail         nodeDBDetailView
-	DBTools          []nodeDBToolView
-	DBAvailable      map[string]bool
-	DBEngines        []string
-	ProjectDBs       []storage.ProjectDatabase
-	NodeServices     []nodeServiceView
-	ProjectDomains   []storage.ProjectDomain
-	ConnectedDomains []storage.ConnectedDomain
-	Domain           *storage.ConnectedDomain
-	Mailboxes        []storage.Mailbox
-	VHosts           []proxy.VHost
-	AlertChannels    []storage.AlertChannel
-	MailAPIMode      string
-	PowerDNSReady    bool
-	MailAPIReady     bool
-	DNSZones         []powerdns.Zone
-	DNSZone          *powerdns.Zone
-	DNSZoneName      string
-	CFRecords        []cloudflare.Record
-	NodeSettings     *storage.NodeSettings
-	MailDomains      []mailinbox.MailDomain
-	MailDomainList   []string
-	MailAPIConfig    mailinbox.Config // password cleared before render
-	WebmailURL       string
-	MailAdminURL     string
-	WebmailHosts     []webmailHostView
+	Title             string
+	Flash             string
+	Session           *session
+	IsAdmin           bool
+	UserRole          string
+	NodeMode          bool
+	ActiveNav         string
+	ServerID          uint
+	ServerCards       []serverCardData
+	ServerCard        serverCardData
+	Projects          []storage.Project
+	ProjectViews      []projectCardView
+	ProjectTypes      []string
+	AllServers        []storage.Server
+	Monitors          []storage.UptimeMonitor
+	Config            interface{}
+	Node              nodemetrics.Snapshot
+	NetRx             string
+	NetTx             string
+	UptimeHuman       string
+	Containers        []docker.Container
+	DockerHost        docker.HostSnapshot
+	Swarm             docker.SwarmInfo
+	SwarmNodes        []docker.SwarmNode
+	SwarmServices     []docker.SwarmService
+	SwarmWorkerJoin   string
+	SwarmManagerJoin  string
+	ContainerID       string
+	LogText           string
+	CronJobs          []storage.CronJob
+	CronJobViews      []cronJobView
+	CronRuns          []storage.CronRun
+	CronJobID         uint
+	NodeDBs           []nodeDBView
+	DBDetail          nodeDBDetailView
+	DBTools           []nodeDBToolView
+	DBAvailable       map[string]bool
+	DBEngines         []string
+	ProjectDBs        []storage.ProjectDatabase
+	NodeServices      []nodeServiceView
+	ProjectDomains    []storage.ProjectDomain
+	ConnectedDomains  []storage.ConnectedDomain
+	Domain            *storage.ConnectedDomain
+	Mailboxes         []storage.Mailbox
+	VHosts            []proxy.VHost
+	AlertChannels     []storage.AlertChannel
+	MailAPIMode       string
+	PowerDNSReady     bool
+	MailAPIReady      bool
+	DNSZones          []powerdns.Zone
+	DNSZone           *powerdns.Zone
+	DNSZoneName       string
+	CFRecords         []cloudflare.Record
+	NodeSettings      *storage.NodeSettings
+	MailDomains       []mailinbox.MailDomain
+	MailDomainList    []string
+	MailAPIConfig     mailinbox.Config // password cleared before render
+	WebmailURL        string
+	MailAdminURL      string
+	WebmailHosts      []webmailHostView
 	ServerWebmailHost string
 	ServerWebmailURL  string
-	SystemServices   []systemServiceView
-	SystemSvcFilter  string
-	FTPEnabled       bool
-	FTPUsers         []storage.FTPUser
-	FTPUser          *storage.FTPUser
-	PanelUsers       []storage.User
+	SystemServices    []systemServiceView
+	SystemSvcFilter   string
+	FTPEnabled        bool
+	FTPUsers          []storage.FTPUser
+	FTPUser           *storage.FTPUser
+	PanelUsers        []storage.User
+	AccessKey         string
+	PanelURL          string
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int
@@ -303,6 +306,8 @@ func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /uptime", h.requireAuth(h.postUptime))
 
 	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+	mux.HandleFunc("POST /settings/password", h.requireAuth(h.postSettingsPassword))
+	mux.HandleFunc("POST /settings/access-key", h.requireAdminAuth(h.postSettingsAccessKey))
 	mux.HandleFunc("POST /settings/logs", h.requireAuth(h.postSettingsLogs))
 
 	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
@@ -733,6 +738,12 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		Config:    h.opts.Config,
 	}
 	fillPageACL(&data, sess)
+	if data.IsAdmin {
+		data.AccessKey = h.currentAccessKey()
+		if data.AccessKey != "" {
+			data.PanelURL = strings.TrimRight(h.publicPanelURL(r), "/") + "/"
+		}
+	}
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}

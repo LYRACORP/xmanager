@@ -69,6 +69,7 @@ type WebConfig struct {
 	Port      int    `mapstructure:"port"`
 	Role      string `mapstructure:"role"`       // control (default) | node
 	PublicURL string `mapstructure:"public_url"` // https://panel.example.com — OAuth redirect base
+	AccessKey string `mapstructure:"access_key"` // secret URL prefix; panel lives at /<access_key>/
 }
 
 const (
@@ -178,6 +179,7 @@ func Save(cfg *Config) error {
 	viper.Set("web.port", cfg.Web.Port)
 	viper.Set("web.role", cfg.Web.Role)
 	viper.Set("web.public_url", cfg.Web.PublicURL)
+	viper.Set("web.access_key", cfg.Web.AccessKey)
 	viper.Set("poller.interval_sec", cfg.Poller.IntervalSec)
 	viper.Set("poller.metric_retention", cfg.Poller.MetricRetention)
 	viper.Set("poller.uptime_interval_sec", cfg.Poller.UptimeIntervalSec)

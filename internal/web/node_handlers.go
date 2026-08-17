@@ -230,6 +230,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /settings", authz(h.getSettings))
 	mux.HandleFunc("POST /settings/password", authz(h.postSettingsPassword))
+	mux.HandleFunc("POST /settings/access-key", adminz(h.postSettingsAccessKey))
 	mux.HandleFunc("POST /settings/users", adminz(h.postSettingsUsers))
 	mux.HandleFunc("POST /settings/users/{id}/password", adminz(h.postSettingsUserPassword))
 	mux.HandleFunc("POST /settings/users/{id}/toggle", adminz(h.postSettingsUserToggle))

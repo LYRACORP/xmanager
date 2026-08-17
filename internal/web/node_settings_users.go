@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/storage"
 )
 
@@ -112,4 +113,44 @@ func (h *handler) loadPanelUsers() []storage.User {
 	var users []storage.User
 	h.opts.DB.Order("username asc").Find(&users)
 	return users
+}
+
+func (h *handler) currentAccessKey() string {
+	if h.access != nil {
+		return h.access.getKey()
+	}
+	if h.opts.Config != nil {
+		return h.opts.Config.Web.AccessKey
+	}
+	return ""
+}
+
+func (h *handler) postSettingsAccessKey(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	if h.opts.Config == nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("config not loaded"), http.StatusSeeOther)
+		return
+	}
+	var (
+		key string
+		err error
+	)
+	if r.FormValue("generate") == "1" || strings.TrimSpace(r.FormValue("access_key")) == "" {
+		key, err = config.GenerateAccessKey()
+	} else {
+		key, err = config.NormalizeAccessKey(r.FormValue("access_key"))
+	}
+	if err != nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	h.opts.Config.Web.AccessKey = key
+	if err := config.Save(h.opts.Config); err != nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Save failed: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	if h.access != nil {
+		h.access.setKey(key)
+	}
+	http.Redirect(w, r, "/settings?flash="+urlQueryEscape("Panel URL updated — update your bookmark"), http.StatusSeeOther)
 }
