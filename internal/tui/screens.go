@@ -24,6 +24,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/screens/settings"
 	"github.com/lyracorp/xmanager/internal/tui/screens/uptime"
 	"github.com/lyracorp/xmanager/internal/tui/screens/wizard"
+	"github.com/lyracorp/xmanager/internal/tui/screens/workflows"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 )
 
@@ -50,3 +51,4 @@ func NewPackagesScreen(ctx *shared.AppContext) shared.Screen      { return packa
 func NewFTPScreen(ctx *shared.AppContext) shared.Screen           { return ftpscreen.New(ctx) }
 func NewSecurityScreen(ctx *shared.AppContext) shared.Screen      { return security.New(ctx) }
 func NewDateTimeScreen(ctx *shared.AppContext) shared.Screen      { return datetime.New(ctx) }
+func NewWorkflowsScreen(ctx *shared.AppContext) shared.Screen    { return workflows.New(ctx) }

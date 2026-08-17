@@ -30,7 +30,9 @@ type AIConfig struct {
 	Provider    string `mapstructure:"provider"`
 	Model       string `mapstructure:"model"`
 	APIKey      string `mapstructure:"api_key"`
+	Endpoint    string `mapstructure:"endpoint"`
 	OllamaHost  string `mapstructure:"ollama_host"`
+	WhisperKey  string `mapstructure:"whisper_key"`
 	MaxLogLines int    `mapstructure:"max_log_lines"`
 }
 
@@ -163,7 +165,9 @@ func Save(cfg *Config) error {
 	viper.Set("ai.provider", cfg.AI.Provider)
 	viper.Set("ai.model", cfg.AI.Model)
 	viper.Set("ai.api_key", cfg.AI.APIKey)
+	viper.Set("ai.endpoint", cfg.AI.Endpoint)
 	viper.Set("ai.ollama_host", cfg.AI.OllamaHost)
+	viper.Set("ai.whisper_key", cfg.AI.WhisperKey)
 	viper.Set("ai.max_log_lines", cfg.AI.MaxLogLines)
 	viper.Set("telegram.bot_token", cfg.Telegram.BotToken)
 	viper.Set("telegram.chat_id", cfg.Telegram.ChatID)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lyracorp/xmanager/internal/ai"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
@@ -48,18 +47,22 @@ Only output the JSON. No markdown, no explanation.
 === SERVER RECON DATA ===
 %s`
 
-func Analyze(ctx context.Context, provider ai.Provider, scanResult *ScanResult) (string, error) {
-	prompt := fmt.Sprintf(analysisPrompt, scanResult.Raw)
+// Completer generates text from a prompt. Implemented by the AI layer without
+// importing this package's callers in a cycle.
+type Completer func(ctx context.Context, prompt string) (string, error)
 
-	messages := []ai.Message{
-		{Role: ai.RoleUser, Content: prompt},
+func Analyze(ctx context.Context, complete Completer, scanResult *ScanResult) (string, error) {
+	if complete == nil {
+		return "", fmt.Errorf("AI analysis requires a configured provider")
 	}
-
-	result, err := provider.Chat(ctx, messages, ai.WithTemperature(0.1), ai.WithMaxTokens(4096))
+	if scanResult == nil {
+		return "", fmt.Errorf("no scan result")
+	}
+	prompt := fmt.Sprintf(analysisPrompt, scanResult.Raw)
+	result, err := complete(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("AI analysis: %w", err)
 	}
-
 	return result, nil
 }
 

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/lyracorp/xmanager/internal/ops"
 )
 
 type Anthropic struct {
@@ -37,21 +39,32 @@ func NewAnthropic(cfg ProviderConfig) *Anthropic {
 func (a *Anthropic) Name() string { return "anthropic" }
 
 type anthropicRequest struct {
-	Model       string          `json:"model"`
-	MaxTokens   int             `json:"max_tokens"`
-	Messages    []anthropicMsg  `json:"messages"`
-	System      string          `json:"system,omitempty"`
-	Stream      bool            `json:"stream,omitempty"`
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	Messages  []anthropicMsg     `json:"messages"`
+	System    string             `json:"system,omitempty"`
+	Stream    bool               `json:"stream,omitempty"`
+	Tools     []anthropicToolDef `json:"tools,omitempty"`
+}
+
+type anthropicToolDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema any    `json:"input_schema"`
 }
 
 type anthropicMsg struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
 type anthropicResponse struct {
 	Content []struct {
-		Text string `json:"text"`
+		Type  string          `json:"type"`
+		Text  string          `json:"text"`
+		ID    string          `json:"id"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
 	} `json:"content"`
 	Error *struct {
 		Message string `json:"message"`
@@ -64,15 +77,7 @@ func (a *Anthropic) Chat(ctx context.Context, messages []Message, opts ...Option
 		a.model = options.Model
 	}
 
-	system := ""
-	var msgs []anthropicMsg
-	for _, m := range messages {
-		if m.Role == RoleSystem {
-			system = m.Content
-			continue
-		}
-		msgs = append(msgs, anthropicMsg{Role: string(m.Role), Content: m.Content})
-	}
+	system, msgs := splitAnthropic(messages)
 
 	body, _ := json.Marshal(anthropicRequest{
 		Model:     a.model,
@@ -119,15 +124,7 @@ func (a *Anthropic) ChatStream(ctx context.Context, messages []Message, out chan
 		a.model = options.Model
 	}
 
-	system := ""
-	var msgs []anthropicMsg
-	for _, m := range messages {
-		if m.Role == RoleSystem {
-			system = m.Content
-			continue
-		}
-		msgs = append(msgs, anthropicMsg{Role: string(m.Role), Content: m.Content})
-	}
+	system, msgs := splitAnthropic(messages)
 
 	body, _ := json.Marshal(anthropicRequest{
 		Model:     a.model,
@@ -191,4 +188,88 @@ func (a *Anthropic) ListModels(_ context.Context) ([]string, error) {
 		"claude-opus-4-20250514",
 		"claude-3-5-haiku-20241022",
 	}, nil
+}
+
+func splitAnthropic(messages []Message) (string, []anthropicMsg) {
+	system := ""
+	var msgs []anthropicMsg
+	for _, m := range messages {
+		switch m.Role {
+		case RoleSystem:
+			system = m.Content
+		case RoleTool:
+			msgs = append(msgs, anthropicMsg{Role: "user", Content: []map[string]any{{
+				"type":        "tool_result",
+				"tool_use_id": m.ToolCallID,
+				"content":     m.Content,
+			}}})
+		case RoleAssistant:
+			if len(m.ToolCalls) == 0 {
+				msgs = append(msgs, anthropicMsg{Role: "assistant", Content: m.Content})
+				continue
+			}
+			var blocks []map[string]any
+			if m.Content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				var input any
+				_ = json.Unmarshal([]byte(tc.Args), &input)
+				blocks = append(blocks, map[string]any{"type": "tool_use", "id": tc.ID, "name": tc.Name, "input": input})
+			}
+			msgs = append(msgs, anthropicMsg{Role: "assistant", Content: blocks})
+		default:
+			msgs = append(msgs, anthropicMsg{Role: string(m.Role), Content: m.Content})
+		}
+	}
+	return system, msgs
+}
+
+func (a *Anthropic) ChatWithTools(ctx context.Context, messages []Message, tools []ops.ToolSpec, opts ...Option) (ChatTurn, error) {
+	options := defaultOptions(opts)
+	model := a.model
+	if options.Model != "" {
+		model = options.Model
+	}
+	system, msgs := splitAnthropic(messages)
+	var defs []anthropicToolDef
+	for _, t := range tools {
+		defs = append(defs, anthropicToolDef{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
+	}
+	body, _ := json.Marshal(anthropicRequest{
+		Model:     model,
+		MaxTokens: options.MaxTokens,
+		Messages:  msgs,
+		System:    system,
+		Tools:     defs,
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", a.endpoint+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return ChatTurn{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", a.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return ChatTurn{}, fmt.Errorf("Anthropic API request: %w", err)
+	}
+	defer resp.Body.Close()
+	var result anthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ChatTurn{}, fmt.Errorf("decoding response: %w", err)
+	}
+	if result.Error != nil {
+		return ChatTurn{}, fmt.Errorf("Anthropic API error: %s", result.Error.Message)
+	}
+	var turn ChatTurn
+	for _, b := range result.Content {
+		switch b.Type {
+		case "text":
+			turn.Content += b.Text
+		case "tool_use":
+			turn.ToolCalls = append(turn.ToolCalls, ToolCall{ID: b.ID, Name: b.Name, Args: string(b.Input)})
+		}
+	}
+	return turn, nil
 }

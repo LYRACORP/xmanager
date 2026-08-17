@@ -21,6 +21,7 @@ const (
 	fieldAIProvider fieldIdx = iota
 	fieldAIModel
 	fieldAIKey
+	fieldAIEndpoint
 	fieldOllama
 	fieldMaxLogLines
 	fieldLogRetention
@@ -61,7 +62,7 @@ func New(ctx *shared.AppContext) *Model {
 
 func (m *Model) initForm() {
 	labels := [fieldCount]string{
-		"AI provider", "AI model", "API key", "Ollama host", "Max log lines",
+		"AI provider", "AI model", "API key", "API endpoint (optional)", "Ollama host", "Max log lines",
 		"Log retention (days)",
 		"Telegram bot token", "Telegram chat ID", "Telegram enabled (space)",
 		"UI theme (dark/light)", "UI refresh rate (s)",
@@ -86,6 +87,7 @@ func (m *Model) loadFromConfig() {
 	m.form[fieldAIProvider].SetValue(c.AI.Provider)
 	m.form[fieldAIModel].SetValue(c.AI.Model)
 	m.form[fieldAIKey].SetValue(c.AI.APIKey)
+	m.form[fieldAIEndpoint].SetValue(c.AI.Endpoint)
 	m.form[fieldOllama].SetValue(c.AI.OllamaHost)
 	m.form[fieldMaxLogLines].SetValue(strconv.Itoa(c.AI.MaxLogLines))
 	m.form[fieldLogRetention].SetValue(strconv.Itoa(c.Log.RetentionDays))
@@ -226,6 +228,7 @@ func (m *Model) applyFormToConfig() error {
 	cfg.AI.Provider = strings.TrimSpace(m.form[fieldAIProvider].Value())
 	cfg.AI.Model = strings.TrimSpace(m.form[fieldAIModel].Value())
 	cfg.AI.APIKey = m.form[fieldAIKey].Value()
+	cfg.AI.Endpoint = strings.TrimSpace(m.form[fieldAIEndpoint].Value())
 	cfg.AI.OllamaHost = strings.TrimSpace(m.form[fieldOllama].Value())
 	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldMaxLogLines].Value())); err == nil {
 		cfg.AI.MaxLogLines = n

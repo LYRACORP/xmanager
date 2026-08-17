@@ -1,0 +1,27 @@
+{{define "ai"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-3xl">
+  <div class="mb-6">
+    <h1>Assistant</h1>
+    <p class="text-gray-500 text-sm mt-0.5">{{.AIProvider}} / {{.AIModel}} — tools run over SSH. Destructive actions ask you to type yes.</p>
+  </div>
+  {{if not .NodeMode}}
+  <div class="mb-3">
+    <label class="block text-xs text-gray-500 mb-1">Server scope</label>
+    <select id="ai-server" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <option value="0">All servers</option>
+      {{range .AllServers}}<option value="{{.ID}}">{{.Name}} ({{.Host}})</option>{{end}}
+    </select>
+  </div>
+  {{end}}
+  <div id="ai-log" class="xm-card p-4 min-h-[16rem] max-h-[28rem] overflow-y-auto space-y-3 text-sm font-mono"></div>
+  <form id="ai-form" class="mt-4 flex gap-2 items-end">
+    <textarea id="ai-input" rows="2" class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" placeholder="Ask XManager to inspect or change a server…"></textarea>
+    <button type="button" id="ai-mic" class="xm-btn">Mic</button>
+    <button class="xm-btn xm-btn-primary">Send</button>
+  </form>
+</div>
+<script src="/static/chat.js"></script>
+{{template "foot" .}}
+{{end}}

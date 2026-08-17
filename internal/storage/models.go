@@ -207,9 +207,10 @@ type TrafficHit struct {
 
 type AIConfigRecord struct {
 	gorm.Model
+	Name            string `gorm:"index;size:64" json:"name"`
 	Provider        string `json:"provider"`
 	LLMModel        string `json:"model"`
-	APIKeyEncrypted string `json:"api_key_encrypted"`
+	APIKeyEncrypted string `json:"-"`
 	Endpoint        string `json:"endpoint"`
 	IsDefault       bool   `gorm:"default:false" json:"is_default"`
 }
@@ -453,4 +454,28 @@ type StorageBucket struct {
 	Server   Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	UserID   uint   `gorm:"index;not null" json:"user_id"`
 	Name     string `gorm:"uniqueIndex:uidx_storage_bucket;not null" json:"name"`
+}
+
+// Workflow is a saved ops DAG (native canvas, not n8n).
+type Workflow struct {
+	gorm.Model
+	Name           string `gorm:"not null" json:"name"`
+	GraphJSON      string `gorm:"type:text" json:"graph_json"`
+	Enabled        bool   `gorm:"default:false" json:"enabled"`
+	Trigger        string `json:"trigger"` // manual, cron, webhook, alert, chat
+	CronExpr       string `json:"cron_expr"`
+	ChatPhrase     string `json:"chat_phrase"`
+	HasDestructive bool   `json:"has_destructive"`
+}
+
+// WorkflowRun is one execution of a workflow.
+type WorkflowRun struct {
+	gorm.Model
+	WorkflowID uint       `gorm:"index;not null" json:"workflow_id"`
+	Workflow   Workflow   `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Status     string     `json:"status"` // running, ok, error
+	LogJSON    string     `gorm:"type:text" json:"log_json"`
+	Trigger    string     `json:"trigger"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
 }

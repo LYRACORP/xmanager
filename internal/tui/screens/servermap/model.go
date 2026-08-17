@@ -1,6 +1,7 @@
 package servermap
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -43,8 +45,9 @@ func New(ctx *shared.AppContext) *Model {
 	return &Model{ctx: ctx}
 }
 
-func (m *Model) Name() string     { return "Server Map" }
-func (m *Model) SetSize(w, h int) { m.width, m.height = w, h; m.rebuildTable() }
+func (m *Model) Name() string                        { return "Server Map" }
+func (m *Model) SetSize(w, h int)                    { m.width, m.height = w, h; m.rebuildTable() }
+func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
 	return []components.KeyBinding{
@@ -53,10 +56,22 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 		{Key: "l", Desc: "logs"},
 		{Key: "d", Desc: "dashboard"},
 		{Key: "r", Desc: "reload"},
+		{Key: "a", Desc: "analyze (AI)"},
 	}
 }
 
-func (m *Model) OnNavigate(_ map[string]interface{}) {}
+func (m *Model) runAnalyze() tea.Msg {
+	if m.ctx == nil || m.ctx.Catalog == nil || m.ctx.ServerID == 0 {
+		return profileLoadedMsg{parseErr: fmt.Errorf("connect a server and configure AI to analyze")}
+	}
+	_, err := m.ctx.Catalog.Call(context.Background(), "analyze_server", map[string]any{
+		"server_id": float64(m.ctx.ServerID),
+	}, ops.CallOptions{})
+	if err != nil {
+		return profileLoadedMsg{parseErr: err}
+	}
+	return m.loadProfile()
+}
 
 func (m *Model) Init() tea.Cmd {
 	return m.loadProfile
@@ -138,6 +153,8 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return func() tea.Msg { return shared.GoBackMsg{} }, true
 	case "r":
 		return m.loadProfile, true
+	case "a":
+		return m.runAnalyze, true
 	case "enter":
 		if m.ctx.ServerID == 0 {
 			return nil, true
@@ -189,7 +206,7 @@ func (m *Model) View() string {
 
 	if m.profile == nil && m.parseErr == "" && len(m.services) == 0 {
 		body := theme.MutedText().Render(
-			"  No server profile in database.\n  Run a scan or AI discovery for this host,\n  then open Server Map again.",
+			"  No server profile in database.\n  Press a to run AI recon for this host,\n  or ask chat to analyze_server.",
 		)
 		return lipgloss.JoinVertical(lipgloss.Left,
 			components.ScreenFrame{

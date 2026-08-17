@@ -1,0 +1,67 @@
+{{define "workflow_edit"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page">
+  {{if .Workflow}}
+  <form method="post" action="/workflows/{{.Workflow.ID}}" id="wf-form">
+    <div class="flex flex-wrap gap-3 items-end mb-4">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Name</label>
+        <input name="name" value="{{.Workflow.Name}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Trigger</label>
+        <select name="trigger" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+          <option value="manual" {{if eq .Workflow.Trigger "manual"}}selected{{end}}>manual</option>
+          <option value="cron" {{if eq .Workflow.Trigger "cron"}}selected{{end}}>cron</option>
+          <option value="webhook" {{if eq .Workflow.Trigger "webhook"}}selected{{end}}>webhook</option>
+          <option value="alert" {{if eq .Workflow.Trigger "alert"}}selected{{end}}>alert</option>
+          <option value="chat" {{if eq .Workflow.Trigger "chat"}}selected{{end}}>chat phrase</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Cron (5 fields)</label>
+        <input name="cron_expr" value="{{.Workflow.CronExpr}}" placeholder="*/15 * * * *" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Chat phrase</label>
+        <input name="chat_phrase" value="{{.Workflow.ChatPhrase}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      </div>
+      <input type="hidden" name="graph" id="wf-graph" value="">
+      <button class="xm-btn xm-btn-primary">Save</button>
+    </div>
+  </form>
+  <div class="flex gap-2 mb-3">
+    <form method="post" action="/workflows/{{.Workflow.ID}}/run"><button class="xm-btn">Run</button></form>
+    <form method="post" action="/workflows/{{.Workflow.ID}}/toggle"><button class="xm-btn">{{if .Workflow.Enabled}}Disable{{else}}Enable{{end}}</button></form>
+    <form method="post" action="/workflows/{{.Workflow.ID}}/delete" onsubmit="return confirm('Delete workflow?')"><button class="xm-btn">Delete</button></form>
+  </div>
+  <div class="flex gap-4">
+    <aside class="w-52 shrink-0 xm-card p-3 max-h-[32rem] overflow-y-auto text-sm">
+      <div class="text-xs text-muted mb-2">Palette · Shift+click two nodes to link</div>
+      <button type="button" class="wf-tool w-full text-left mb-1" data-type="if">if</button>
+      <button type="button" class="wf-tool w-full text-left mb-1" data-type="delay">delay</button>
+      <button type="button" class="wf-tool w-full text-left mb-1" data-type="foreach_server">foreach_server</button>
+      {{$g := ""}}
+      {{range .ToolPalette}}
+      {{if ne .Group $g}}<div class="text-[10px] uppercase tracking-wide text-muted mt-3 mb-1">{{.Group}}</div>{{$g = .Group}}{{end}}
+      <button type="button" class="wf-tool w-full text-left mb-1" data-type="{{.Name}}" title="{{.Description}}">{{.Name}}</button>
+      {{end}}
+    </aside>
+    <div class="flex-1 xm-card p-0 overflow-hidden">
+      <svg id="wf-canvas" viewBox="0 0 900 520" class="w-full h-[32rem] bg-paper-2"></svg>
+    </div>
+  </div>
+  {{if .WorkflowRuns}}
+  <h2 class="text-sm mt-6 mb-2">Recent runs</h2>
+  <ul class="text-xs font-mono space-y-1">
+    {{range .WorkflowRuns}}<li>{{.Status}} · {{.Trigger}} · {{.StartedAt}}</li>{{end}}
+  </ul>
+  {{end}}
+  <script type="application/json" id="wf-data"></script>
+  <textarea id="wf-init" hidden>{{.WorkflowGraph}}</textarea>
+  <script src="/static/workflow.js"></script>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

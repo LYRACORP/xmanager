@@ -33,6 +33,62 @@
       </form>
     </div>
 
+    {{if .IsAdmin}}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">AI</h2>
+        <p class="text-xs text-panel-muted mt-1">openai, anthropic, grok, gemini, deepseek, openrouter, lmstudio, ollama. Whisper uses an OpenAI-compatible audio key.</p>
+      </div>
+      <form method="post" action="/settings/ai" class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Provider</label>
+          <input name="provider" value="{{.AIProvider}}" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Model</label>
+          <input name="model" value="{{.AIModel}}" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-500 mb-1">API key</label>
+          <input name="api_key" type="password" placeholder="leave blank to keep" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Endpoint override</label>
+          <input name="endpoint" value="{{.AIEndpoint}}" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Ollama host</label>
+          <input name="ollama_host" value="{{.AIOllamaHost}}" placeholder="http://localhost:11434" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Whisper key (optional)</label>
+          <input name="whisper_key" type="password" placeholder="defaults to API key" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <button class="xm-btn xm-btn-primary">Save AI settings</button>
+        </div>
+      </form>
+      {{if .AIProfiles}}
+      <form method="post" action="/settings/ai/profile" class="flex gap-2 items-end">
+        <div class="flex-1">
+          <label class="block text-xs text-gray-500 mb-1">Saved profiles</label>
+          <select name="profile_id" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+            {{range .AIProfiles}}<option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}profile {{.ID}}{{end}} ({{.Provider}}/{{.LLMModel}}){{if .IsDefault}} · default{{end}}</option>{{end}}
+          </select>
+        </div>
+        <button class="xm-btn">Use profile</button>
+      </form>
+      {{end}}
+      <form method="post" action="/settings/ai/profile/save" class="flex gap-2 items-end">
+        <div class="flex-1">
+          <label class="block text-xs text-gray-500 mb-1">Save current as named profile</label>
+          <input name="profile_name" placeholder="work / home / lab" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <button class="xm-btn">Save profile</button>
+      </form>
+    </div>
+    {{end}}
+
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Two-factor authentication</h2>

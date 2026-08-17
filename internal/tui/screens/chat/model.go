@@ -12,6 +12,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"gorm.io/gorm"
 
+	"github.com/lyracorp/xmanager/internal/ai"
+	"github.com/lyracorp/xmanager/internal/ops"
+	"github.com/lyracorp/xmanager/internal/recon"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -42,7 +45,12 @@ type sessionSavedMsg struct {
 	err error
 }
 
-// Model is the full-screen AI chat UI (responses simulated until provider wiring exists).
+type replyMsg struct {
+	text string
+	err  error
+}
+
+// Model is the full-screen AI chat UI.
 type Model struct {
 	ctx *shared.AppContext
 
@@ -58,6 +66,8 @@ type Model struct {
 
 	focusInput bool
 	status     string
+	busy       bool
+	agent      *ai.Agent
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -126,15 +136,11 @@ func (m *Model) loadSession() tea.Msg {
 	if m.ctx == nil || m.ctx.DB == nil {
 		return sessionLoadedMsg{err: errors.New("database not available")}
 	}
-	if m.ctx.ServerID == 0 {
-		return sessionLoadedMsg{err: errors.New("no server selected")}
-	}
+
+	q := m.ctx.DB.Where("server_id = ?", m.ctx.ServerID).Order("updated_at desc")
 
 	var sess storage.AISession
-	err := m.ctx.DB.
-		Where("server_id = ?", m.ctx.ServerID).
-		Order("updated_at desc").
-		First(&sess).Error
+	err := q.First(&sess).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -206,6 +212,19 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		}
 		return m, nil
 
+	case replyMsg:
+		m.busy = false
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			m.messages = append(m.messages, ChatMessage{Role: roleAssistant, Content: "Error: " + msg.err.Error(), CreatedAt: time.Now().UTC()})
+		} else {
+			m.status = ""
+			m.messages = append(m.messages, ChatMessage{Role: roleAssistant, Content: msg.text, CreatedAt: time.Now().UTC()})
+		}
+		m.syncScrollContent()
+		m.scroll = m.scroll.GotoBottom()
+		return m, tea.Batch(m.scroll.ScheduleFlush(), m.persistSession())
+
 	case tea.KeyMsg:
 		return m.updateKeys(msg)
 	}
@@ -236,11 +255,12 @@ func (m *Model) updateKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 
 	case "ctrl+l":
 		m.messages = nil
+		m.agent = nil
 		m.syncScrollContent()
 		return m, tea.Batch(m.scroll.ScheduleFlush(), m.persistSession())
 
 	case "enter":
-		if !m.focusInput {
+		if !m.focusInput || m.busy {
 			return m, nil
 		}
 		text := strings.TrimSpace(m.input.Value())
@@ -250,15 +270,16 @@ func (m *Model) updateKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		m.input.SetValue("")
 		now := time.Now().UTC()
 		m.messages = append(m.messages, ChatMessage{Role: roleUser, Content: text, CreatedAt: now})
+		m.busy = true
+		m.status = "thinking…"
 		m.syncScrollContent()
 		m.scroll = m.scroll.GotoBottom()
-		reply := simulatedAssistantReply(m.ctx, text)
-		m.messages = append(m.messages, ChatMessage{
-			Role: roleAssistant, Content: reply, CreatedAt: time.Now().UTC(),
-		})
-		m.syncScrollContent()
-		m.scroll = m.scroll.GotoBottom()
-		return m, tea.Batch(m.scroll.ScheduleFlush(), m.persistSession())
+		if err := m.ensureAgent(); err != nil {
+			m.busy = false
+			m.status = err.Error()
+			return m, nil
+		}
+		return m, tea.Batch(m.scroll.ScheduleFlush(), m.send(text))
 	}
 
 	if !m.focusInput {
@@ -289,37 +310,59 @@ func (m *Model) updateKeys(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	return m, cmd
 }
 
-func simulatedAssistantReply(ctx *shared.AppContext, userText string) string {
-	provider := "ollama"
-	model := "llama3"
-	if ctx != nil && ctx.Config != nil {
-		if ctx.Config.AI.Provider != "" {
-			provider = ctx.Config.AI.Provider
+func (m *Model) send(userText string) tea.Cmd {
+	agent := m.agent
+	wf := m.ctx.Workflows
+	return func() tea.Msg {
+		if wf != nil {
+			wf.TriggerChat(userText)
 		}
-		if ctx.Config.AI.Model != "" {
-			model = ctx.Config.AI.Model
+		text, err := agent.Send(nil, userText)
+		return replyMsg{text: text, err: err}
+	}
+}
+
+func (m *Model) ensureAgent() error {
+	if m.agent != nil {
+		return nil
+	}
+	if m.ctx == nil || m.ctx.Config == nil {
+		return errors.New("config not available")
+	}
+	p, err := ai.NewProvider(ai.ProviderConfigFromAI(m.ctx.Config.AI))
+	if err != nil {
+		return err
+	}
+	cat := m.ctx.Catalog
+	if cat == nil {
+		cat = ops.New(m.ctx.DB, m.ctx.Pool)
+	}
+	extra := ""
+	if m.ctx.ServerID > 0 {
+		sctx := ai.ServerContext{ServerName: fmt.Sprintf("id=%d", m.ctx.ServerID)}
+		if prof, err := recon.GetLatestProfile(m.ctx.DB, m.ctx.ServerID); err == nil && prof != nil {
+			sctx.Profile = prof.ProfileJSON
 		}
+		extra = ai.BuildSystemPrompt(sctx).Content
 	}
-	preview := userText
-	if len(preview) > 200 {
-		preview = preview[:200] + "…"
+	m.agent = ai.NewAgent(p, cat, extra)
+	if m.ctx.ServerID > 0 {
+		m.agent.SetLockedServer(m.ctx.ServerID)
 	}
-	return fmt.Sprintf(
-		"[Simulated · provider=%s model=%s]\n\nYou asked:\n%s\n\n"+
-			"Real completions will use your configured provider and API key / Ollama host once AI integration is wired in.",
-		provider,
-		model,
-		preview,
-	)
+	if len(m.messages) > 0 {
+		hist := make([]ai.Message, 0, len(m.messages))
+		for _, msg := range m.messages {
+			hist = append(hist, ai.Message{Role: ai.Role(msg.Role), Content: msg.Content})
+		}
+		m.agent.LoadHistory(hist)
+	}
+	return nil
 }
 
 func (m *Model) persistSession() tea.Cmd {
 	return func() tea.Msg {
 		if m.ctx == nil || m.ctx.DB == nil {
 			return sessionSavedMsg{err: errors.New("database not available")}
-		}
-		if m.ctx.ServerID == 0 {
-			return sessionSavedMsg{err: errors.New("no server selected")}
 		}
 		raw, err := encodeMessages(m.messages)
 		if err != nil {
@@ -419,6 +462,9 @@ func (m *Model) subtitleLine() string {
 	}
 	if m.sessionID != 0 {
 		parts = append(parts, fmt.Sprintf("session#%d", m.sessionID))
+	}
+	if m.agent != nil && m.agent.Pending() != nil {
+		parts = append(parts, "type y to confirm destructive tool")
 	}
 	return strings.Join(parts, " · ")
 }

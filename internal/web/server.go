@@ -13,11 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/ai"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/reqdump"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/workflow"
 	"gorm.io/gorm"
 )
 
@@ -26,10 +29,12 @@ var assets embed.FS
 
 // Options holds dependencies for the web server.
 type Options struct {
-	Config *config.Config
-	DB     *gorm.DB
-	Pool   *ssh.Pool
-	Poller *poller.Poller
+	Config    *config.Config
+	DB        *gorm.DB
+	Pool      *ssh.Pool
+	Poller    *poller.Poller
+	Catalog   *ops.Catalog
+	Workflows *workflow.Engine
 }
 
 // Run starts the HTTP server and blocks until it exits.
@@ -86,6 +91,22 @@ func Run(opts Options) error {
 		totpEnroll:   newTOTPEnrollStore(),
 		totpReveal:   newTOTPRevealStore(),
 	}
+	if opts.Catalog != nil {
+		h.catalog = opts.Catalog
+	} else {
+		h.catalog = ops.New(opts.DB, opts.Pool)
+	}
+	if h.catalog != nil && h.catalog.Completer == nil {
+		h.catalog.Completer = ai.Completer(opts.Config)
+	}
+	if opts.Workflows != nil {
+		h.workflows = opts.Workflows
+	} else {
+		h.workflows = workflow.New(opts.DB, h.catalog)
+	}
+	wfSched := workflow.NewScheduler(h.workflows)
+	wfSched.Start()
+	defer wfSched.Stop()
 
 	if h.nodeMode {
 		h.exec = ssh.NewLocalExecutor()

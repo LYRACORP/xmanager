@@ -1,0 +1,33 @@
+{{define "workflows"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-4xl">
+  <div class="mb-6 flex items-end justify-between gap-4">
+    <div>
+      <h1>Workflows</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Drag-and-drop ops graphs. Destructive graphs stay disabled until you enable them.</p>
+    </div>
+    {{if .IsAdmin}}
+    <form method="post" action="/workflows" class="flex gap-2">
+      <input name="name" placeholder="Name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+      <button class="xm-btn xm-btn-primary">New</button>
+    </form>
+    {{end}}
+  </div>
+  {{if .Flash}}<p class="xm-flash xm-flash-warn mb-4">{{.Flash}}</p>{{end}}
+  <div class="space-y-2">
+    {{range .Workflows}}
+    <a href="/workflows/{{.ID}}" class="xm-card p-4 flex justify-between items-center">
+      <div>
+        <div class="font-medium">{{.Name}}</div>
+        <div class="text-xs text-muted">{{.Trigger}} {{if .Enabled}}· enabled{{else}}· disabled{{end}}{{if .HasDestructive}} · destructive{{end}}</div>
+      </div>
+      <span class="text-xs text-muted">edit</span>
+    </a>
+    {{else}}
+    <p class="text-muted text-sm">No workflows yet.</p>
+    {{end}}
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

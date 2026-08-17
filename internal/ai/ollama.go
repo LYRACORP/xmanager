@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/lyracorp/xmanager/internal/ops"
 )
 
 type Ollama struct {
@@ -35,10 +37,11 @@ func NewOllama(cfg ProviderConfig) *Ollama {
 func (o *Ollama) Name() string { return "ollama" }
 
 type ollamaRequest struct {
-	Model    string       `json:"model"`
-	Messages []ollamaMsg  `json:"messages"`
-	Stream   bool         `json:"stream"`
-	Options  *ollamaOpts  `json:"options,omitempty"`
+	Model    string        `json:"model"`
+	Messages []ollamaMsg   `json:"messages"`
+	Stream   bool          `json:"stream"`
+	Options  *ollamaOpts   `json:"options,omitempty"`
+	Tools    []openAIToolDef `json:"tools,omitempty"`
 }
 
 type ollamaMsg struct {
@@ -178,4 +181,73 @@ func (o *Ollama) ListModels(ctx context.Context) ([]string, error) {
 		models[i] = m.Name
 	}
 	return models, nil
+}
+
+func (o *Ollama) ChatWithTools(ctx context.Context, messages []Message, tools []ops.ToolSpec, opts ...Option) (ChatTurn, error) {
+	options := defaultOptions(opts)
+	model := o.model
+	if options.Model != "" {
+		model = options.Model
+	}
+	msgs := make([]ollamaMsg, 0, len(messages))
+	for _, m := range messages {
+		if m.Role == RoleTool {
+			msgs = append(msgs, ollamaMsg{Role: "tool", Content: m.Content})
+			continue
+		}
+		msgs = append(msgs, ollamaMsg{Role: string(m.Role), Content: m.Content})
+	}
+	var defs []openAIToolDef
+	for _, t := range tools {
+		d := openAIToolDef{Type: "function"}
+		d.Function.Name = t.Name
+		d.Function.Description = t.Description
+		d.Function.Parameters = t.InputSchema
+		defs = append(defs, d)
+	}
+	body, _ := json.Marshal(ollamaRequest{
+		Model:    model,
+		Messages: msgs,
+		Stream:   false,
+		Options:  &ollamaOpts{Temperature: options.Temperature, NumPredict: options.MaxTokens},
+		Tools:    defs,
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", o.host+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return ChatTurn{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return ChatTurn{}, fmt.Errorf("Ollama API request: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Message struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Function struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"message"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ChatTurn{}, fmt.Errorf("decoding Ollama response: %w", err)
+	}
+	if result.Error != "" {
+		return ChatTurn{}, fmt.Errorf("Ollama error: %s", result.Error)
+	}
+	turn := ChatTurn{Content: result.Message.Content}
+	for i, tc := range result.Message.ToolCalls {
+		args := string(tc.Function.Arguments)
+		turn.ToolCalls = append(turn.ToolCalls, ToolCall{
+			ID:   fmt.Sprintf("ollama-%d", i),
+			Name: tc.Function.Name,
+			Args: args,
+		})
+	}
+	return turn, nil
 }

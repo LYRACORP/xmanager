@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -13,6 +14,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/layout"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
+	"github.com/lyracorp/xmanager/internal/workflow"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +23,8 @@ type AppOptions struct {
 	DB            *gorm.DB
 	Pool          *ssh.Pool
 	Poller        *poller.Poller
+	Catalog       *ops.Catalog
+	Workflows     *workflow.Engine
 	InitialTarget string
 }
 
@@ -45,10 +49,12 @@ func newApp(opts AppOptions) *App {
 	}
 
 	ctx := &shared.AppContext{
-		Config: opts.Config,
-		DB:     opts.DB,
-		Pool:   pool,
-		Poller: opts.Poller,
+		Config:    opts.Config,
+		DB:        opts.DB,
+		Pool:      pool,
+		Poller:    opts.Poller,
+		Catalog:   opts.Catalog,
+		Workflows: opts.Workflows,
 	}
 
 	app := &App{
@@ -91,6 +97,7 @@ func (a *App) initScreens() {
 	a.screens[shared.ScreenFTP] = NewFTPScreen(a.ctx)
 	a.screens[shared.ScreenSecurity] = NewSecurityScreen(a.ctx)
 	a.screens[shared.ScreenDateTime] = NewDateTimeScreen(a.ctx)
+	a.screens[shared.ScreenWorkflows] = NewWorkflowsScreen(a.ctx)
 }
 
 func (a *App) Init() tea.Cmd {
@@ -107,6 +114,7 @@ func (a *App) globalBindings() []components.KeyBinding {
 		{Key: "?", Desc: "help"},
 		{Key: "ctrl+f", Desc: "fleet"},
 		{Key: "ctrl+a", Desc: "AI chat"},
+		{Key: "ctrl+o", Desc: "workflows"},
 		{Key: "esc", Desc: "back"},
 	}
 }
@@ -182,6 +190,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.replaceNavigate(shared.ScreenFleetOverview, nil)
 		case "ctrl+a":
 			return a, a.replaceNavigate(shared.ScreenChat, nil)
+		case "ctrl+o":
+			return a, a.replaceNavigate(shared.ScreenWorkflows, nil)
 		}
 
 	case shared.NavigateMsg:

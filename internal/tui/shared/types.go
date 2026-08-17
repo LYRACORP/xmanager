@@ -3,9 +3,11 @@ package shared
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/tui/components"
+	"github.com/lyracorp/xmanager/internal/workflow"
 	"gorm.io/gorm"
 )
 
@@ -35,6 +37,7 @@ const (
 	ScreenFTP
 	ScreenSecurity
 	ScreenDateTime
+	ScreenWorkflows
 )
 
 // Backward-compatible aliases.
@@ -49,7 +52,7 @@ func (s ScreenID) String() string {
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
 		"Settings", "Projects", "Cron Jobs", "Scripts",
-		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security", "Date & time",
+		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security", "Date & time", "Workflows",
 	}
 	if int(s) < len(names) {
 		return names[s]
@@ -94,5 +97,7 @@ type AppContext struct {
 	DB       *gorm.DB
 	Pool     *ssh.Pool
 	ServerID uint
-	Poller   *poller.Poller // optional; nil if poller not started
+	Poller    *poller.Poller
+	Catalog   *ops.Catalog
+	Workflows *workflow.Engine
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
 	"github.com/lyracorp/xmanager/internal/hosttime"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
@@ -32,6 +33,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
+	"github.com/lyracorp/xmanager/internal/workflow"
 )
 
 type handler struct {
@@ -54,6 +56,8 @@ type handler struct {
 	pending2FA   *pending2FAStore
 	totpEnroll   *totpEnrollStore
 	totpReveal   *totpRevealStore
+	catalog      *ops.Catalog
+	workflows    *workflow.Engine
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -290,6 +294,16 @@ type pageData struct {
 	TOTPManual       string
 	TOTPRecovery     []string
 	TOTPRecoveryLeft int
+	Workflows        []storage.Workflow
+	Workflow         *storage.Workflow
+	WorkflowRuns     []storage.WorkflowRun
+	WorkflowGraph    string
+	ToolPalette      []ops.Tool
+	AIProvider       string
+	AIModel          string
+	AIEndpoint       string
+	AIOllamaHost     string
+	AIProfiles       []storage.AIConfigRecord
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -330,6 +344,7 @@ func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/2fa/recovery", h.requireAuth(h.postSettings2FARecovery))
 
 	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
+	h.registerAIWorkflows(mux, h.requireAuth, h.requireAdminAuth)
 }
 
 func (h *handler) render(w http.ResponseWriter, name string, data any) {
@@ -772,8 +787,14 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 			data.PanelURL = strings.TrimRight(h.publicPanelURL(r), "/") + "/"
 		}
 	}
-	if flash := r.URL.Query().Get("flash"); flash != "" {
-		data.Flash = flash
+	if h.opts.Config != nil {
+		data.AIProvider = h.opts.Config.AI.Provider
+		data.AIModel = h.opts.Config.AI.Model
+		data.AIEndpoint = h.opts.Config.AI.Endpoint
+		data.AIOllamaHost = h.opts.Config.AI.OllamaHost
+	}
+	if h.opts.DB != nil {
+		_ = h.opts.DB.Order("id desc").Find(&data.AIProfiles).Error
 	}
 	if sess != nil && h.opts.DB != nil {
 		h.ensureTOTPStores()

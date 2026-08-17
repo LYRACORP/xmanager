@@ -41,5 +41,7 @@ func runMigrations(db *gorm.DB) error {
 		&ProjectDatabase{},
 		&FTPUser{},
 		&StorageBucket{},
+		&Workflow{},
+		&WorkflowRun{},
 	)
 }

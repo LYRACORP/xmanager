@@ -2,161 +2,203 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/lyracorp/xmanager/internal/ops"
 )
 
-// Agent wraps a Provider with a persistent conversation history and a
-// server-management system prompt.
-type Agent struct {
-	provider Provider
-	history  []Message
+const maxToolTurns = 12
+
+// Event is one agent stream item for TUI/web.
+type Event struct {
+	Type    string              `json:"type"`
+	Text    string              `json:"text"`
+	Tool    string              `json:"tool,omitempty"`
+	Confirm *ops.PendingConfirm `json:"confirm,omitempty"`
 }
 
-// NewAgent creates an Agent backed by the given Provider.
-// The conversation is pre-seeded with BuildAgentSystemPrompt.
-func NewAgent(p Provider) *Agent {
+// Agent wraps a Provider with a tool-calling loop over an ops catalog.
+type Agent struct {
+	provider    Provider
+	catalog     *ops.Catalog
+	history     []Message
+	pending     *ops.PendingConfirm
+	extraSystem string
+	lockedSID   uint
+}
+
+func NewAgent(p Provider, cat *ops.Catalog, extraSystem string) *Agent {
+	sys := BuildAgentSystemPrompt(cat)
+	if extraSystem != "" {
+		sys += "\n\n" + extraSystem
+	}
 	return &Agent{
-		provider: p,
+		provider:    p,
+		catalog:     cat,
+		extraSystem: extraSystem,
 		history: []Message{
-			{Role: RoleSystem, Content: BuildAgentSystemPrompt()},
+			{Role: RoleSystem, Content: sys},
 		},
 	}
 }
 
-// Send appends userMsg to the conversation, requests a completion, records
-// the assistant reply, and returns it.
-func (a *Agent) Send(ctx context.Context, userMsg string, opts ...Option) (string, error) {
-	a.history = append(a.history, Message{Role: RoleUser, Content: userMsg})
+func (a *Agent) SetLockedServer(id uint) { a.lockedSID = id }
 
-	reply, err := a.provider.Chat(ctx, a.history, opts...)
-	if err != nil {
-		// remove the unmatched user message on error
-		a.history = a.history[:len(a.history)-1]
-		return "", fmt.Errorf("agent chat: %w", err)
-	}
+func (a *Agent) Pending() *ops.PendingConfirm { return a.pending }
 
-	a.history = append(a.history, Message{Role: RoleAssistant, Content: reply})
-	return reply, nil
-}
-
-// Reset clears conversation history, keeping only the system prompt.
 func (a *Agent) Reset() {
-	a.history = []Message{
-		{Role: RoleSystem, Content: BuildAgentSystemPrompt()},
+	sys := BuildAgentSystemPrompt(a.catalog)
+	if a.extraSystem != "" {
+		sys += "\n\n" + a.extraSystem
 	}
+	a.history = []Message{{Role: RoleSystem, Content: sys}}
+	a.pending = nil
 }
 
-// History returns a snapshot of the current conversation.
 func (a *Agent) History() []Message {
 	out := make([]Message, len(a.history))
 	copy(out, a.history)
 	return out
 }
 
-// Provider returns the underlying AI provider.
 func (a *Agent) Provider() Provider { return a.provider }
 
-// BuildAgentSystemPrompt returns a system prompt that describes all XManager
-// MCP tools and operational guidelines for the agent.
-func BuildAgentSystemPrompt() string {
+func (a *Agent) LoadHistory(msgs []Message) {
+	if len(msgs) == 0 {
+		return
+	}
+	sys := a.history[0]
+	a.history = append([]Message{sys}, msgs...)
+}
+
+// Send runs one user turn (or confirms a pending destructive tool) and returns the assistant text.
+func (a *Agent) Send(ctx context.Context, userMsg string, opts ...Option) (string, error) {
 	var b strings.Builder
+	err := a.Run(ctx, userMsg, func(ev Event) {
+		switch ev.Type {
+		case "text", "confirm", "error":
+			if ev.Text != "" {
+				if b.Len() > 0 {
+					b.WriteByte('\n')
+				}
+				b.WriteString(ev.Text)
+			}
+		}
+	}, opts...)
+	return b.String(), err
+}
 
-	b.WriteString("You are XManager AI, an expert VPS orchestration assistant integrated\n")
-	b.WriteString("with the XManager platform (github.com/lyracorp/xmanager).\n\n")
-
-	b.WriteString("## Platform overview\n")
-	b.WriteString("XManager manages Linux servers exclusively over SSH — no daemons are\n")
-	b.WriteString("installed on managed hosts. It uses GORM/SQLite for local state and\n")
-	b.WriteString("Bubble Tea for the TUI.\n\n")
-
-	b.WriteString("## Available MCP tools\n\n")
-
-	type toolEntry struct{ name, sig, desc string }
-	tools := []toolEntry{
-		{
-			"list_servers",
-			"list_servers()",
-			"Return all servers in the database with their connection metadata and last-seen time.",
-		},
-		{
-			"get_server_metrics",
-			"get_server_metrics(server_id: int)",
-			"Return the most recent CPU %, RAM %, disk %, and network throughput snapshot for the server.",
-		},
-		{
-			"list_containers",
-			"list_containers(server_id: int)",
-			"Run `docker ps -a` over SSH and return id, name, image, state, ports for every container.",
-		},
-		{
-			"deploy_project",
-			"deploy_project(project_id: int)",
-			"Deploy a project using its configured strategy (image, compose, git, dockerfile, …).",
-		},
-		{
-			"run_script",
-			"run_script(name, script_type, content, server_ids?, all_servers?)",
-			"Execute a bash/python/node script on one or more servers concurrently.",
-		},
-		{
-			"list_cron_jobs",
-			"list_cron_jobs(server_id: int)",
-			"List all cron jobs stored in the DB for the server.",
-		},
-		{
-			"manage_cron",
-			"manage_cron(action, server_id, job_id?, name?, expression?, command?)",
-			"Add, remove, enable, or disable a cron job. action must be one of: add, remove, enable, disable.",
-		},
-		{
-			"get_uptime",
-			"get_uptime(server_id?: int)",
-			"Return uptime monitors with last_status (up/down/degraded). server_id=0 returns all.",
-		},
-		{
-			"list_projects",
-			"list_projects(server_id?: int)",
-			"Return projects, optionally scoped to one server.",
-		},
-		{
-			"server_recon",
-			"server_recon(server_id: int)",
-			"Run a port scan via `ss -tlnp` over SSH. Returns open TCP ports and process names.",
-		},
-		{
-			"list_services",
-			"list_services(server_id: int)",
-			"List ServiceInstance records (gitea, kafka, mattermost, rabbitmq, registry, rustfs).",
-		},
-		{
-			"enable_service",
-			"enable_service(server_id: int, service_type: string)",
-			"Enable a service: writes DB record and runs docker-compose up via SSH if connected.",
-		},
-		{
-			"disable_service",
-			"disable_service(server_id: int, service_type: string)",
-			"Disable a service: runs docker-compose down via SSH and updates DB record.",
-		},
+func (a *Agent) Run(ctx context.Context, userMsg string, emit func(Event), opts ...Option) error {
+	if emit == nil {
+		emit = func(Event) {}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
 	}
 
-	for _, t := range tools {
-		b.WriteString(fmt.Sprintf("### %s\n`%s`\n%s\n\n", t.name, t.sig, t.desc))
+	if a.pending != nil {
+		low := strings.ToLower(strings.TrimSpace(userMsg))
+		if low == "y" || low == "yes" || low == "confirm" {
+			pending := *a.pending
+			a.pending = nil
+			text, err := a.catalog.Call(ctx, pending.Tool, pending.Args, ops.CallOptions{AllowDestructive: true})
+			if err != nil {
+				emit(Event{Type: "error", Text: err.Error()})
+				return err
+			}
+			a.history = append(a.history, Message{Role: RoleUser, Content: "Confirmed: " + pending.Tool})
+			a.history = append(a.history, Message{Role: RoleAssistant, Content: text})
+			emit(Event{Type: "text", Text: text})
+			emit(Event{Type: "done"})
+			return nil
+		}
+		a.pending = nil
+		a.history = append(a.history, Message{Role: RoleUser, Content: "Cancelled destructive action " + a.toolNameSafe()})
+		note := "Cancelled. I will not run that destructive action."
+		a.history = append(a.history, Message{Role: RoleAssistant, Content: note})
+		emit(Event{Type: "text", Text: note})
+		emit(Event{Type: "done"})
+		return nil
 	}
 
-	b.WriteString("## Guidelines\n\n")
-	b.WriteString("- **Confirm before destructive actions**: always ask before deploy_project,\n")
-	b.WriteString("  disable_service, manage_cron(remove), or run_script on production servers.\n")
-	b.WriteString("- **SSH prerequisite**: list_containers, deploy_project, run_script, manage_cron,\n")
-	b.WriteString("  server_recon, enable_service, and disable_service require the server to be\n")
-	b.WriteString("  actively connected in the SSH pool.\n")
-	b.WriteString("- **Present data clearly**: use tables or structured lists when returning\n")
-	b.WriteString("  multi-row results (servers, containers, projects, etc.).\n")
-	b.WriteString("- **Error guidance**: when a tool returns an error, explain the likely cause\n")
-	b.WriteString("  and suggest a remediation step.\n")
-	b.WriteString("- **Minimal scope**: prefer targeted server IDs over all_servers unless the\n")
-	b.WriteString("  user explicitly requests a fleet-wide operation.\n")
+	a.history = append(a.history, Message{Role: RoleUser, Content: userMsg})
+	tools := a.catalog.Specs()
 
+	for turn := 0; turn < maxToolTurns; turn++ {
+		result, err := a.provider.ChatWithTools(ctx, a.history, tools, opts...)
+		if err != nil {
+			a.history = a.history[:len(a.history)-1]
+			emit(Event{Type: "error", Text: err.Error()})
+			return fmt.Errorf("agent chat: %w", err)
+		}
+		if len(result.ToolCalls) == 0 {
+			a.history = append(a.history, Message{Role: RoleAssistant, Content: result.Content})
+			emit(Event{Type: "text", Text: result.Content})
+			emit(Event{Type: "done"})
+			return nil
+		}
+		a.history = append(a.history, Message{Role: RoleAssistant, Content: result.Content, ToolCalls: result.ToolCalls})
+		for _, tc := range result.ToolCalls {
+			emit(Event{Type: "tool", Tool: tc.Name, Text: tc.Name})
+			args := map[string]any{}
+			if strings.TrimSpace(tc.Args) != "" {
+				if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+					args = map[string]any{"_raw": tc.Args}
+				}
+			}
+			if a.lockedSID > 0 {
+				if _, ok := args["server_id"]; !ok {
+					args["server_id"] = float64(a.lockedSID)
+				}
+			}
+			out, err := a.catalog.Call(ctx, tc.Name, args, ops.CallOptions{})
+			if err != nil {
+				var need *ops.ConfirmNeededError
+				if errors.As(err, &need) {
+					a.pending = &need.Pending
+					emit(Event{Type: "confirm", Confirm: &need.Pending, Text: need.Error()})
+					emit(Event{Type: "done"})
+					return nil
+				}
+				out = "error: " + err.Error()
+			}
+			a.history = append(a.history, Message{Role: RoleTool, Content: out, ToolCallID: tc.ID, Name: tc.Name})
+		}
+	}
+	msg := "Stopped after too many tool turns."
+	emit(Event{Type: "text", Text: msg})
+	emit(Event{Type: "done"})
+	return nil
+}
+
+func (a *Agent) toolNameSafe() string {
+	if a.pending == nil {
+		return ""
+	}
+	return a.pending.Tool
+}
+
+func BuildAgentSystemPrompt(cat *ops.Catalog) string {
+	var b strings.Builder
+	b.WriteString("You are XManager AI, an expert VPS orchestration assistant.\n")
+	b.WriteString("XManager manages Linux servers exclusively over SSH — no daemons on managed hosts.\n")
+	b.WriteString("Use tools to inspect and change servers. Prefer list_servers before guessing IDs.\n")
+	b.WriteString("Never invent credentials. Summarize tool results clearly.\n")
+	b.WriteString("Destructive tools require the operator to confirm in the UI; if a tool is blocked, explain what you wanted to do.\n")
+	if cat != nil {
+		b.WriteString("\nAvailable tools:\n")
+		for _, t := range cat.List() {
+			fmt.Fprintf(&b, "- %s [%s/%s]: %s\n", t.Name, t.Group, t.Risk, t.Description)
+		}
+	}
 	return b.String()
 }

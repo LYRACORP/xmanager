@@ -5,15 +5,18 @@ import (
 	"os"
 
 	"github.com/lyracorp/xmanager/internal/activity"
+	"github.com/lyracorp/xmanager/internal/ai"
 	"github.com/lyracorp/xmanager/internal/backup"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/mcp"
 	"github.com/lyracorp/xmanager/internal/notify"
+	"github.com/lyracorp/xmanager/internal/ops"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui"
 	"github.com/lyracorp/xmanager/internal/web"
+	"github.com/lyracorp/xmanager/internal/workflow"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )
@@ -88,7 +91,13 @@ var webCmd = &cobra.Command{
 		}
 		applyLogRetention(cfg, db)
 		pool := ssh.NewPool()
-		notifier := buildNotifier(cfg)
+		cat := ops.New(db, pool)
+		cat.Completer = ai.Completer(cfg)
+		wf := workflow.New(db, cat)
+		wfSched := workflow.NewScheduler(wf)
+		wfSched.Start()
+		defer wfSched.Stop()
+		notifier := workflow.WrapNotifier(buildNotifier(cfg), wf)
 		p := poller.New(db, pool, cfg.Poller, notifier)
 		p.Start()
 		defer p.Stop()
@@ -96,7 +105,7 @@ var webCmd = &cobra.Command{
 		schedStop := make(chan struct{})
 		go sched.StartScheduler(pool, schedStop)
 		defer close(schedStop)
-		return web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p})
+		return web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p, Catalog: cat, Workflows: wf})
 	},
 }
 
@@ -114,7 +123,9 @@ var mcpCmd = &cobra.Command{
 		}
 		applyLogRetention(cfg, db)
 		pool := ssh.NewPool()
-		return mcp.RunStdio(mcp.Options{Config: cfg, DB: db, Pool: pool})
+		cat := ops.New(db, pool)
+		cat.Completer = ai.Completer(cfg)
+		return mcp.RunStdio(mcp.Options{Config: cfg, DB: db, Pool: pool, Catalog: cat})
 	},
 }
 
@@ -149,7 +160,13 @@ func runTUI(initialServer ...string) error {
 	applyLogRetention(cfg, db)
 
 	pool := ssh.NewPool()
-	notifier := buildNotifier(cfg)
+	cat := ops.New(db, pool)
+	cat.Completer = ai.Completer(cfg)
+	wf := workflow.New(db, cat)
+	wfSched := workflow.NewScheduler(wf)
+	wfSched.Start()
+	defer wfSched.Stop()
+	notifier := workflow.WrapNotifier(buildNotifier(cfg), wf)
 	p := poller.New(db, pool, cfg.Poller, notifier)
 	p.Start()
 	defer p.Stop()
@@ -160,10 +177,12 @@ func runTUI(initialServer ...string) error {
 	defer close(schedStop)
 
 	opts := tui.AppOptions{
-		Config: cfg,
-		DB:     db,
-		Pool:   pool,
-		Poller: p,
+		Config:    cfg,
+		DB:        db,
+		Pool:      pool,
+		Poller:    p,
+		Catalog:   cat,
+		Workflows: wf,
 	}
 	if len(initialServer) > 0 {
 		opts.InitialTarget = initialServer[0]
@@ -172,7 +191,7 @@ func runTUI(initialServer ...string) error {
 	// Optionally start web panel alongside TUI
 	if cfg.Web.Enabled {
 		go func() {
-			_ = web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p})
+			_ = web.Run(web.Options{Config: cfg, DB: db, Pool: pool, Poller: p, Catalog: cat, Workflows: wf})
 		}()
 	}
 

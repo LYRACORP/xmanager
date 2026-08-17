@@ -245,6 +245,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/2fa/confirm", authz(h.postSettings2FAConfirm))
 	mux.HandleFunc("POST /settings/2fa/disable", authz(h.postSettings2FADisable))
 	mux.HandleFunc("POST /settings/2fa/recovery", authz(h.postSettings2FARecovery))
+	h.registerAIWorkflows(mux, authz, adminz)
 	mux.HandleFunc("POST /settings/node", adminz(h.postNodeSettings))
 	mux.HandleFunc("POST /settings/git", adminz(h.postSettingsGit))
 	mux.HandleFunc("GET /oauth/git/{provider}/connect", adminz(h.getOAuthGitConnect))

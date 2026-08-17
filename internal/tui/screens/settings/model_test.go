@@ -6,7 +6,7 @@ func TestLogRetentionField(t *testing.T) {
 	if fieldLogRetention != fieldMaxLogLines+1 {
 		t.Fatalf("fieldLogRetention=%d want after max log lines", fieldLogRetention)
 	}
-	if fieldCount != 14 {
-		t.Fatalf("fieldCount=%d want 14", fieldCount)
+	if fieldCount != 15 {
+		t.Fatalf("fieldCount=%d want 15", fieldCount)
 	}
 }

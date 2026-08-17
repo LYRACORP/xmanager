@@ -18,8 +18,9 @@
 - **Databases** — MySQL, MariaDB, PostgreSQL, MongoDB, ClickHouse, Redis + backups
 - **Optional services** — Docker Registry, Gitea, RustFS, RabbitMQ, Kafka, Mattermost, Bugsink, Netdata (+auth), Umami, PowerDNS, mail, Uptime Kuma, Databasus, Kubernetes (kubespray)
 - **Uptime monitoring** — HTTP/TCP checks with Telegram / email / webhook / SMS alerts
-- **MCP server** — `xmanager mcp` exposes management tools for AI agents
-- **AI chat / recon** — OpenAI, Anthropic, or Ollama
+- **MCP server** — `xmanager mcp` exposes the same ops tools the in-app agent uses
+- **AI chat** — OpenAI-compatible providers (OpenAI, Grok, Gemini, DeepSeek, OpenRouter, LM Studio), Anthropic, Ollama; web voice via Whisper
+- **Workflows** — native drag-and-drop ops canvas in the web panel (`/workflows`)
 
 ## Install
 
@@ -39,7 +40,7 @@ xmanager web          # HTMX web panel (auth on first visit)
 xmanager mcp          # MCP stdio server for AI agents
 ```
 
-Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `?` help · `Esc` back
+Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `Ctrl+O` workflows · `?` help · `Esc` back
 
 Fleet Overview: `Enter` connect · `w` install **node** web panel (or reinstall/upgrade / disable / uninstall if already present) · `a` add · `d` delete
 
@@ -69,10 +70,12 @@ From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o
 
 ```yaml
 ai:
-  provider: ollama          # openai | anthropic | ollama
+  provider: ollama          # openai | anthropic | grok | gemini | deepseek | openrouter | lmstudio | ollama
   model: llama3
-  api_key: ""
+  api_key: ""               # your-api-key-here
+  endpoint: ""              # optional override (LM Studio default http://127.0.0.1:1234/v1)
   ollama_host: http://localhost:11434
+  whisper_key: ""           # optional; Whisper STT uses OpenAI-compatible audio API
 
 telegram:
   enabled: false
@@ -97,16 +100,29 @@ ui:
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│     TUI (Bubble Tea)  │  Web (HTMX)  │  MCP  │
-├──────────────────────────────────────────────┤
-│  Core: projects, scripts, cron, db, services │
-├──────────────────────────────────────────────┤
-│  Poller (metrics + uptime) + Notify channels │
-├──────────────────────────────────────────────┤
-│  SSH pool / executor / SFTP  → remote hosts  │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  TUI Chat  │  Web Chat + Voice  │  MCP  │  Workflows     │
+├──────────────────────────────────────────────────────────┤
+│  Agent tool loop  →  internal/ops catalog  →  SSH pool   │
+└──────────────────────────────────────────────────────────┘
 ```
+
+### MCP (Cursor / other agents)
+
+`xmanager mcp` speaks MCP over stdio and calls the same ops catalog as in-app chat. Example Cursor config (placeholders only):
+
+```json
+{
+  "mcpServers": {
+    "xmanager": {
+      "command": "xmanager",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Do not put real API keys in `mcp.json`. XManager reads `~/.config/xmanager/config.yaml` for SSH inventory and AI settings.
 
 ## Project layout
 
@@ -115,7 +131,10 @@ cmd/xmanager/          CLI entry (tui, web, mcp, setup, …)
 internal/
   tui/                 FleetOverview + domain screens
   web/                 HTMX panel (templates embedded)
-  mcp/                 MCP JSON-RPC stdio tools
+  ops/                 Shared tool catalog (chat, MCP, workflows)
+  ai/                  Providers + agent tool loop
+  workflow/            Native DAG engine + cron/webhook/alert/chat triggers
+  mcp/                 MCP JSON-RPC stdio adapter
   poller/              SSH metric + uptime polling
   project/             Deploy engine (10 project types)
   scripts/ cron/ recon/ uptime/
