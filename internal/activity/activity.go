@@ -2,13 +2,36 @@ package activity
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
 
 const maxRows = 10000
+
+var retentionDays atomic.Int32
+
+func init() {
+	retentionDays.Store(30)
+}
+
+// ClampRetentionDays limits n to 0–365.
+func ClampRetentionDays(n int) int {
+	return config.ClampRetentionDays(n)
+}
+
+// SetRetentionDays sets age-based prune (0 = no time prune). Clamped to 0–365.
+func SetRetentionDays(n int) {
+	retentionDays.Store(int32(ClampRetentionDays(n)))
+}
+
+// RetentionDays returns the current time-based retention in days.
+func RetentionDays() int {
+	return int(retentionDays.Load())
+}
 
 // Entry is a single audit event.
 type Entry struct {
@@ -55,6 +78,11 @@ func Log(db *gorm.DB, e Entry) {
 	trim(db)
 }
 
+// Trim deletes activity older than RetentionDays (if > 0) and enforces the row cap.
+func Trim(db *gorm.DB) {
+	trim(db)
+}
+
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= n {
@@ -64,6 +92,13 @@ func truncate(s string, n int) string {
 }
 
 func trim(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	if days := RetentionDays(); days > 0 {
+		cutoff := time.Now().AddDate(0, 0, -days)
+		_ = db.Where("created_at < ?", cutoff).Delete(&storage.ActivityLog{}).Error
+	}
 	var count int64
 	if err := db.Model(&storage.ActivityLog{}).Count(&count).Error; err != nil || count <= maxRows {
 		return

@@ -204,6 +204,7 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	}))
 
 	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+	mux.HandleFunc("POST /settings/logs", h.requireAuth(h.postSettingsLogs))
 	mux.HandleFunc("POST /settings/node", h.requireAuth(h.postNodeSettings))
 	mux.HandleFunc("POST /settings/git", h.requireAuth(h.postSettingsGit))
 	mux.HandleFunc("GET /oauth/git/{provider}/connect", h.requireAuth(h.getOAuthGitConnect))

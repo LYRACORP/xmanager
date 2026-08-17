@@ -15,15 +15,15 @@ var (
 )
 
 type Config struct {
-	DataDir    string      `mapstructure:"-"`
-	ConfigPath string      `mapstructure:"-"`
-	AI         AIConfig    `mapstructure:"ai"`
-	Telegram   TGConfig    `mapstructure:"telegram"`
-	UI         UIConfig    `mapstructure:"ui"`
-	Log        LogConfig   `mapstructure:"log"`
-	Web        WebConfig   `mapstructure:"web"`
+	DataDir    string       `mapstructure:"-"`
+	ConfigPath string       `mapstructure:"-"`
+	AI         AIConfig     `mapstructure:"ai"`
+	Telegram   TGConfig     `mapstructure:"telegram"`
+	UI         UIConfig     `mapstructure:"ui"`
+	Log        LogConfig    `mapstructure:"log"`
+	Web        WebConfig    `mapstructure:"web"`
 	Poller     PollerConfig `mapstructure:"poller"`
-	Email      EmailConfig `mapstructure:"email"`
+	Email      EmailConfig  `mapstructure:"email"`
 }
 
 type AIConfig struct {
@@ -46,15 +46,28 @@ type UIConfig struct {
 }
 
 type LogConfig struct {
-	Level string `mapstructure:"level"`
-	File  string `mapstructure:"file"`
+	Level         string `mapstructure:"level"`
+	File          string `mapstructure:"file"`
+	RetentionDays int    `mapstructure:"retention_days"` // 0 = no time prune (row cap still applies)
+}
+
+const MaxLogRetentionDays = 365
+
+func ClampRetentionDays(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > MaxLogRetentionDays {
+		return MaxLogRetentionDays
+	}
+	return n
 }
 
 type WebConfig struct {
 	Enabled   bool   `mapstructure:"enabled"`
 	Host      string `mapstructure:"host"`
 	Port      int    `mapstructure:"port"`
-	Role      string `mapstructure:"role"` // control (default) | node
+	Role      string `mapstructure:"role"`       // control (default) | node
 	PublicURL string `mapstructure:"public_url"` // https://panel.example.com — OAuth redirect base
 }
 
@@ -108,6 +121,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("ui.refresh_rate", 5)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", filepath.Join(dataDir, "xmanager.log"))
+	viper.SetDefault("log.retention_days", 30)
 	viper.SetDefault("web.enabled", false)
 	viper.SetDefault("web.host", "127.0.0.1")
 	viper.SetDefault("web.port", 8080)
@@ -139,6 +153,7 @@ func Load() (*Config, error) {
 	if cfg.Web.Role == "" {
 		cfg.Web.Role = WebRoleControl
 	}
+	cfg.Log.RetentionDays = ClampRetentionDays(cfg.Log.RetentionDays)
 
 	return cfg, nil
 }
@@ -154,8 +169,10 @@ func Save(cfg *Config) error {
 	viper.Set("telegram.enabled", cfg.Telegram.Enabled)
 	viper.Set("ui.theme", cfg.UI.Theme)
 	viper.Set("ui.refresh_rate", cfg.UI.RefreshRate)
+	cfg.Log.RetentionDays = ClampRetentionDays(cfg.Log.RetentionDays)
 	viper.Set("log.level", cfg.Log.Level)
 	viper.Set("log.file", cfg.Log.File)
+	viper.Set("log.retention_days", cfg.Log.RetentionDays)
 	viper.Set("web.enabled", cfg.Web.Enabled)
 	viper.Set("web.host", cfg.Web.Host)
 	viper.Set("web.port", cfg.Web.Port)

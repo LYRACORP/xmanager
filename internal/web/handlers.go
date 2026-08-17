@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/activity"
 	"github.com/lyracorp/xmanager/internal/apps"
 	"github.com/lyracorp/xmanager/internal/auth"
+	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/dbmanager"
 	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/gitforge"
@@ -283,6 +285,7 @@ func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /uptime", h.requireAuth(h.postUptime))
 
 	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
+	mux.HandleFunc("POST /settings/logs", h.requireAuth(h.postSettingsLogs))
 
 	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
 }
@@ -691,6 +694,9 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		ActiveNav: "settings",
 		Config:    h.opts.Config,
 	}
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
 	if h.nodeMode {
 		data.GitProviders = h.gitProviderViews()
 		if h.opts.Config != nil {
@@ -703,11 +709,30 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data.NodeSettings = &storage.NodeSettings{ServerID: sid}
 		}
-		if flash := r.URL.Query().Get("flash"); flash != "" {
-			data.Flash = flash
-		}
 	}
 	h.render(w, "settings", data)
+}
+
+func (h *handler) postSettingsLogs(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("retention_days")))
+	if err != nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("retention days must be a number"), http.StatusSeeOther)
+		return
+	}
+	if h.opts.Config == nil {
+		http.Redirect(w, r, "/settings?flash="+urlQueryEscape("config not loaded"), http.StatusSeeOther)
+		return
+	}
+	h.opts.Config.Log.RetentionDays = config.ClampRetentionDays(n)
+	flash := "Log retention saved"
+	if err := config.Save(h.opts.Config); err != nil {
+		flash = "Save failed: " + err.Error()
+	} else {
+		activity.SetRetentionDays(h.opts.Config.Log.RetentionDays)
+		activity.Trim(h.opts.DB)
+	}
+	http.Redirect(w, r, "/settings?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeSettings(w http.ResponseWriter, r *http.Request) {

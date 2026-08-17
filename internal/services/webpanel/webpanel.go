@@ -256,6 +256,8 @@ func (w *WebPanel) enableBinary(port string, force bool) error {
 ui:
   theme: dark
   refresh_rate: 5
+log:
+  retention_days: 30
 poller:
   interval_sec: 30
   metric_retention: 288

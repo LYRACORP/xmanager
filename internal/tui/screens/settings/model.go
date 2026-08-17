@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lyracorp/xmanager/internal/activity"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/layout"
@@ -22,6 +23,7 @@ const (
 	fieldAIKey
 	fieldOllama
 	fieldMaxLogLines
+	fieldLogRetention
 	fieldTGBot
 	fieldTGChat
 	fieldTGEnabled
@@ -60,6 +62,7 @@ func New(ctx *shared.AppContext) *Model {
 func (m *Model) initForm() {
 	labels := [fieldCount]string{
 		"AI provider", "AI model", "API key", "Ollama host", "Max log lines",
+		"Log retention (days)",
 		"Telegram bot token", "Telegram chat ID", "Telegram enabled (space)",
 		"UI theme (dark/light)", "UI refresh rate (s)",
 		"Web panel enabled (space)", "Web host", "Web port",
@@ -85,6 +88,7 @@ func (m *Model) loadFromConfig() {
 	m.form[fieldAIKey].SetValue(c.AI.APIKey)
 	m.form[fieldOllama].SetValue(c.AI.OllamaHost)
 	m.form[fieldMaxLogLines].SetValue(strconv.Itoa(c.AI.MaxLogLines))
+	m.form[fieldLogRetention].SetValue(strconv.Itoa(c.Log.RetentionDays))
 	m.form[fieldTGBot].SetValue(c.Telegram.BotToken)
 	m.form[fieldTGChat].SetValue(c.Telegram.ChatID)
 	m.tgOn = c.Telegram.Enabled
@@ -226,6 +230,9 @@ func (m *Model) applyFormToConfig() error {
 	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldMaxLogLines].Value())); err == nil {
 		cfg.AI.MaxLogLines = n
 	}
+	if n, err := strconv.Atoi(strings.TrimSpace(m.form[fieldLogRetention].Value())); err == nil {
+		cfg.Log.RetentionDays = config.ClampRetentionDays(n)
+	}
 	cfg.Telegram.BotToken = m.form[fieldTGBot].Value()
 	cfg.Telegram.ChatID = strings.TrimSpace(m.form[fieldTGChat].Value())
 	cfg.Telegram.Enabled = m.tgOn
@@ -245,6 +252,10 @@ func (m *Model) save() tea.Cmd {
 	return func() tea.Msg {
 		if err := m.applyFormToConfig(); err != nil {
 			return saveStatusMsg{text: err.Error(), err: true}
+		}
+		activity.SetRetentionDays(m.ctx.Config.Log.RetentionDays)
+		if m.ctx.DB != nil {
+			activity.Trim(m.ctx.DB)
 		}
 		theme.SetTheme(m.ctx.Config.UI.Theme)
 		return saveStatusMsg{text: "settings saved"}

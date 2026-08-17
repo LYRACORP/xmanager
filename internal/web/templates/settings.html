@@ -31,6 +31,22 @@
       </dl>
     </div>
 
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Logs</h2>
+        <p class="text-xs text-panel-muted mt-1">Days to keep activity audit logs. 0 keeps them until the 10,000-row cap.</p>
+      </div>
+      <form method="post" action="/settings/logs" class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Retention (days)</label>
+          <input name="retention_days" type="number" min="0" max="365" required
+            value="{{with .Config}}{{.Log.RetentionDays}}{{else}}30{{end}}"
+            class="w-28 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Save</button>
+      </form>
+    </div>
+
     {{if .NodeMode}}
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>

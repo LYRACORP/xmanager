@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lyracorp/xmanager/internal/activity"
 	"github.com/lyracorp/xmanager/internal/backup"
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/mcp"
@@ -14,6 +15,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui"
 	"github.com/lyracorp/xmanager/internal/web"
 	"github.com/spf13/cobra"
+	"gorm.io/gorm"
 )
 
 var rootCmd = &cobra.Command{
@@ -84,6 +86,7 @@ var webCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		applyLogRetention(cfg, db)
 		pool := ssh.NewPool()
 		notifier := buildNotifier(cfg)
 		p := poller.New(db, pool, cfg.Poller, notifier)
@@ -109,6 +112,7 @@ var mcpCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		applyLogRetention(cfg, db)
 		pool := ssh.NewPool()
 		return mcp.RunStdio(mcp.Options{Config: cfg, DB: db, Pool: pool})
 	},
@@ -142,6 +146,7 @@ func runTUI(initialServer ...string) error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
+	applyLogRetention(cfg, db)
 
 	pool := ssh.NewPool()
 	notifier := buildNotifier(cfg)
@@ -172,6 +177,14 @@ func runTUI(initialServer ...string) error {
 	}
 
 	return tui.Run(opts)
+}
+
+func applyLogRetention(cfg *config.Config, db *gorm.DB) {
+	if cfg == nil {
+		return
+	}
+	activity.SetRetentionDays(cfg.Log.RetentionDays)
+	activity.Trim(db)
 }
 
 func main() {
