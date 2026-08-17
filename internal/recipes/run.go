@@ -47,7 +47,7 @@ const (
 	aptLockMaxRetries = 24  // extra retries if lock races after wait
 )
 
-// Run executes all steps, calling onProgress between commands.
+// Run executes all install steps, calling onProgress between commands.
 func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 	if r.Exec == nil {
 		return RunResult{Err: fmt.Errorf("no SSH executor")}
@@ -56,8 +56,21 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 	if err != nil {
 		return RunResult{Err: err}
 	}
+	return r.execSteps(mat.Name, mat.Steps, mat.CommandCount(), creds, "Starting", "complete", onProgress)
+}
 
-	total := mat.CommandCount()
+// Uninstall executes uninstall_steps. Recipes without uninstall steps fail closed.
+func (r Runner) Uninstall(recipe Recipe, onProgress ProgressFunc) RunResult {
+	if !recipe.CanUninstall() {
+		return RunResult{Err: fmt.Errorf("%s has no uninstall steps", recipe.ID)}
+	}
+	if r.Exec == nil {
+		return RunResult{Err: fmt.Errorf("no SSH executor")}
+	}
+	return r.execSteps(recipe.Name, recipe.UninstallSteps, recipe.UninstallCommandCount(), "", "Uninstalling", "uninstalled", onProgress)
+}
+
+func (r Runner) execSteps(name string, steps []Step, total int, creds, startVerb, doneVerb string, onProgress ProgressFunc) RunResult {
 	if total == 0 {
 		return RunResult{OK: true, Creds: creds, Output: "nothing to run"}
 	}
@@ -81,7 +94,7 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 		onProgress(pct, detail)
 	}
 
-	report(fmt.Sprintf("Starting %s…", mat.Name))
+	report(fmt.Sprintf("%s %s…", startVerb, name))
 	if r.needsSudo() {
 		probe := r.remoteShell("true")
 		if res, err := r.Exec.Run(probe); err != nil {
@@ -94,7 +107,7 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 			return RunResult{Err: fmt.Errorf("sudo failed for user %q (check Password on server entry): %s", r.User, msg)}
 		}
 	}
-	for _, step := range mat.Steps {
+	for _, step := range steps {
 		report(step.Name)
 		log.WriteString("==> " + step.Name + "\n")
 		for _, cmd := range step.Commands {
@@ -138,7 +151,7 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 		}
 	}
 	if onProgress != nil {
-		onProgress(1, mat.Name+" complete")
+		onProgress(1, name+" "+doneVerb)
 	}
 	return RunResult{OK: true, Output: log.String(), Creds: creds}
 }

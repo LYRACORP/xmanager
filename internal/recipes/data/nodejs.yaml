@@ -12,3 +12,16 @@ steps:
       - "node --version"
       - "npm --version"
       - "which node npm"
+uninstall_steps:
+  - name: Remove Node.js and NodeSource repo
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get remove -y nodejs || true"
+      - "apt-get autoremove -y || true"
+      - |
+        rm -f /etc/apt/sources.list.d/nodesource.list \
+              /etc/apt/sources.list.d/nodesource.list.save \
+              /usr/share/keyrings/nodesource.gpg \
+              /etc/apt/keyrings/nodesource.gpg \
+              /etc/apt/keyrings/nodesource-repo.gpg
+        echo "Node.js and NodeSource repo removed."

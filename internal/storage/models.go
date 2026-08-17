@@ -347,6 +347,14 @@ type ServiceInstance struct {
 	Status      string `gorm:"default:stopped" json:"status"`
 }
 
+// RecipeInstall records a TUI packages recipe applied on a server.
+type RecipeInstall struct {
+	gorm.Model
+	ServerID uint   `gorm:"uniqueIndex:uidx_recipe_install;not null" json:"server_id"`
+	Server   Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	RecipeID string `gorm:"uniqueIndex:uidx_recipe_install;not null" json:"recipe_id"`
+}
+
 type ScriptRun struct {
 	gorm.Model
 	Name       string    `gorm:"not null" json:"name"`

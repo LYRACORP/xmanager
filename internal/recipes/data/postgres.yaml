@@ -1,6 +1,7 @@
 id: postgres
 name: PostgreSQL (native source)
 description: Build PostgreSQL 16.1 from source on custom port (generates credentials)
+destructive: true
 steps:
   - name: Install build dependencies
     commands:
@@ -73,3 +74,15 @@ steps:
   - name: Cleanup build tree
     commands:
       - "rm -rf /tmp/postgresql-16.1 /tmp/postgresql-16.1.tar.gz"
+uninstall_steps:
+  - name: Stop cluster and remove /usr/local/pgsql
+    commands:
+      - |
+        set +e
+        export PATH=/usr/local/pgsql/bin:$PATH
+        if [ -x /usr/local/pgsql/bin/pg_ctl ] && [ -d /usr/local/pgsql/data ]; then
+          su -s /bin/bash postgres -c "/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -m fast stop" 2>/dev/null || true
+        fi
+        rm -rf /usr/local/pgsql
+        rm -f /etc/profile.d/postgres.sh
+        echo "PostgreSQL source install and data directory removed."

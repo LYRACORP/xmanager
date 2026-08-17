@@ -1,0 +1,184 @@
+id: linux-harden
+name: Linux hardening
+description: CIS-style host hardening (UFW, fail2ban, sysctl, unattended upgrades) — does not disable root or password SSH
+steps:
+  - name: Snapshot configs for undo
+    commands:
+      - |
+        set -e
+        BASE=/var/lib/xmanager/harden
+        mkdir -p "$BASE/backup"
+        if [ ! -f "$BASE/backup/sshd_config" ] && [ -f /etc/ssh/sshd_config ]; then
+          cp -a /etc/ssh/sshd_config "$BASE/backup/sshd_config"
+        fi
+        if [ ! -f "$BASE/backup/20auto-upgrades" ] && [ -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
+          cp -a /etc/apt/apt.conf.d/20auto-upgrades "$BASE/backup/20auto-upgrades"
+        fi
+        ufw status verbose > "$BASE/backup/ufw-status.txt" 2>/dev/null || true
+        if ufw status 2>/dev/null | grep -qi "Status: active"; then
+          echo 1 > "$BASE/backup/ufw-was-active"
+        else
+          echo 0 > "$BASE/backup/ufw-was-active"
+        fi
+        dpkg -l fail2ban 2>/dev/null | grep -q '^ii' && echo 1 > "$BASE/backup/fail2ban-was-installed" || echo 0 > "$BASE/backup/fail2ban-was-installed"
+        echo "backups in $BASE/backup"
+  - name: Install hardening packages
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get update -y"
+      - "apt-get install -y ufw fail2ban unattended-upgrades apparmor apparmor-utils"
+      - "systemctl enable --now apparmor 2>/dev/null || true"
+  - name: Configure UFW (allow live SSH port first)
+    commands:
+      - |
+        set -e
+        export DEBIAN_FRONTEND=noninteractive
+        SSH_PORT=$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')
+        SSH_PORT=${SSH_PORT:-22}
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow "${SSH_PORT}/tcp" comment 'SSH'
+        ufw allow OpenSSH 2>/dev/null || true
+        ufw allow 80/tcp comment 'HTTP'
+        ufw allow 443/tcp comment 'HTTPS'
+        ufw --force enable
+        ufw status verbose
+        echo "UFW enabled; SSH port ${SSH_PORT} allowed"
+  - name: Configure fail2ban SSH jail
+    commands:
+      - |
+        set -e
+        mkdir -p /etc/fail2ban/jail.d
+        cat > /etc/fail2ban/jail.d/xmanager-sshd.conf <<'EOF'
+        [sshd]
+        enabled = true
+        backend = systemd
+        maxretry = 5
+        bantime = 1h
+        findtime = 10m
+        EOF
+        systemctl enable fail2ban
+        systemctl restart fail2ban
+        fail2ban-client status sshd 2>/dev/null || fail2ban-client status || true
+  - name: Enable unattended security updates
+    commands:
+      - |
+        set -e
+        cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+        APT::Periodic::Update-Package-Lists "1";
+        APT::Periodic::Unattended-Upgrade "1";
+        APT::Periodic::AutocleanInterval "7";
+        EOF
+        mkdir -p /etc/apt/apt.conf.d
+        if [ -f /etc/apt/apt.conf.d/50unattended-upgrades ]; then
+          sed -i 's|^//\s*"\${distro_id}:\${distro_codename}-security";|"${distro_id}:${distro_codename}-security";|' /etc/apt/apt.conf.d/50unattended-upgrades || true
+        fi
+        echo "unattended-upgrades enabled"
+  - name: Apply sysctl hardening (Docker-safe)
+    commands:
+      - |
+        set -e
+        cat > /etc/sysctl.d/99-xmanager-harden.conf <<'EOF'
+        # XManager linux-harden — do not set net.ipv4.ip_forward (breaks Docker)
+        net.ipv4.tcp_syncookies = 1
+        net.ipv4.conf.all.rp_filter = 1
+        net.ipv4.conf.default.rp_filter = 1
+        net.ipv4.conf.all.accept_source_route = 0
+        net.ipv4.conf.default.accept_source_route = 0
+        net.ipv4.conf.all.accept_redirects = 0
+        net.ipv4.conf.default.accept_redirects = 0
+        net.ipv4.conf.all.send_redirects = 0
+        net.ipv4.conf.default.send_redirects = 0
+        net.ipv4.conf.all.log_martians = 1
+        net.ipv4.icmp_echo_ignore_broadcasts = 1
+        net.ipv4.icmp_ignore_bogus_error_responses = 1
+        kernel.kptr_restrict = 2
+        kernel.dmesg_restrict = 1
+        fs.suid_dumpable = 0
+        kernel.yama.ptrace_scope = 1
+        EOF
+        sysctl --system >/dev/null
+        echo "sysctl drop-in applied"
+  - name: Apply SSH drop-in (no root/password lockout)
+    commands:
+      - |
+        set -e
+        mkdir -p /etc/ssh/sshd_config.d
+        cat > /etc/ssh/sshd_config.d/99-xmanager-harden.conf <<'EOF'
+        # XManager linux-harden — does not set PermitRootLogin or PasswordAuthentication
+        PermitEmptyPasswords no
+        MaxAuthTries 4
+        LoginGraceTime 30
+        ClientAliveInterval 300
+        ClientAliveCountMax 2
+        X11Forwarding no
+        DebianBanner no
+        EOF
+        if ! sshd -t; then
+          echo "sshd -t failed; removing drop-in"
+          rm -f /etc/ssh/sshd_config.d/99-xmanager-harden.conf
+          exit 1
+        fi
+        systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || service ssh reload 2>/dev/null || true
+        echo "sshd drop-in applied"
+  - name: Record hardening marker
+    commands:
+      - |
+        date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/xmanager/harden/installed
+        echo "Linux hardening applied."
+uninstall_steps:
+  - name: Restore SSH and remove drop-in
+    commands:
+      - |
+        set +e
+        BASE=/var/lib/xmanager/harden
+        rm -f /etc/ssh/sshd_config.d/99-xmanager-harden.conf
+        if [ -f "$BASE/backup/sshd_config" ]; then
+          cp -a "$BASE/backup/sshd_config" /etc/ssh/sshd_config
+        fi
+        if sshd -t; then
+          systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || service ssh reload 2>/dev/null || true
+        else
+          echo "sshd -t failed after restore; not reloading"
+        fi
+        echo "SSH hardening drop-in removed"
+  - name: Remove sysctl drop-in
+    commands:
+      - |
+        rm -f /etc/sysctl.d/99-xmanager-harden.conf
+        sysctl --system >/dev/null 2>&1 || true
+        echo "sysctl drop-in removed"
+  - name: Disable UFW (leave package installed)
+    commands:
+      - |
+        ufw --force disable || true
+        echo "UFW disabled"
+  - name: Stop and remove fail2ban
+    commands:
+      - |
+        set +e
+        export DEBIAN_FRONTEND=noninteractive
+        systemctl disable --now fail2ban 2>/dev/null || true
+        rm -f /etc/fail2ban/jail.d/xmanager-sshd.conf
+        WAS=0
+        [ -f /var/lib/xmanager/harden/backup/fail2ban-was-installed ] && WAS=$(cat /var/lib/xmanager/harden/backup/fail2ban-was-installed)
+        if [ "$WAS" != "1" ]; then
+          apt-get remove -y fail2ban || true
+        fi
+        echo "fail2ban undone"
+  - name: Restore unattended-upgrades config
+    commands:
+      - |
+        set +e
+        BASE=/var/lib/xmanager/harden
+        if [ -f "$BASE/backup/20auto-upgrades" ]; then
+          cp -a "$BASE/backup/20auto-upgrades" /etc/apt/apt.conf.d/20auto-upgrades
+        else
+          rm -f /etc/apt/apt.conf.d/20auto-upgrades
+        fi
+        echo "unattended-upgrades config restored"
+  - name: Remove hardening marker
+    commands:
+      - |
+        rm -rf /var/lib/xmanager/harden
+        echo "Linux hardening undone."

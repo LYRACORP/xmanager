@@ -46,3 +46,14 @@ E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is an
 		t.Fatal("false positive")
 	}
 }
+
+func TestUninstallRequiresSteps(t *testing.T) {
+	res := Runner{}.Uninstall(Recipe{ID: "apt-unlock"}, nil)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "no uninstall steps") {
+		t.Fatalf("expected missing uninstall steps, got %v", res.Err)
+	}
+	res = Runner{}.Uninstall(Recipe{ID: "x", UninstallSteps: []Step{{Name: "n", Commands: []string{"true"}}}}, nil)
+	if res.Err == nil || res.Err.Error() != "no SSH executor" {
+		t.Fatalf("expected no SSH executor, got %v", res.Err)
+	}
+}

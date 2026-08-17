@@ -1,6 +1,7 @@
 id: portainer
 name: Portainer CE
 description: Portainer on :9443 (HTTPS) and :9028 (edge) — requires Docker
+destructive: true
 requires:
   - docker
 steps:
@@ -24,3 +25,13 @@ steps:
           portainer/portainer-ce:latest
       - "docker ps --filter name=portainer --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
       - "echo 'Portainer UI: https://HOST:9443'"
+uninstall_steps:
+  - name: Remove Portainer container and volume
+    commands:
+      - |
+        set +e
+        if command -v docker >/dev/null 2>&1; then
+          docker rm -f portainer 2>/dev/null || true
+          docker volume rm -f portainer_data 2>/dev/null || true
+        fi
+        echo "Portainer container and volume removed."

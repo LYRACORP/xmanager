@@ -32,6 +32,7 @@ func runMigrations(db *gorm.DB) error {
 		&UptimeEvent{},
 		&AlertChannel{},
 		&ServiceInstance{},
+		&RecipeInstall{},
 		&ScriptRun{},
 		&DatabaseUser{},
 		&ConnectedDomain{},

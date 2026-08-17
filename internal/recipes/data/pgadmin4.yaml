@@ -28,3 +28,13 @@ steps:
         echo "pgAdmin setup email: __XM_PGADMIN_EMAIL__"
         echo "pgAdmin setup password: __XM_PGADMIN_PASSWORD__"
         echo "Open the host in a browser after Apache is up (often http://HOST/pgadmin4)."
+uninstall_steps:
+  - name: Purge pgAdmin and apt source
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get purge -y pgadmin4-web pgadmin4 || true"
+      - "apt-get autoremove -y || true"
+      - |
+        rm -f /etc/apt/sources.list.d/pgadmin4.list \
+              /usr/share/keyrings/packages-pgadmin-org.gpg
+        echo "pgAdmin packages and apt source removed."

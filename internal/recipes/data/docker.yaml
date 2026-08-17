@@ -1,6 +1,7 @@
 id: docker
 name: Docker + Compose
 description: Official Docker CE, Compose plugin, and docker-compose binary
+destructive: true
 steps:
   - name: Wait for apt (stop racing unattended-upgrades)
     commands:
@@ -39,3 +40,22 @@ steps:
       - "docker --version"
       - "docker compose version || true"
       - "docker-compose --version"
+uninstall_steps:
+  - name: Stop containers and Docker
+    commands:
+      - |
+        set +e
+        if command -v docker >/dev/null 2>&1; then
+          docker ps -aq | xargs -r docker rm -f
+          docker volume ls -q | xargs -r docker volume rm -f
+        fi
+        systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
+        echo "Docker stopped"
+  - name: Purge Docker packages and repo
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras docker-compose-v2 || true"
+      - "apt-get autoremove -y || true"
+      - "rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg"
+      - "rm -f /usr/local/bin/docker-compose"
+      - "echo 'Docker packages and compose binary removed.'"

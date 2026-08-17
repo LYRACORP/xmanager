@@ -1,6 +1,7 @@
 id: python
 name: Python 3.12 (native source)
 description: Build Python 3.12.0 from source into /opt and install pip/venv
+destructive: true
 steps:
   - name: Install build dependencies
     commands:
@@ -37,3 +38,12 @@ steps:
   - name: Cleanup build tree
     commands:
       - "rm -rf /tmp/Python-3.12.0 /tmp/Python-3.12.0.tar.xz"
+uninstall_steps:
+  - name: Remove Python 3.12 prefix and links
+    commands:
+      - |
+        set +e
+        rm -rf /opt/python-3.12.0
+        rm -f /usr/local/bin/python3.12 /usr/local/bin/pip3.12
+        rm -f /etc/profile.d/python312.sh
+        echo "Python 3.12 under /opt removed."

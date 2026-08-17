@@ -9,3 +9,9 @@ steps:
       - "apt-get install -y fish wget curl vim tmux lsof lynx zip unzip cron net-tools rsync btop"
       - "echo 'Base packages installed.'"
       - "which fish curl vim tmux btop rsync || true"
+uninstall_steps:
+  - name: Remove base packages this recipe added
+    commands:
+      - "export DEBIAN_FRONTEND=noninteractive"
+      - "apt-get remove -y fish vim tmux lynx zip unzip net-tools rsync btop wget || true"
+      - "echo 'Base recipe packages removed (curl, cron, lsof left installed).'"

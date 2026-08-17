@@ -23,11 +23,13 @@ type Step struct {
 
 // Recipe is an installable host setup script.
 type Recipe struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Requires    []string `yaml:"requires"`
-	Steps       []Step   `yaml:"steps"`
+	ID             string   `yaml:"id"`
+	Name           string   `yaml:"name"`
+	Description    string   `yaml:"description"`
+	Requires       []string `yaml:"requires"`
+	Destructive    bool     `yaml:"destructive"`
+	Steps          []Step   `yaml:"steps"`
+	UninstallSteps []Step   `yaml:"uninstall_steps"`
 }
 
 // ProgressFunc reports overall progress while a recipe runs.
@@ -165,10 +167,24 @@ func randomPassword() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// CommandCount returns total remote commands in a recipe.
+// CommandCount returns total remote install commands in a recipe.
 func (r Recipe) CommandCount() int {
+	return countCommands(r.Steps)
+}
+
+// UninstallCommandCount returns total remote uninstall commands.
+func (r Recipe) UninstallCommandCount() int {
+	return countCommands(r.UninstallSteps)
+}
+
+// CanUninstall reports whether this recipe defines uninstall steps.
+func (r Recipe) CanUninstall() bool {
+	return r.UninstallCommandCount() > 0
+}
+
+func countCommands(steps []Step) int {
 	n := 0
-	for _, s := range r.Steps {
+	for _, s := range steps {
 		n += len(s.Commands)
 	}
 	return n
