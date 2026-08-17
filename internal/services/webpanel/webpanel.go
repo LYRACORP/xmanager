@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"github.com/lyracorp/xmanager/internal/storage"
@@ -62,6 +63,7 @@ type WebPanel struct {
 	pool       *ssh.Pool
 	exec       *ssh.Executor
 	onProgress ProgressFunc
+	accessKey  string
 }
 
 func New(db *gorm.DB, serverID uint) *WebPanel {
@@ -160,23 +162,28 @@ func (w *WebPanel) Present(exec *ssh.Executor) bool { return Present(exec) }
 
 func (w *WebPanel) Status(exec *ssh.Executor) string {
 	if w.IsEnabled(exec) {
-		port := w.readPort(exec)
-		host := w.host
-		if host == "" {
-			host = "server"
-		}
-		return fmt.Sprintf("running — http://%s:%s", host, port)
+		w.exec = exec
+		return fmt.Sprintf("running — %s", w.LoginURL(w.readPort(exec)))
 	}
 	return "stopped"
 }
 
 func (w *WebPanel) readPort(exec *ssh.Executor) string {
-	out := exec.RunQuiet(`grep -E '^\s*port:' ` + configPath + ` 2>/dev/null | awk '{print $2}' | head -1`)
+	if exec == nil {
+		return "8080"
+	}
+	w.exec = exec
+	out := exec.RunQuiet(w.priv(`grep -E '^\s*port:' ` + configPath + ` 2>/dev/null | awk '{print $2}' | tr -d '"' | head -1`))
 	out = strings.TrimSpace(out)
 	if out == "" {
 		return "8080"
 	}
 	return out
+}
+
+// LoginURL is the bookmark path (secret prefix + /login). Bare host:port 404s on purpose.
+func (w *WebPanel) LoginURL(port string) string {
+	return formatPanelLoginURL(w.hostOr("host"), port, w.resolveAccessKey())
 }
 
 // Enable installs or upgrades the panel on the remote host via binary + systemd.
@@ -194,13 +201,13 @@ func (w *WebPanel) Enable(exec *ssh.Executor, cfg map[string]string) error {
 		return err
 	}
 
-	url := fmt.Sprintf("http://%s:%s", w.hostOr("host"), port)
+	url := w.LoginURL(port)
 	w.report(0.98, "Saving service instance…")
 	if err := w.SaveInstance(w.serverID, ServiceType, "running",
 		fmt.Sprintf(`{"port":"%s","url":"%s"}`, port, url)); err != nil {
 		return err
 	}
-	w.report(1.0, "Web panel ready")
+	w.report(1.0, "Web panel ready — "+url)
 	return nil
 }
 
@@ -288,11 +295,16 @@ func (w *WebPanel) enableBinary(port string, force bool) error {
 		return fmt.Errorf("refreshing SSH after binary upload: %w", err)
 	}
 
+	key, err := w.ensureNodeAccessKey()
+	if err != nil {
+		return err
+	}
 	configYAML := fmt.Sprintf(`web:
   enabled: true
   host: "0.0.0.0"
   port: %s
   role: node
+  access_key: "%s"
 ui:
   theme: dark
   refresh_rate: 5
@@ -302,7 +314,7 @@ poller:
   interval_sec: 30
   metric_retention: 288
   uptime_interval_sec: 60
-`, port)
+`, port, key)
 
 	w.report(0.60, "Writing node web panel config…")
 	tmpCfg := fmt.Sprintf("/tmp/xm-web-config.%d.yaml", time.Now().UnixNano())
@@ -379,12 +391,52 @@ WantedBy=multi-user.target
 	return nil
 }
 
+func (w *WebPanel) ensureNodeAccessKey() (string, error) {
+	if key := w.resolveAccessKey(); key != "" {
+		return key, nil
+	}
+	key, err := config.GenerateAccessKey()
+	if err != nil {
+		return "", fmt.Errorf("generating panel access key: %w", err)
+	}
+	w.accessKey = key
+	return key, nil
+}
+
+func (w *WebPanel) resolveAccessKey() string {
+	if key, err := config.NormalizeAccessKey(w.accessKey); err == nil {
+		w.accessKey = key
+		return key
+	}
+	if w.exec == nil {
+		return ""
+	}
+	raw := w.exec.RunQuiet(w.priv("grep -E '^[[:space:]]*access_key:' " + configPath + " 2>/dev/null || true"))
+	if key := parseYAMLAccessKey(raw); key != "" {
+		w.accessKey = key
+		return key
+	}
+	return ""
+}
+
+func (w *WebPanel) prepareServicesDir() {
+	cmd := "mkdir -p /opt/xmanager/services"
+	if w.needsSudo() {
+		u := strings.TrimSpace(w.sshCfg.User)
+		if u != "" && !strings.ContainsAny(u, " \t\n/'\"$\\") {
+			cmd += " && chown -R " + u + " /opt/xmanager/services"
+		}
+	}
+	_ = w.run(w.priv(cmd))
+}
+
 // enableDefaultNodeStacks deploys the default-on services on the managed host.
 func (w *WebPanel) enableDefaultNodeStacks() {
 	_ = w.reconnect()
 	if w.exec == nil {
 		return
 	}
+	w.prepareServicesDir()
 	for _, item := range defaultRemoteStacks(w.DB, w.serverID) {
 		if item == nil {
 			continue
@@ -398,11 +450,12 @@ func (w *WebPanel) enableDefaultNodeStacks() {
 			cfg["https_port"] = "8085"
 			cfg["smtp_port"] = "25"
 		}
+		name := item.Name()
 		if err := item.Enable(w.exec, cfg); err != nil {
 			// Non-fatal: panel is up; node boot ensure will retry.
-			fmt.Printf("webpanel: default stack %s: %v\n", item.Name(), err)
+			w.report(0.94, fmt.Sprintf("stack %s skipped: %s", name, firstLine(err.Error())))
 		} else {
-			fmt.Printf("webpanel: default stack %s enabled\n", item.Name())
+			w.report(0.94, fmt.Sprintf("stack %s enabled", name))
 		}
 	}
 }

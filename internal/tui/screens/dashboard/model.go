@@ -582,13 +582,13 @@ func (m *Model) runWebPanel(action string) tea.Cmd {
 				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
 				return
 			}
-			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: fmt.Sprintf("http://%s:8080", srv.Host)}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: svc.LoginURL("8080")}
 		case "upgrade":
 			if err := svc.Upgrade(exec, "8080"); err != nil {
 				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
 				return
 			}
-			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: fmt.Sprintf("http://%s:8080", srv.Host)}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: svc.LoginURL("8080")}
 		case "disable":
 			if err := svc.Disable(exec); err != nil {
 				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}

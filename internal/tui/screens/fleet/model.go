@@ -397,7 +397,7 @@ func (m *Model) runWebPanel(s storage.Server, action string) tea.Cmd {
 				ServerID:  s.ID,
 				Action:    action,
 				Installed: true,
-				URL:       fmt.Sprintf("http://%s:8080", s.Host),
+				URL:       svc.LoginURL("8080"),
 			}
 		case "upgrade":
 			if err := svc.Upgrade(exec, "8080"); err != nil {
@@ -408,7 +408,7 @@ func (m *Model) runWebPanel(s storage.Server, action string) tea.Cmd {
 				ServerID:  s.ID,
 				Action:    action,
 				Installed: true,
-				URL:       fmt.Sprintf("http://%s:8080", s.Host),
+				URL:       svc.LoginURL("8080"),
 			}
 		case "disable":
 			if err := svc.Disable(exec); err != nil {
