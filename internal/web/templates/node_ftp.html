@@ -7,6 +7,7 @@
       <h1 class="text-3xl font-bold tracking-tight">FTP</h1>
       <p class="text-panel-muted text-sm mt-1">Jailed vsftpd users · homes under /srv/ftp</p>
     </div>
+    {{if .IsAdmin}}
     <form method="post" action="/ftp">
       {{if .FTPEnabled}}
       <input type="hidden" name="action" value="disable">
@@ -16,6 +17,7 @@
       <button class="text-sm bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg">Enable FTP</button>
       {{end}}
     </form>
+    {{end}}
   </div>
 
   <div class="flex flex-wrap gap-3 text-xs items-center">

@@ -19,6 +19,10 @@ func (h *handler) getNodeDatabaseDetail(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/databases?flash="+urlQueryEscape("database name required"), http.StatusSeeOther)
 		return
 	}
+	if !h.canAccessDatabase(r, string(dbType), name) {
+		http.NotFound(w, r)
+		return
+	}
 
 	exec := h.localExec()
 	mgr := dbmanager.NewManager(dbType, exec)
@@ -98,6 +102,10 @@ func (h *handler) getAPIDatabaseEngineStats(w http.ResponseWriter, r *http.Reque
 func (h *handler) getAPIDatabaseDetailMetrics(w http.ResponseWriter, r *http.Request) {
 	dbType := dbmanager.DBType(r.PathValue("type"))
 	name := r.PathValue("name")
+	if !h.canAccessDatabase(r, string(dbType), name) {
+		http.NotFound(w, r)
+		return
+	}
 	exec := h.localExec()
 
 	detail, err := dbmanager.DatabaseInfo(dbType, exec, name)

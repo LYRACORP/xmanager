@@ -121,6 +121,8 @@ type pageData struct {
 	Title            string
 	Flash            string
 	Session          *session
+	IsAdmin          bool
+	UserRole         string
 	NodeMode         bool
 	ActiveNav        string
 	ServerID         uint
@@ -183,6 +185,7 @@ type pageData struct {
 	FTPEnabled       bool
 	FTPUsers         []storage.FTPUser
 	FTPUser          *storage.FTPUser
+	PanelUsers       []storage.User
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int
@@ -412,7 +415,7 @@ func (h *handler) nodePage(sess *session, title string) pageData {
 		p := &snap.Ports[i]
 		p.CanClose = p.Port > 0 && p.Port != 22 && p.Port != panelPort
 	}
-	return pageData{
+	data := pageData{
 		Title:       title,
 		Session:     sess,
 		NodeMode:    true,
@@ -421,6 +424,8 @@ func (h *handler) nodePage(sess *session, title string) pageData {
 		NetTx:       nodemetrics.FormatBytes(snap.NetTxBytes),
 		UptimeHuman: nodemetrics.FormatUptime(snap.UptimeSec),
 	}
+	fillPageACL(&data, sess)
+	return data
 }
 
 func (h *handler) renderNodeMetrics(w http.ResponseWriter, sess *session, flash string) {
@@ -439,18 +444,18 @@ func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	if sess != nil {
 		data.WelcomeName = sess.Username
 	}
-	sid := h.localServerID()
+	q := h.scopeServerQuery(r, &storage.Project{})
 	var n int64
-	h.opts.DB.Model(&storage.Project{}).Where("server_id = ?", sid).Count(&n)
+	q.Count(&n)
 	data.StatProjects = int(n)
-	h.opts.DB.Model(&storage.ConnectedDomain{}).Where("server_id = ?", sid).Count(&n)
+	h.scopeServerQuery(r, &storage.ConnectedDomain{}).Count(&n)
 	data.StatDomains = int(n)
-	h.opts.DB.Model(&storage.Mailbox{}).Where("server_id = ?", sid).Count(&n)
+	h.scopeServerQuery(r, &storage.Mailbox{}).Count(&n)
 	data.StatMailboxes = int(n)
-	h.opts.DB.Model(&storage.ProjectDatabase{}).Where("server_id = ?", sid).Count(&n)
+	h.scopeServerQuery(r, &storage.ProjectDatabase{}).Count(&n)
 	data.StatDatabases = int(n)
 	data.StatContainers = data.Node.ContainerCount
-	data.StatBuckets = h.countRustFSBuckets()
+	data.StatBuckets = h.countOwnedRustFSBuckets(r)
 	data.DiskUsage = h.getDiskUsageCached()
 	data.NetRxRate = nodemetrics.FormatRateKbps(data.Node.NetRxBps)
 	data.NetTxRate = nodemetrics.FormatRateKbps(data.Node.NetTxBps)
@@ -727,10 +732,14 @@ func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		ActiveNav: "settings",
 		Config:    h.opts.Config,
 	}
+	fillPageACL(&data, sess)
 	if flash := r.URL.Query().Get("flash"); flash != "" {
 		data.Flash = flash
 	}
 	if h.nodeMode {
+		if data.IsAdmin {
+			data.PanelUsers = h.loadPanelUsers()
+		}
 		data.GitProviders = h.gitProviderViews()
 		if h.opts.Config != nil {
 			data.PublicURL = h.opts.Config.Web.PublicURL

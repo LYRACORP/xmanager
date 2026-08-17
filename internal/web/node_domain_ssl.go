@@ -9,13 +9,8 @@ import (
 	"github.com/lyracorp/xmanager/internal/storage"
 )
 
-func (h *handler) loadConnectedDomain(domain string) (*storage.ConnectedDomain, error) {
-	domain = normalizeDomainName(domain)
-	var cd storage.ConnectedDomain
-	if err := h.opts.DB.Where("server_id = ? AND domain = ?", h.localServerID(), domain).First(&cd).Error; err != nil {
-		return nil, err
-	}
-	return &cd, nil
+func (h *handler) loadConnectedDomain(r *http.Request, domain string) (*storage.ConnectedDomain, error) {
+	return h.loadOwnedConnectedDomain(r, domain)
 }
 
 func (h *handler) redirectDomainSSL(w http.ResponseWriter, r *http.Request, domain, flash string) {
@@ -25,7 +20,7 @@ func (h *handler) redirectDomainSSL(w http.ResponseWriter, r *http.Request, doma
 func (h *handler) postNodeDomainSSL(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	domain := normalizeDomainName(r.PathValue("domain"))
-	cd, err := h.loadConnectedDomain(domain)
+	cd, err := h.loadConnectedDomain(r, domain)
 	if err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
 		return
@@ -58,7 +53,7 @@ func (h *handler) postNodeDomainSSL(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeDomainSSLIssue(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	domain := normalizeDomainName(r.PathValue("domain"))
-	cd, err := h.loadConnectedDomain(domain)
+	cd, err := h.loadConnectedDomain(r, domain)
 	if err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
 		return
@@ -80,7 +75,7 @@ func (h *handler) postNodeDomainSSLIssue(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeDomainSSLCustom(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	domain := normalizeDomainName(r.PathValue("domain"))
-	cd, err := h.loadConnectedDomain(domain)
+	cd, err := h.loadConnectedDomain(r, domain)
 	if err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
 		return
@@ -110,7 +105,7 @@ func (h *handler) postNodeDomainSSLCustom(w http.ResponseWriter, r *http.Request
 func (h *handler) postNodeDomainSSLDisable(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	domain := normalizeDomainName(r.PathValue("domain"))
-	cd, err := h.loadConnectedDomain(domain)
+	cd, err := h.loadConnectedDomain(r, domain)
 	if err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
 		return

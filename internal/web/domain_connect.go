@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
@@ -31,6 +32,8 @@ type domainConnectOpts struct {
 	SkipSSL     bool
 	SSLEnabled  *bool
 	SSLProvider string
+	OwnerUserID uint
+	IsAdmin     bool
 }
 
 func detectPublicIP(exec *ssh.Executor) string {
@@ -71,9 +74,24 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 		cd = storage.ConnectedDomain{
 			ServerID: sid,
 			Domain:   domain,
+			UserID:   opts.OwnerUserID,
 		}
 	} else if err != nil {
 		return nil, err
+	} else if !opts.IsAdmin {
+		if cd.UserID == 0 || cd.UserID != opts.OwnerUserID {
+			return nil, fmt.Errorf("domain not found")
+		}
+	}
+
+	if opts.ProjectID > 0 {
+		var p storage.Project
+		if err := h.opts.DB.Where("id = ? AND server_id = ?", opts.ProjectID, sid).First(&p).Error; err != nil {
+			return nil, fmt.Errorf("project not found")
+		}
+		if !opts.IsAdmin && (p.UserID == 0 || p.UserID != opts.OwnerUserID) {
+			return nil, fmt.Errorf("project not found")
+		}
 	}
 
 	cd.Upstream = opts.Upstream
@@ -138,6 +156,7 @@ func (h *handler) connectDomain(opts domainConnectOpts) (*storage.ConnectedDomai
 			_ = h.opts.DB.Create(&storage.ProjectDatabase{
 				ProjectID: *cd.ProjectID,
 				ServerID:  sid,
+				UserID:    cd.UserID,
 				DBType:    cd.DBType,
 				DBName:    cd.DBName,
 			}).Error
@@ -548,7 +567,7 @@ func webmailURLForDomain(domain string) string {
 	return webmailURLForHost(webmailHostForDomain(domain))
 }
 
-func (h *handler) createMailboxAPI(local, domain, password string, projectID uint) (*storage.Mailbox, error) {
+func (h *handler) createMailboxAPI(r *http.Request, local, domain, password string, projectID uint) (*storage.Mailbox, error) {
 	local = strings.ToLower(strings.TrimSpace(local))
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if local == "" || domain == "" {
@@ -558,9 +577,27 @@ func (h *handler) createMailboxAPI(local, domain, password string, projectID uin
 		return nil, fmt.Errorf("password required")
 	}
 	sid := h.localServerID()
+	ownerID, isAdmin := h.domainConnectACL(r)
+
+	if projectID > 0 {
+		var p storage.Project
+		if err := h.opts.DB.Where("id = ? AND server_id = ?", projectID, sid).First(&p).Error; err != nil {
+			return nil, fmt.Errorf("project not found")
+		}
+		if !isAdmin && (p.UserID == 0 || p.UserID != ownerID) {
+			return nil, fmt.Errorf("project not found")
+		}
+	}
+
+	var existing storage.ConnectedDomain
+	if err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&existing).Error; err == nil {
+		if !isAdmin && (existing.UserID == 0 || existing.UserID != ownerID) {
+			return nil, fmt.Errorf("domain not found")
+		}
+	}
 
 	// Ensure domain hub exists (mail + dns best-effort).
-	_, _ = h.connectDomain(domainConnectOpts{Domain: domain, ProjectID: projectID, SkipNginx: true})
+	_, _ = h.connectDomainFromRequest(r, domainConnectOpts{Domain: domain, ProjectID: projectID, SkipNginx: true})
 
 	mailCfg := mailinbox.LoadConfig(h.opts.DB, sid)
 	client := mailinbox.NewClient(mailCfg)
@@ -570,6 +607,7 @@ func (h *handler) createMailboxAPI(local, domain, password string, projectID uin
 	addr := local + "@" + domain
 	mb := storage.Mailbox{
 		ServerID: sid,
+		UserID:   ownerID,
 		Domain:   domain,
 		Address:  addr,
 	}
@@ -587,10 +625,13 @@ func (h *handler) createMailboxAPI(local, domain, password string, projectID uin
 	return &mb, nil
 }
 
-func (h *handler) deleteMailboxAPI(id uint) error {
+func (h *handler) deleteMailboxAPI(r *http.Request, id uint) error {
 	var mb storage.Mailbox
 	if err := h.opts.DB.First(&mb, id).Error; err != nil {
 		return err
+	}
+	if !h.canOwn(r, mb.UserID) {
+		return gorm.ErrRecordNotFound
 	}
 	client := mailinbox.NewClient(mailinbox.LoadConfig(h.opts.DB, h.localServerID()))
 	_ = client.DeleteMailbox(mb.Address) // best-effort remote delete

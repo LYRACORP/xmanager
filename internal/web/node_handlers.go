@@ -39,205 +39,212 @@ import (
 )
 
 func (h *handler) registerNode(mux *http.ServeMux) {
-	mux.HandleFunc("GET /{$}", h.requireAuth(h.getNodeHome))
-	mux.HandleFunc("GET /api/node/metrics", h.requireAuth(h.getNodeMetricsFragment))
-	mux.HandleFunc("GET /api/node/disk-usage", h.requireAuth(h.getNodeDiskUsageFragment))
-	mux.HandleFunc("GET /api/node/net.json", h.requireAuth(h.getNodeNetJSON))
-	mux.HandleFunc("GET /api/node/charts", h.requireAuth(h.getNodeCharts))
-	mux.HandleFunc("POST /api/node/ports/open", h.requireAuth(h.postNodePortsOpen))
-	mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
+	authz := h.requireAuth
+	adminz := h.requireAdminAuth
 
-	mux.HandleFunc("GET /docker", h.requireAuth(h.getNodeDocker))
-	mux.HandleFunc("POST /docker/swarm/init", h.requireAuth(h.postNodeDockerSwarmInit))
-	mux.HandleFunc("POST /docker/swarm/leave", h.requireAuth(h.postNodeDockerSwarmLeave))
-	mux.HandleFunc("POST /docker/swarm/nodes/{id}/promote", h.requireAuth(h.postNodeDockerSwarmPromote))
-	mux.HandleFunc("POST /docker/swarm/nodes/{id}/demote", h.requireAuth(h.postNodeDockerSwarmDemote))
-	mux.HandleFunc("POST /docker/swarm/nodes/{id}/availability", h.requireAuth(h.postNodeDockerSwarmAvailability))
-	mux.HandleFunc("POST /docker/swarm/nodes/{id}/remove", h.requireAuth(h.postNodeDockerSwarmRemove))
-	mux.HandleFunc("POST /docker/{id}/start", h.requireAuth(h.postNodeDockerStart))
-	mux.HandleFunc("POST /docker/{id}/stop", h.requireAuth(h.postNodeDockerStop))
-	mux.HandleFunc("POST /docker/{id}/restart", h.requireAuth(h.postNodeDockerRestart))
-	mux.HandleFunc("GET /docker/{id}/logs", h.requireAuth(h.getNodeDockerLogs))
-	mux.HandleFunc("GET /docker/{id}/terminal", h.requireAuth(h.getNodeDockerTerminal))
+	mux.HandleFunc("GET /{$}", authz(h.getNodeHome))
+	mux.HandleFunc("GET /api/node/metrics", authz(h.getNodeMetricsFragment))
+	mux.HandleFunc("GET /api/node/disk-usage", authz(h.getNodeDiskUsageFragment))
+	mux.HandleFunc("GET /api/node/net.json", authz(h.getNodeNetJSON))
+	mux.HandleFunc("GET /api/node/charts", authz(h.getNodeCharts))
+	mux.HandleFunc("POST /api/node/ports/open", adminz(h.postNodePortsOpen))
+	mux.HandleFunc("POST /api/node/ports/close", adminz(h.postNodePortsClose))
+
+	mux.HandleFunc("GET /docker", adminz(h.getNodeDocker))
+	mux.HandleFunc("POST /docker/swarm/init", adminz(h.postNodeDockerSwarmInit))
+	mux.HandleFunc("POST /docker/swarm/leave", adminz(h.postNodeDockerSwarmLeave))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/promote", adminz(h.postNodeDockerSwarmPromote))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/demote", adminz(h.postNodeDockerSwarmDemote))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/availability", adminz(h.postNodeDockerSwarmAvailability))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/remove", adminz(h.postNodeDockerSwarmRemove))
+	mux.HandleFunc("POST /docker/{id}/start", adminz(h.postNodeDockerStart))
+	mux.HandleFunc("POST /docker/{id}/stop", adminz(h.postNodeDockerStop))
+	mux.HandleFunc("POST /docker/{id}/restart", adminz(h.postNodeDockerRestart))
+	mux.HandleFunc("GET /docker/{id}/logs", adminz(h.getNodeDockerLogs))
+	mux.HandleFunc("GET /docker/{id}/terminal", adminz(h.getNodeDockerTerminal))
 	mux.HandleFunc("GET /docker/{id}/terminal/ws", h.requireAuthWS(h.getNodeDockerTerminalWS))
 
-	mux.HandleFunc("GET /cron", h.requireAuth(h.getNodeCron))
-	mux.HandleFunc("POST /cron", h.requireAuth(h.postNodeCron))
-	mux.HandleFunc("POST /cron/{id}/toggle", h.requireAuth(h.postNodeCronToggle))
-	mux.HandleFunc("POST /cron/{id}/delete", h.requireAuth(h.postNodeCronDelete))
-	mux.HandleFunc("GET /cron/{id}/logs", h.requireAuth(h.getNodeCronLogs))
+	mux.HandleFunc("GET /cron", adminz(h.getNodeCron))
+	mux.HandleFunc("POST /cron", adminz(h.postNodeCron))
+	mux.HandleFunc("POST /cron/{id}/toggle", adminz(h.postNodeCronToggle))
+	mux.HandleFunc("POST /cron/{id}/delete", adminz(h.postNodeCronDelete))
+	mux.HandleFunc("GET /cron/{id}/logs", adminz(h.getNodeCronLogs))
 
-	mux.HandleFunc("GET /projects", h.requireAuth(h.getNodeProjects))
-	mux.HandleFunc("GET /projects/new", h.requireAuth(h.getNodeProjectsNew))
-	mux.HandleFunc("POST /projects", h.requireAuth(h.postNodeProjects))
+	mux.HandleFunc("GET /projects", authz(h.getNodeProjects))
+	mux.HandleFunc("GET /projects/new", authz(h.getNodeProjectsNew))
+	mux.HandleFunc("POST /projects", authz(h.postNodeProjects))
 	// Catalog is outside /projects/{id}/… — ServeMux rejects overlapping wildcards
 	// (e.g. /projects/oneclick/{id} vs /projects/{id}/deploy).
-	mux.HandleFunc("GET /oneclick", h.requireAuth(h.getNodeProjectTemplates))
-	mux.HandleFunc("GET /oneclick/{id}", h.requireAuth(h.getNodeProjectTemplate))
-	mux.HandleFunc("POST /oneclick/{id}", h.requireAuth(h.postNodeProjectTemplate))
-	mux.HandleFunc("GET /projects/{id}", h.requireAuth(h.getNodeProjectDetail))
-	mux.HandleFunc("GET /projects/{id}/files/download", h.requireAuth(h.getNodeProjectFilesDownload))
-	mux.HandleFunc("POST /projects/{id}/files/upload", h.requireAuth(h.postNodeProjectFilesUpload))
-	mux.HandleFunc("POST /projects/{id}/files/mkdir", h.requireAuth(h.postNodeProjectFilesMkdir))
-	mux.HandleFunc("POST /projects/{id}/files/create", h.requireAuth(h.postNodeProjectFilesCreate))
-	mux.HandleFunc("POST /projects/{id}/files/save", h.requireAuth(h.postNodeProjectFilesSave))
-	mux.HandleFunc("POST /projects/{id}/files/rename", h.requireAuth(h.postNodeProjectFilesRename))
-	mux.HandleFunc("POST /projects/{id}/files/delete", h.requireAuth(h.postNodeProjectFilesDelete))
-	mux.HandleFunc("POST /projects/{id}/files/chmod", h.requireAuth(h.postNodeProjectFilesChmod))
+	mux.HandleFunc("GET /oneclick", authz(h.getNodeProjectTemplates))
+	mux.HandleFunc("GET /oneclick/{id}", authz(h.getNodeProjectTemplate))
+	mux.HandleFunc("POST /oneclick/{id}", authz(h.postNodeProjectTemplate))
+	mux.HandleFunc("GET /projects/{id}", authz(h.getNodeProjectDetail))
+	mux.HandleFunc("GET /projects/{id}/files/download", authz(h.getNodeProjectFilesDownload))
+	mux.HandleFunc("POST /projects/{id}/files/upload", authz(h.postNodeProjectFilesUpload))
+	mux.HandleFunc("POST /projects/{id}/files/mkdir", authz(h.postNodeProjectFilesMkdir))
+	mux.HandleFunc("POST /projects/{id}/files/create", authz(h.postNodeProjectFilesCreate))
+	mux.HandleFunc("POST /projects/{id}/files/save", authz(h.postNodeProjectFilesSave))
+	mux.HandleFunc("POST /projects/{id}/files/rename", authz(h.postNodeProjectFilesRename))
+	mux.HandleFunc("POST /projects/{id}/files/delete", authz(h.postNodeProjectFilesDelete))
+	mux.HandleFunc("POST /projects/{id}/files/chmod", authz(h.postNodeProjectFilesChmod))
 	mux.HandleFunc("GET /projects/{id}/terminal/ws", h.requireAuthWS(h.getNodeProjectTerminalWS))
-	mux.HandleFunc("POST /projects/{id}/deploy", h.requireAuth(h.postNodeProjectDeploy))
-	mux.HandleFunc("POST /projects/{id}/stop", h.requireAuth(h.postNodeProjectStop))
-	mux.HandleFunc("POST /projects/{id}/restart", h.requireAuth(h.postNodeProjectRestart))
-	mux.HandleFunc("POST /projects/{id}/domain", h.requireAuth(h.postNodeProjectDomain))
-	mux.HandleFunc("POST /projects/{id}/env", h.requireAuth(h.postNodeProjectEnv))
-	mux.HandleFunc("POST /projects/{id}/env/{env_id}/delete", h.requireAuth(h.postNodeProjectEnvDelete))
-	mux.HandleFunc("POST /projects/{id}/delete", h.requireAuth(h.postNodeProjectDelete))
+	mux.HandleFunc("POST /projects/{id}/deploy", authz(h.postNodeProjectDeploy))
+	mux.HandleFunc("POST /projects/{id}/stop", authz(h.postNodeProjectStop))
+	mux.HandleFunc("POST /projects/{id}/restart", authz(h.postNodeProjectRestart))
+	mux.HandleFunc("POST /projects/{id}/domain", authz(h.postNodeProjectDomain))
+	mux.HandleFunc("POST /projects/{id}/env", authz(h.postNodeProjectEnv))
+	mux.HandleFunc("POST /projects/{id}/env/{env_id}/delete", authz(h.postNodeProjectEnvDelete))
+	mux.HandleFunc("POST /projects/{id}/delete", authz(h.postNodeProjectDelete))
 
-	mux.HandleFunc("GET /databases", h.requireAuth(h.getNodeDatabases))
-	mux.HandleFunc("GET /databases/{type}/{name}", h.requireAuth(h.getNodeDatabaseDetail))
-	mux.HandleFunc("GET /api/databases/{type}/stats", h.requireAuth(h.getAPIDatabaseEngineStats))
-	mux.HandleFunc("GET /api/databases/{type}/charts", h.requireAuth(h.getDatabaseCharts))
-	mux.HandleFunc("GET /api/databases/{type}/{name}/metrics", h.requireAuth(h.getAPIDatabaseDetailMetrics))
-	mux.HandleFunc("POST /databases", h.requireAuth(h.postNodeDatabases))
-	mux.HandleFunc("POST /databases/install", h.requireAuth(h.postNodeDatabaseInstall))
-	mux.HandleFunc("POST /databases/user", h.requireAuth(h.postNodeDatabaseUser))
-	mux.HandleFunc("POST /databases/backup", h.requireAuth(h.postNodeDatabaseBackup))
-	mux.HandleFunc("POST /databases/link", h.requireAuth(h.postNodeDatabaseLink))
-	mux.HandleFunc("POST /databases/tools/adminer", h.requireAuth(h.postNodeDatabaseToolAdminer))
-	mux.HandleFunc("POST /databases/tools/pgadmin", h.requireAuth(h.postNodeDatabaseToolPgAdmin))
+	mux.HandleFunc("GET /databases", authz(h.getNodeDatabases))
+	mux.HandleFunc("GET /databases/{type}/{name}", authz(h.getNodeDatabaseDetail))
+	mux.HandleFunc("GET /api/databases/{type}/stats", authz(h.getAPIDatabaseEngineStats))
+	mux.HandleFunc("GET /api/databases/{type}/charts", authz(h.getDatabaseCharts))
+	mux.HandleFunc("GET /api/databases/{type}/{name}/metrics", authz(h.getAPIDatabaseDetailMetrics))
+	mux.HandleFunc("POST /databases", authz(h.postNodeDatabases))
+	mux.HandleFunc("POST /databases/install", adminz(h.postNodeDatabaseInstall))
+	mux.HandleFunc("POST /databases/user", authz(h.postNodeDatabaseUser))
+	mux.HandleFunc("POST /databases/backup", authz(h.postNodeDatabaseBackup))
+	mux.HandleFunc("POST /databases/link", authz(h.postNodeDatabaseLink))
+	mux.HandleFunc("POST /databases/tools/adminer", adminz(h.postNodeDatabaseToolAdminer))
+	mux.HandleFunc("POST /databases/tools/pgadmin", adminz(h.postNodeDatabaseToolPgAdmin))
 
-	mux.HandleFunc("GET /backup", h.requireAuth(h.getNodeBackup))
-	mux.HandleFunc("POST /backup/run", h.requireAuth(h.postNodeBackupRun))
-	mux.HandleFunc("POST /backup/schedule", h.requireAuth(h.postNodeBackupSchedule))
-	mux.HandleFunc("POST /backup/schedule/{id}/delete", h.requireAuth(h.postNodeBackupScheduleDelete))
-	mux.HandleFunc("POST /backup/schedule/{id}/update", h.requireAuth(h.postNodeBackupScheduleUpdate))
-	mux.HandleFunc("POST /backup/schedule/{id}/run", h.requireAuth(h.postNodeBackupScheduleRun))
-	mux.HandleFunc("POST /backup/destinations", h.requireAuth(h.postNodeBackupDestination))
-	mux.HandleFunc("POST /backup/destinations/{id}/delete", h.requireAuth(h.postNodeBackupDestinationDelete))
-	mux.HandleFunc("GET /backup/{id}/download", h.requireAuth(h.getNodeBackupDownload))
-	mux.HandleFunc("POST /backup/{id}/delete", h.requireAuth(h.postNodeBackupDelete))
-	mux.HandleFunc("POST /backup/{id}/resend", h.requireAuth(h.postNodeBackupResend))
+	mux.HandleFunc("GET /backup", adminz(h.getNodeBackup))
+	mux.HandleFunc("POST /backup/run", adminz(h.postNodeBackupRun))
+	mux.HandleFunc("POST /backup/schedule", adminz(h.postNodeBackupSchedule))
+	mux.HandleFunc("POST /backup/schedule/{id}/delete", adminz(h.postNodeBackupScheduleDelete))
+	mux.HandleFunc("POST /backup/schedule/{id}/update", adminz(h.postNodeBackupScheduleUpdate))
+	mux.HandleFunc("POST /backup/schedule/{id}/run", adminz(h.postNodeBackupScheduleRun))
+	mux.HandleFunc("POST /backup/destinations", adminz(h.postNodeBackupDestination))
+	mux.HandleFunc("POST /backup/destinations/{id}/delete", adminz(h.postNodeBackupDestinationDelete))
+	mux.HandleFunc("GET /backup/{id}/download", adminz(h.getNodeBackupDownload))
+	mux.HandleFunc("POST /backup/{id}/delete", adminz(h.postNodeBackupDelete))
+	mux.HandleFunc("POST /backup/{id}/resend", adminz(h.postNodeBackupResend))
 
-	mux.HandleFunc("GET /logs", h.requireAuth(h.getNodeLogs))
-	mux.HandleFunc("GET /api/node/logs", h.requireAuth(h.getNodeLogsFragment))
+	mux.HandleFunc("GET /logs", adminz(h.getNodeLogs))
+	mux.HandleFunc("GET /api/node/logs", adminz(h.getNodeLogsFragment))
 
-	mux.HandleFunc("GET /security", h.requireAuth(h.getNodeSecurity))
-	mux.HandleFunc("GET /security/dumps/{id}", h.requireAuth(h.getNodeSecurityDumpDetail))
-	mux.HandleFunc("POST /security/firewall", h.requireAuth(h.postNodeSecurityFirewall))
-	mux.HandleFunc("POST /security/ssh/harden", h.requireAuth(h.postNodeSecuritySSHHarden))
-	mux.HandleFunc("POST /security/ssl/renew", h.requireAuth(h.postNodeSecuritySSLRenew))
-	mux.HandleFunc("POST /security/fail2ban/unban", h.requireAuth(h.postNodeSecurityFail2banUnban))
-	mux.HandleFunc("POST /security/dump", h.requireAuth(h.postNodeSecurityDump))
-	mux.HandleFunc("POST /security/policy", h.requireAuth(h.postNodeSecurityPolicy))
-	mux.HandleFunc("POST /security/ip/block", h.requireAuth(h.postNodeSecurityIPBlock))
-	mux.HandleFunc("POST /security/ip/unblock", h.requireAuth(h.postNodeSecurityIPUnblock))
-	mux.HandleFunc("POST /security/waf/modsec/install", h.requireAuth(h.postNodeSecurityModsecInstall))
-	mux.HandleFunc("POST /security/waf/modsec/remove", h.requireAuth(h.postNodeSecurityModsecRemove))
-	mux.HandleFunc("GET /api/security/traffic", h.requireAuth(h.getAPISecurityTraffic))
+	mux.HandleFunc("GET /security", adminz(h.getNodeSecurity))
+	mux.HandleFunc("GET /security/dumps/{id}", adminz(h.getNodeSecurityDumpDetail))
+	mux.HandleFunc("POST /security/firewall", adminz(h.postNodeSecurityFirewall))
+	mux.HandleFunc("POST /security/ssh/harden", adminz(h.postNodeSecuritySSHHarden))
+	mux.HandleFunc("POST /security/ssl/renew", adminz(h.postNodeSecuritySSLRenew))
+	mux.HandleFunc("POST /security/fail2ban/unban", adminz(h.postNodeSecurityFail2banUnban))
+	mux.HandleFunc("POST /security/dump", adminz(h.postNodeSecurityDump))
+	mux.HandleFunc("POST /security/policy", adminz(h.postNodeSecurityPolicy))
+	mux.HandleFunc("POST /security/ip/block", adminz(h.postNodeSecurityIPBlock))
+	mux.HandleFunc("POST /security/ip/unblock", adminz(h.postNodeSecurityIPUnblock))
+	mux.HandleFunc("POST /security/waf/modsec/install", adminz(h.postNodeSecurityModsecInstall))
+	mux.HandleFunc("POST /security/waf/modsec/remove", adminz(h.postNodeSecurityModsecRemove))
+	mux.HandleFunc("GET /api/security/traffic", adminz(h.getAPISecurityTraffic))
 	mux.HandleFunc("POST /internal/reqdump", h.postInternalReqdump)
 
-	mux.HandleFunc("GET /apps", h.requireAuth(h.getNodeApps))
-	mux.HandleFunc("POST /apps/{name}/enable", h.requireAuth(h.postNodeAppEnable))
-	mux.HandleFunc("POST /apps/{name}/disable", h.requireAuth(h.postNodeAppDisable))
-	mux.HandleFunc("POST /apps/rustfs/bucket", h.requireAuth(h.postNodeRustfsBucket))
+	mux.HandleFunc("GET /apps", adminz(h.getNodeApps))
+	mux.HandleFunc("POST /apps/{name}/enable", adminz(h.postNodeAppEnable))
+	mux.HandleFunc("POST /apps/{name}/disable", adminz(h.postNodeAppDisable))
+	mux.HandleFunc("POST /apps/rustfs/bucket", adminz(h.postNodeRustfsBucket))
 	// Legacy stack URLs → Apps
-	mux.HandleFunc("GET /services/stacks", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /services/stacks", authz(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps", http.StatusSeeOther)
 	}))
 
-	mux.HandleFunc("GET /services", h.requireAuth(h.getNodeSystemServices))
-	mux.HandleFunc("POST /services/{unit}/start", h.requireAuth(h.postNodeSystemServiceAction))
-	mux.HandleFunc("POST /services/{unit}/stop", h.requireAuth(h.postNodeSystemServiceAction))
-	mux.HandleFunc("POST /services/{unit}/restart", h.requireAuth(h.postNodeSystemServiceAction))
+	mux.HandleFunc("GET /services", adminz(h.getNodeSystemServices))
+	mux.HandleFunc("POST /services/{unit}/start", adminz(h.postNodeSystemServiceAction))
+	mux.HandleFunc("POST /services/{unit}/stop", adminz(h.postNodeSystemServiceAction))
+	mux.HandleFunc("POST /services/{unit}/restart", adminz(h.postNodeSystemServiceAction))
 
-	mux.HandleFunc("GET /storage", h.requireAuth(h.getNodeStorage))
-	mux.HandleFunc("POST /storage/buckets", h.requireAuth(h.postNodeStorageBucketCreate))
-	mux.HandleFunc("POST /storage/buckets/delete", h.requireAuth(h.postNodeStorageBucketDelete))
-	mux.HandleFunc("GET /storage/buckets/{bucket}", h.requireAuth(h.getNodeStorageBucket))
-	mux.HandleFunc("GET /storage/buckets/{bucket}/download", h.requireAuth(h.getNodeStorageDownload))
-	mux.HandleFunc("POST /storage/buckets/{bucket}/upload", h.requireAuth(h.postNodeStorageUpload))
-	mux.HandleFunc("POST /storage/buckets/{bucket}/mkdir", h.requireAuth(h.postNodeStorageMkdir))
-	mux.HandleFunc("POST /storage/buckets/{bucket}/delete", h.requireAuth(h.postNodeStorageDelete))
-	mux.HandleFunc("POST /storage/buckets/{bucket}/rename", h.requireAuth(h.postNodeStorageRename))
+	mux.HandleFunc("GET /storage", authz(h.getNodeStorage))
+	mux.HandleFunc("POST /storage/buckets", authz(h.postNodeStorageBucketCreate))
+	mux.HandleFunc("POST /storage/buckets/delete", authz(h.postNodeStorageBucketDelete))
+	mux.HandleFunc("GET /storage/buckets/{bucket}", authz(h.getNodeStorageBucket))
+	mux.HandleFunc("GET /storage/buckets/{bucket}/download", authz(h.getNodeStorageDownload))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/upload", authz(h.postNodeStorageUpload))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/mkdir", authz(h.postNodeStorageMkdir))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/delete", authz(h.postNodeStorageDelete))
+	mux.HandleFunc("POST /storage/buckets/{bucket}/rename", authz(h.postNodeStorageRename))
 
-	mux.HandleFunc("GET /ftp", h.requireAuth(h.getNodeFTP))
-	mux.HandleFunc("POST /ftp", h.requireAuth(h.postNodeFTPToggle))
-	mux.HandleFunc("POST /ftp/users", h.requireAuth(h.postNodeFTPUser))
-	mux.HandleFunc("POST /ftp/users/{id}/password", h.requireAuth(h.postNodeFTPUserPassword))
-	mux.HandleFunc("POST /ftp/users/{id}/enable", h.requireAuth(h.postNodeFTPUserEnable))
-	mux.HandleFunc("POST /ftp/users/{id}/disable", h.requireAuth(h.postNodeFTPUserDisable))
-	mux.HandleFunc("POST /ftp/users/{id}/delete", h.requireAuth(h.postNodeFTPUserDelete))
-	mux.HandleFunc("GET /ftp/users/{id}/files", h.requireAuth(h.getNodeFTPFiles))
-	mux.HandleFunc("GET /ftp/users/{id}/files/download", h.requireAuth(h.getNodeFTPFilesDownload))
-	mux.HandleFunc("POST /ftp/users/{id}/files/upload", h.requireAuth(h.postNodeFTPFilesUpload))
-	mux.HandleFunc("POST /ftp/users/{id}/files/mkdir", h.requireAuth(h.postNodeFTPFilesMkdir))
-	mux.HandleFunc("POST /ftp/users/{id}/files/create", h.requireAuth(h.postNodeFTPFilesCreate))
-	mux.HandleFunc("POST /ftp/users/{id}/files/save", h.requireAuth(h.postNodeFTPFilesSave))
-	mux.HandleFunc("POST /ftp/users/{id}/files/rename", h.requireAuth(h.postNodeFTPFilesRename))
-	mux.HandleFunc("POST /ftp/users/{id}/files/delete", h.requireAuth(h.postNodeFTPFilesDelete))
-	mux.HandleFunc("POST /ftp/users/{id}/files/chmod", h.requireAuth(h.postNodeFTPFilesChmod))
+	mux.HandleFunc("GET /ftp", authz(h.getNodeFTP))
+	mux.HandleFunc("POST /ftp", adminz(h.postNodeFTPToggle))
+	mux.HandleFunc("POST /ftp/users", authz(h.postNodeFTPUser))
+	mux.HandleFunc("POST /ftp/users/{id}/password", authz(h.postNodeFTPUserPassword))
+	mux.HandleFunc("POST /ftp/users/{id}/enable", authz(h.postNodeFTPUserEnable))
+	mux.HandleFunc("POST /ftp/users/{id}/disable", authz(h.postNodeFTPUserDisable))
+	mux.HandleFunc("POST /ftp/users/{id}/delete", authz(h.postNodeFTPUserDelete))
+	mux.HandleFunc("GET /ftp/users/{id}/files", authz(h.getNodeFTPFiles))
+	mux.HandleFunc("GET /ftp/users/{id}/files/download", authz(h.getNodeFTPFilesDownload))
+	mux.HandleFunc("POST /ftp/users/{id}/files/upload", authz(h.postNodeFTPFilesUpload))
+	mux.HandleFunc("POST /ftp/users/{id}/files/mkdir", authz(h.postNodeFTPFilesMkdir))
+	mux.HandleFunc("POST /ftp/users/{id}/files/create", authz(h.postNodeFTPFilesCreate))
+	mux.HandleFunc("POST /ftp/users/{id}/files/save", authz(h.postNodeFTPFilesSave))
+	mux.HandleFunc("POST /ftp/users/{id}/files/rename", authz(h.postNodeFTPFilesRename))
+	mux.HandleFunc("POST /ftp/users/{id}/files/delete", authz(h.postNodeFTPFilesDelete))
+	mux.HandleFunc("POST /ftp/users/{id}/files/chmod", authz(h.postNodeFTPFilesChmod))
 
-	mux.HandleFunc("GET /domains", h.requireAuth(h.getNodeDomains))
-	mux.HandleFunc("POST /domains", h.requireAuth(h.postNodeDomains))
-	mux.HandleFunc("POST /domains/connect", h.requireAuth(h.postNodeDomainConnect))
-	mux.HandleFunc("POST /domains/mailbox", h.requireAuth(h.postNodeMailbox))
-	mux.HandleFunc("POST /domains/mailboxes/{id}/delete", h.requireAuth(h.postNodeMailboxDelete))
-	mux.HandleFunc("GET /domains/d/{domain}", h.requireAuth(h.getNodeDomainDetail))
-	mux.HandleFunc("POST /domains/d/{domain}/delete", h.requireAuth(h.postNodeDomainDelete))
-	mux.HandleFunc("POST /domains/d/{domain}/records", h.requireAuth(h.postNodeDomainRecord))
-	mux.HandleFunc("POST /domains/d/{domain}/records/delete", h.requireAuth(h.postNodeDomainRecordDelete))
-	mux.HandleFunc("POST /domains/d/{domain}/cf/records", h.requireAuth(h.postNodeDomainCFRecord))
-	mux.HandleFunc("POST /domains/d/{domain}/cf/records/delete", h.requireAuth(h.postNodeDomainCFRecordDelete))
-	mux.HandleFunc("POST /domains/d/{domain}/cf/zone-lookup", h.requireAuth(h.postNodeDomainCFZoneLookup))
-	mux.HandleFunc("POST /domains/d/{domain}/ssl", h.requireAuth(h.postNodeDomainSSL))
-	mux.HandleFunc("POST /domains/d/{domain}/ssl/issue", h.requireAuth(h.postNodeDomainSSLIssue))
-	mux.HandleFunc("POST /domains/d/{domain}/ssl/custom", h.requireAuth(h.postNodeDomainSSLCustom))
-	mux.HandleFunc("POST /domains/d/{domain}/ssl/disable", h.requireAuth(h.postNodeDomainSSLDisable))
+	mux.HandleFunc("GET /domains", authz(h.getNodeDomains))
+	mux.HandleFunc("POST /domains", authz(h.postNodeDomains))
+	mux.HandleFunc("POST /domains/connect", authz(h.postNodeDomainConnect))
+	mux.HandleFunc("POST /domains/mailbox", authz(h.postNodeMailbox))
+	mux.HandleFunc("POST /domains/mailboxes/{id}/delete", authz(h.postNodeMailboxDelete))
+	mux.HandleFunc("GET /domains/d/{domain}", authz(h.getNodeDomainDetail))
+	mux.HandleFunc("POST /domains/d/{domain}/delete", authz(h.postNodeDomainDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/records", authz(h.postNodeDomainRecord))
+	mux.HandleFunc("POST /domains/d/{domain}/records/delete", authz(h.postNodeDomainRecordDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/records", authz(h.postNodeDomainCFRecord))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/records/delete", authz(h.postNodeDomainCFRecordDelete))
+	mux.HandleFunc("POST /domains/d/{domain}/cf/zone-lookup", authz(h.postNodeDomainCFZoneLookup))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl", authz(h.postNodeDomainSSL))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/issue", authz(h.postNodeDomainSSLIssue))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/custom", authz(h.postNodeDomainSSLCustom))
+	mux.HandleFunc("POST /domains/d/{domain}/ssl/disable", authz(h.postNodeDomainSSLDisable))
 
 	// Legacy DNS routes → Domains (nav entry removed; keep APIs for bookmarks / old forms)
-	mux.HandleFunc("GET /dns", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /dns", authz(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/domains", http.StatusSeeOther)
 	}))
-	mux.HandleFunc("POST /dns/zones", h.requireAuth(h.postNodeDNSZone))
-	mux.HandleFunc("POST /dns/zones/{zone}/delete", h.requireAuth(h.postNodeDNSZoneDelete))
-	mux.HandleFunc("GET /dns/zones/{zone}", h.requireAuth(h.getNodeDNSZoneDetail))
-	mux.HandleFunc("POST /dns/zones/{zone}/records", h.requireAuth(h.postNodeDNSRecord))
-	mux.HandleFunc("POST /dns/zones/{zone}/records/delete", h.requireAuth(h.postNodeDNSRecordDelete))
-	mux.HandleFunc("POST /dns/zones/{zone}/link", h.requireAuth(h.postNodeDNSZoneLink))
+	mux.HandleFunc("POST /dns/zones", adminz(h.postNodeDNSZone))
+	mux.HandleFunc("POST /dns/zones/{zone}/delete", adminz(h.postNodeDNSZoneDelete))
+	mux.HandleFunc("GET /dns/zones/{zone}", adminz(h.getNodeDNSZoneDetail))
+	mux.HandleFunc("POST /dns/zones/{zone}/records", adminz(h.postNodeDNSRecord))
+	mux.HandleFunc("POST /dns/zones/{zone}/records/delete", adminz(h.postNodeDNSRecordDelete))
+	mux.HandleFunc("POST /dns/zones/{zone}/link", adminz(h.postNodeDNSZoneLink))
 
-	mux.HandleFunc("GET /email", h.requireAuth(h.getNodeEmail))
-	mux.HandleFunc("POST /email/domains", h.requireAuth(h.postNodeEmailDomain))
-	mux.HandleFunc("POST /email/accounts", h.requireAuth(h.postNodeEmailAccount))
-	mux.HandleFunc("POST /email/accounts/delete", h.requireAuth(h.postNodeEmailAccountDelete))
-	mux.HandleFunc("POST /email/webmail", h.requireAuth(h.postNodeEmailEnsureWebmail))
-	mux.HandleFunc("POST /email/webmail/server", h.requireAuth(h.postNodeEmailEnsureServerWebmail))
-	mux.HandleFunc("POST /email/config", h.requireAuth(h.postNodeEmailConfig))
+	mux.HandleFunc("GET /email", authz(h.getNodeEmail))
+	mux.HandleFunc("POST /email/domains", authz(h.postNodeEmailDomain))
+	mux.HandleFunc("POST /email/accounts", authz(h.postNodeEmailAccount))
+	mux.HandleFunc("POST /email/accounts/delete", authz(h.postNodeEmailAccountDelete))
+	mux.HandleFunc("POST /email/webmail", adminz(h.postNodeEmailEnsureWebmail))
+	mux.HandleFunc("POST /email/webmail/server", adminz(h.postNodeEmailEnsureServerWebmail))
+	mux.HandleFunc("POST /email/config", adminz(h.postNodeEmailConfig))
 
-	mux.HandleFunc("GET /alerts", h.requireAuth(h.getNodeAlerts))
-	mux.HandleFunc("POST /alerts/channel", h.requireAuth(h.postNodeAlertChannel))
-	mux.HandleFunc("POST /alerts/channel/{id}/delete", h.requireAuth(h.postNodeAlertChannelDelete))
-	mux.HandleFunc("POST /alerts/channel/{id}/test", h.requireAuth(h.postNodeAlertChannelTest))
-	mux.HandleFunc("POST /alerts/monitor", h.requireAuth(h.postNodeAlertMonitor))
-	mux.HandleFunc("POST /alerts/monitor/{id}/delete", h.requireAuth(h.postNodeAlertMonitorDelete))
+	mux.HandleFunc("GET /alerts", adminz(h.getNodeAlerts))
+	mux.HandleFunc("POST /alerts/channel", adminz(h.postNodeAlertChannel))
+	mux.HandleFunc("POST /alerts/channel/{id}/delete", adminz(h.postNodeAlertChannelDelete))
+	mux.HandleFunc("POST /alerts/channel/{id}/test", adminz(h.postNodeAlertChannelTest))
+	mux.HandleFunc("POST /alerts/monitor", adminz(h.postNodeAlertMonitor))
+	mux.HandleFunc("POST /alerts/monitor/{id}/delete", adminz(h.postNodeAlertMonitorDelete))
 
-	mux.HandleFunc("GET /netdata/", h.requireAuth(h.proxyNetdata))
-	mux.HandleFunc("GET /netdata", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /netdata/", adminz(h.proxyNetdata))
+	mux.HandleFunc("GET /netdata", adminz(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/netdata/", http.StatusSeeOther)
 	}))
 
-	mux.HandleFunc("GET /settings", h.requireAuth(h.getSettings))
-	mux.HandleFunc("POST /settings/logs", h.requireAuth(h.postSettingsLogs))
-	mux.HandleFunc("POST /settings/node", h.requireAuth(h.postNodeSettings))
-	mux.HandleFunc("POST /settings/git", h.requireAuth(h.postSettingsGit))
-	mux.HandleFunc("GET /oauth/git/{provider}/connect", h.requireAuth(h.getOAuthGitConnect))
-	mux.HandleFunc("POST /oauth/git/{provider}/token", h.requireAuth(h.postOAuthGitToken))
-	mux.HandleFunc("GET /oauth/git/{provider}/callback", h.requireAuth(h.getOAuthGitCallback))
-	mux.HandleFunc("GET /oauth/git/{provider}/relay-finish", h.requireAuth(h.getOAuthGitRelayFinish))
-	mux.HandleFunc("GET /settings/git/{provider}/device/poll", h.requireAuth(h.getDevicePoll))
-	mux.HandleFunc("POST /settings/git/{provider}/disconnect", h.requireAuth(h.postOAuthGitDisconnect))
-	mux.HandleFunc("GET /api/git/repos", h.requireAuth(h.getAPIGitRepos))
-	mux.HandleFunc("GET /api/git/device/start", h.requireAuth(h.getAPIGitDeviceStart))
-	mux.HandleFunc("GET /api/projects/{id}/stats", h.requireAuth(h.getAPIProjectStats))
+	mux.HandleFunc("GET /settings", authz(h.getSettings))
+	mux.HandleFunc("POST /settings/password", authz(h.postSettingsPassword))
+	mux.HandleFunc("POST /settings/users", adminz(h.postSettingsUsers))
+	mux.HandleFunc("POST /settings/users/{id}/password", adminz(h.postSettingsUserPassword))
+	mux.HandleFunc("POST /settings/users/{id}/toggle", adminz(h.postSettingsUserToggle))
+	mux.HandleFunc("POST /settings/logs", adminz(h.postSettingsLogs))
+	mux.HandleFunc("POST /settings/node", adminz(h.postNodeSettings))
+	mux.HandleFunc("POST /settings/git", adminz(h.postSettingsGit))
+	mux.HandleFunc("GET /oauth/git/{provider}/connect", adminz(h.getOAuthGitConnect))
+	mux.HandleFunc("POST /oauth/git/{provider}/token", adminz(h.postOAuthGitToken))
+	mux.HandleFunc("GET /oauth/git/{provider}/callback", adminz(h.getOAuthGitCallback))
+	mux.HandleFunc("GET /oauth/git/{provider}/relay-finish", adminz(h.getOAuthGitRelayFinish))
+	mux.HandleFunc("GET /settings/git/{provider}/device/poll", adminz(h.getDevicePoll))
+	mux.HandleFunc("POST /settings/git/{provider}/disconnect", adminz(h.postOAuthGitDisconnect))
+	mux.HandleFunc("GET /api/git/repos", authz(h.getAPIGitRepos))
+	mux.HandleFunc("GET /api/git/device/start", authz(h.getAPIGitDeviceStart))
+	mux.HandleFunc("GET /api/projects/{id}/stats", authz(h.getAPIProjectStats))
 	mux.HandleFunc("POST /webhook/{project_id}", h.postNodeWebhook)
 }
 
@@ -258,13 +265,15 @@ func (h *handler) localServerID() uint {
 }
 
 func (h *handler) basePage(sess *session, title string) pageData {
-	return pageData{
+	data := pageData{
 		Title:     title,
 		Session:   sess,
 		NodeMode:  true,
 		ServerID:  h.localServerID(),
 		ActiveNav: "",
 	}
+	fillPageACL(&data, sess)
+	return data
 }
 
 // --- Docker ---
@@ -682,6 +691,7 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 
 	var dbs []nodeDBView
 	var listErrs []string
+	ownedDBs := h.ownedDatabaseNames(r)
 	for _, t := range []dbmanager.DBType{
 		dbmanager.PostgreSQL, dbmanager.MySQL, dbmanager.MariaDB,
 		dbmanager.MongoDB, dbmanager.ClickHouse, dbmanager.Redis,
@@ -693,6 +703,15 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 		list, err := mgr.ListDatabases()
 		if err != nil {
 			listErrs = append(listErrs, string(t)+": "+err.Error())
+		}
+		if ownedDBs != nil {
+			filtered := list[:0]
+			for _, db := range list {
+				if m, ok := ownedDBs[string(t)]; ok && m[db.Name] {
+					filtered = append(filtered, db)
+				}
+			}
+			list = filtered
 		}
 		users, _ := mgr.ListUsers()
 
@@ -731,13 +750,17 @@ func (h *handler) getNodeDatabases(w http.ResponseWriter, r *http.Request) {
 		dbs = append(dbs, view)
 	}
 	var links []storage.ProjectDatabase
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Find(&links)
+	h.scopeServerQuery(r, &storage.ProjectDatabase{}).Find(&links)
 	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Find(&projects)
+	h.scopeServerQuery(r, &storage.Project{}).Find(&projects)
 	data := h.basePage(sess, "Databases")
 	data.ActiveNav = "databases"
 	data.NodeDBs = dbs
-	data.DBTools = dbTools
+	if !data.IsAdmin {
+		data.DBTools = nil
+	} else {
+		data.DBTools = dbTools
+	}
 	data.DBAvailable = availMap
 	data.DBEngines = []string{"postgres", "mysql", "mariadb", "mongodb", "redis", "clickhouse"}
 	data.ProjectDBs = links
@@ -797,6 +820,13 @@ func (h *handler) postNodeDatabases(w http.ResponseWriter, r *http.Request) {
 	} else if password == "" {
 		flash += " · no login user (password was empty)"
 	}
+	_ = h.opts.DB.Create(&storage.ProjectDatabase{
+		ServerID: h.localServerID(),
+		UserID:   h.actingUserID(r),
+		DBType:   string(t),
+		DBName:   name,
+		Username: user,
+	}).Error
 	http.Redirect(w, r, "/databases?flash="+urlQueryEscape(flash), http.StatusSeeOther)
 }
 
@@ -1028,9 +1058,16 @@ func (h *handler) postNodeDatabaseBackup(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeDatabaseLink(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
+	if pid > 0 {
+		if _, err := h.loadOwnedNodeProject(r, uint(pid)); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	_ = h.opts.DB.Create(&storage.ProjectDatabase{
 		ProjectID: uint(pid),
 		ServerID:  h.localServerID(),
+		UserID:    h.actingUserID(r),
 		DBType:    r.FormValue("db_type"),
 		DBName:    r.FormValue("db_name"),
 		Username:  r.FormValue("username"),
@@ -1243,11 +1280,11 @@ func (h *handler) getNodeDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []storage.ProjectDomain
 	h.opts.DB.Order("domain asc").Find(&domains)
 	var connected []storage.ConnectedDomain
-	h.opts.DB.Where("server_id = ?", sid).Order("domain asc").Find(&connected)
+	h.scopeServerQuery(r, &storage.ConnectedDomain{}).Order("domain asc").Find(&connected)
 	var mailboxes []storage.Mailbox
-	h.opts.DB.Where("server_id = ?", sid).Order("address asc").Find(&mailboxes)
+	h.scopeServerQuery(r, &storage.Mailbox{}).Order("address asc").Find(&mailboxes)
 	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", sid).Find(&projects)
+	h.scopeServerQuery(r, &storage.Project{}).Find(&projects)
 	var vhosts []proxy.VHost
 	if m := proxy.NewManager(proxy.Nginx, h.localExec()); m != nil {
 		vhosts, _ = m.ListVHosts()
@@ -1287,7 +1324,7 @@ func (h *handler) postNodeDomains(w http.ResponseWriter, r *http.Request) {
 	cfZoneID := strings.TrimSpace(r.FormValue("cf_zone_id"))
 	sslOn := parseFormSSLEnabled(r.FormValue("ssl_enabled"), r.FormValue("ssl_submitted") == "1")
 
-	cd, err := h.connectDomain(domainConnectOpts{
+	cd, err := h.connectDomainFromRequest(r, domainConnectOpts{
 		Domain:      domain,
 		Upstream:    upstream,
 		ProjectID:   uint(pid),
@@ -1322,7 +1359,7 @@ func (h *handler) postNodeDomainConnect(w http.ResponseWriter, r *http.Request) 
 	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
 	dbType := strings.TrimSpace(r.FormValue("db_type"))
 	dbName := strings.TrimSpace(r.FormValue("db_name"))
-	_, err := h.connectDomain(domainConnectOpts{
+	_, err := h.connectDomainFromRequest(r, domainConnectOpts{
 		Domain:    domain,
 		ProjectID: uint(pid),
 		DBType:    dbType,
@@ -1347,7 +1384,7 @@ func (h *handler) postNodeMailbox(w http.ResponseWriter, r *http.Request) {
 	domain := strings.TrimSpace(r.FormValue("domain"))
 	password := r.FormValue("password")
 	pid, _ := strconv.ParseUint(r.FormValue("project_id"), 10, 64)
-	_, err := h.createMailboxAPI(local, domain, password, uint(pid))
+	_, err := h.createMailboxAPI(r, local, domain, password, uint(pid))
 	flash := "Mailbox created via mail API"
 	if err != nil {
 		flash = "Mailbox failed: " + err.Error()
@@ -1358,7 +1395,7 @@ func (h *handler) postNodeMailbox(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeMailboxDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	flash := "Mailbox deleted"
-	if err := h.deleteMailboxAPI(uint(id)); err != nil {
+	if err := h.deleteMailboxAPI(r, uint(id)); err != nil {
 		flash = err.Error()
 	}
 	http.Redirect(w, r, "/email?flash="+urlQueryEscape(flash), http.StatusSeeOther)
@@ -1373,22 +1410,22 @@ func (h *handler) getNodeDomainDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cd storage.ConnectedDomain
-	if err := h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).First(&cd).Error; err != nil {
+	cd, err := h.loadOwnedConnectedDomain(r, domain)
+	if err != nil {
 		http.Redirect(w, r, "/domains?flash="+urlQueryEscape("domain not found"), http.StatusSeeOther)
 		return
 	}
 
 	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", sid).Find(&projects)
+	h.scopeServerQuery(r, &storage.Project{}).Find(&projects)
 	var mailboxes []storage.Mailbox
-	h.opts.DB.Where("server_id = ? AND domain = ?", sid, domain).Order("address asc").Find(&mailboxes)
+	h.scopeServerQuery(r, &storage.Mailbox{}).Where("domain = ?", domain).Order("address asc").Find(&mailboxes)
 
 	pdnsOK := h.pdnsClient().Ping() == nil
 	data := h.basePage(sess, domain)
 	data.ActiveNav = "domains"
-	data.Domain = &cd
-	data.ConnectedDomains = []storage.ConnectedDomain{cd}
+	data.Domain = cd
+	data.ConnectedDomains = []storage.ConnectedDomain{*cd}
 	data.Projects = projects
 	data.Mailboxes = mailboxes
 	data.PowerDNSReady = pdnsOK

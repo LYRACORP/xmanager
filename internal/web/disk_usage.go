@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -224,4 +225,12 @@ func (h *handler) countRustFSBuckets() int {
 		return 0
 	}
 	return len(buckets)
+}
+
+func (h *handler) countOwnedRustFSBuckets(r *http.Request) int {
+	owned := h.ownedBucketNames(r)
+	if owned == nil {
+		return h.countRustFSBuckets()
+	}
+	return len(owned)
 }

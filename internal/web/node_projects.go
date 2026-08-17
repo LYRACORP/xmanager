@@ -47,7 +47,7 @@ func humanAgo(t time.Time) string {
 // Called by HTMX on the projects list page.
 func (h *handler) getAPIProjectStats(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		w.Write([]byte(`{"cpu":"—","mem":"—"}`))
@@ -112,7 +112,7 @@ func (h *handler) loadNodeProject(id uint) (*storage.Project, error) {
 	return &p, nil
 }
 
-func (h *handler) attachProjectDomain(p *storage.Project, domain, upstream string) {
+func (h *handler) attachProjectDomain(r *http.Request, p *storage.Project, domain, upstream string) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
 		return
@@ -121,7 +121,7 @@ func (h *handler) attachProjectDomain(p *storage.Project, domain, upstream strin
 		cfg := parseProjectConfig(p.ConfigJSON)
 		upstream = upstreamFromPorts(cfg.Ports)
 	}
-	_, _ = h.connectDomain(domainConnectOpts{
+	_, _ = h.connectDomainFromRequest(r, domainConnectOpts{
 		Domain:    domain,
 		Upstream:  upstream,
 		ProjectID: p.ID,
@@ -151,7 +151,7 @@ func (h *handler) deployProject(p *storage.Project) (string, error) {
 func (h *handler) getNodeProjects(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	var projects []storage.Project
-	h.opts.DB.Where("server_id = ?", h.localServerID()).Order("updated_at desc").Find(&projects)
+	h.scopeServerQuery(r, &storage.Project{}).Order("updated_at desc").Find(&projects)
 	data := h.basePage(sess, "Projects")
 	data.ActiveNav = "projects"
 	data.Projects = projects
@@ -259,6 +259,7 @@ func (h *handler) postNodeProjects(w http.ResponseWriter, r *http.Request) {
 	p := storage.Project{
 		Name:           name,
 		ServerID:       h.localServerID(),
+		UserID:         h.actingUserID(r),
 		Type:           typ,
 		Source:         source,
 		Domain:         strings.TrimSpace(r.FormValue("domain")),
@@ -272,7 +273,7 @@ func (h *handler) postNodeProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Domain != "" {
-		h.attachProjectDomain(&p, p.Domain, "")
+		h.attachProjectDomain(r, &p, p.Domain, "")
 	}
 	deployNow := r.FormValue("deploy_now") == "on" || r.FormValue("deploy_now") == "1"
 	if deployNow {
@@ -366,6 +367,7 @@ func (h *handler) postNodeProjectTemplate(w http.ResponseWriter, r *http.Request
 	p := storage.Project{
 		Name:          name,
 		ServerID:      h.localServerID(),
+		UserID:        h.actingUserID(r),
 		Type:          string(project.TypeOneClick),
 		Source:        "oneclick:" + id,
 		Domain:        strings.TrimSpace(r.FormValue("domain")),
@@ -378,7 +380,7 @@ func (h *handler) postNodeProjectTemplate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if p.Domain != "" {
-		h.attachProjectDomain(&p, p.Domain, "")
+		h.attachProjectDomain(r, &p, p.Domain, "")
 	}
 	deployNow := r.FormValue("deploy_now") != "0" && r.FormValue("deploy_now") != "off"
 	if deployNow {
@@ -396,7 +398,7 @@ func (h *handler) postNodeProjectTemplate(w http.ResponseWriter, r *http.Request
 func (h *handler) getNodeProjectDetail(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects?flash="+urlQueryEscape("project not found"), http.StatusSeeOther)
 		return
@@ -524,7 +526,7 @@ func (h *handler) projectLogs(p *storage.Project) string {
 
 func (h *handler) postNodeProjectDeploy(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects?flash="+urlQueryEscape("not found"), http.StatusSeeOther)
 		return
@@ -541,7 +543,7 @@ func (h *handler) postNodeProjectDeploy(w http.ResponseWriter, r *http.Request) 
 
 func (h *handler) postNodeProjectStop(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return
@@ -557,7 +559,7 @@ func (h *handler) postNodeProjectStop(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) postNodeProjectRestart(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return
@@ -574,21 +576,21 @@ func (h *handler) postNodeProjectRestart(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeProjectDomain(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return
 	}
 	domain := strings.TrimSpace(r.FormValue("domain"))
 	upstream := strings.TrimSpace(r.FormValue("upstream"))
-	h.attachProjectDomain(p, domain, upstream)
+	h.attachProjectDomain(r, p, domain, upstream)
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d?tab=domains&flash=%s", p.ID, urlQueryEscape("Domain attached")), http.StatusSeeOther)
 }
 
 func (h *handler) postNodeProjectEnv(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return
@@ -624,7 +626,7 @@ func (h *handler) postNodeProjectEnv(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeProjectEnvDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	envID, _ := strconv.ParseUint(r.PathValue("env_id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return
@@ -644,7 +646,7 @@ func (h *handler) postNodeProjectEnvDelete(w http.ResponseWriter, r *http.Reques
 
 func (h *handler) postNodeProjectDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	p, err := h.loadNodeProject(uint(id))
+	p, err := h.loadOwnedNodeProject(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/projects", http.StatusSeeOther)
 		return

@@ -222,13 +222,15 @@ type User struct {
 	gorm.Model
 	Username     string `gorm:"uniqueIndex;not null" json:"username"`
 	PasswordHash string `gorm:"not null" json:"-"`
-	Role         string `gorm:"default:admin" json:"role"` // admin, operator, viewer
+	Role         string `gorm:"default:admin" json:"role"` // admin | user (legacy operator/viewer treated as user)
+	Enabled      bool   `gorm:"default:true" json:"enabled"`
 }
 
 type Project struct {
 	gorm.Model
 	Name           string `gorm:"not null" json:"name"`
 	ServerID       uint   `gorm:"index;not null" json:"server_id"`
+	UserID         uint   `gorm:"index" json:"user_id"` // 0 = legacy / admin-only
 	Server         Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	Type           string `gorm:"not null" json:"type"` // image, compose, dockerfile, git, oneclick, clone, push, scratch, archive, function
 	Source         string `gorm:"type:text" json:"source"`
@@ -367,6 +369,7 @@ type DatabaseUser struct {
 type ConnectedDomain struct {
 	gorm.Model
 	ServerID    uint   `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"server_id"`
+	UserID      uint   `gorm:"index" json:"user_id"` // 0 = legacy / admin-only
 	Server      Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	Domain      string `gorm:"uniqueIndex:uidx_connected_domain;not null" json:"domain"`
 	ProjectID   *uint  `gorm:"index" json:"project_id,omitempty"`
@@ -401,6 +404,7 @@ type NodeSettings struct {
 type Mailbox struct {
 	gorm.Model
 	ServerID  uint   `gorm:"index;not null" json:"server_id"`
+	UserID    uint   `gorm:"index" json:"user_id"` // 0 = legacy / admin-only
 	Server    Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	Domain    string `gorm:"not null;index" json:"domain"`
 	Address   string `gorm:"not null" json:"address"` // local-part@domain
@@ -413,6 +417,7 @@ type ProjectDatabase struct {
 	ProjectID uint    `gorm:"index;not null" json:"project_id"`
 	Project   Project `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	ServerID  uint    `gorm:"index;not null" json:"server_id"`
+	UserID    uint    `gorm:"index" json:"user_id"` // 0 = legacy / admin-only
 	DBType    string  `gorm:"not null" json:"db_type"`
 	DBName    string  `gorm:"not null" json:"db_name"`
 	Username  string  `json:"username"`
@@ -422,9 +427,19 @@ type ProjectDatabase struct {
 type FTPUser struct {
 	gorm.Model
 	ServerID uint   `gorm:"uniqueIndex:uidx_ftp_user;not null" json:"server_id"`
+	UserID   uint   `gorm:"index" json:"user_id"` // 0 = legacy / admin-only
 	Server   Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	Username string `gorm:"uniqueIndex:uidx_ftp_user;not null" json:"username"`
 	Home     string `gorm:"not null" json:"home"`
 	Enabled  bool   `gorm:"default:true" json:"enabled"`
 	Notes    string `json:"notes"`
+}
+
+// StorageBucket tracks RustFS bucket ownership (RustFS has no per-bucket owner metadata).
+type StorageBucket struct {
+	gorm.Model
+	ServerID uint   `gorm:"uniqueIndex:uidx_storage_bucket;not null" json:"server_id"`
+	Server   Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	UserID   uint   `gorm:"index;not null" json:"user_id"`
+	Name     string `gorm:"uniqueIndex:uidx_storage_bucket;not null" json:"name"`
 }

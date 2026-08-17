@@ -42,20 +42,24 @@
     <a href="/projects" class="xm-nav-link {{if eq .ActiveNav "projects"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">▣</span> Projects
     </a>
+    {{if .IsAdmin}}
     <a href="/docker" class="xm-nav-link {{if eq .ActiveNav "docker"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">⬡</span> Docker
     </a>
     <a href="/cron" class="xm-nav-link {{if eq .ActiveNav "cron"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">◷</span> Schedules
     </a>
+    {{end}}
 
     <div class="xm-nav-section">Data &amp; network</div>
     <a href="/databases" class="xm-nav-link {{if eq .ActiveNav "databases"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">⧉</span> Databases
     </a>
+    {{if .IsAdmin}}
     <a href="/backup" class="xm-nav-link {{if eq .ActiveNav "backup"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">⇩</span> Backup
     </a>
+    {{end}}
     <a href="/storage" class="xm-nav-link {{if eq .ActiveNav "storage"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">▤</span> Storage
     </a>
@@ -68,13 +72,16 @@
     <a href="/email" class="xm-nav-link {{if eq .ActiveNav "email"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">✉</span> Email
     </a>
+    {{if .IsAdmin}}
     <a href="/apps" class="xm-nav-link {{if eq .ActiveNav "apps"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">▣</span> Apps
     </a>
     <a href="/services" class="xm-nav-link {{if eq .ActiveNav "services"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">⚙</span> Services
     </a>
+    {{end}}
 
+    {{if .IsAdmin}}
     <div class="xm-nav-section">System</div>
     <a href="/security" class="xm-nav-link {{if eq .ActiveNav "security"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">⛨</span> Security
@@ -85,6 +92,7 @@
     <a href="/alerts" class="xm-nav-link {{if eq .ActiveNav "alerts"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">◉</span> Alerts
     </a>
+    {{end}}
     <a href="/settings" class="xm-nav-link {{if eq .ActiveNav "settings"}}xm-nav-active{{end}}">
       <span class="xm-nav-ico">☰</span> Settings
     </a>
@@ -94,7 +102,7 @@
         <div class="xm-avatar">{{if .Session}}{{slice .Session.Username 0 1}}{{else}}?{{end}}</div>
         <div class="min-w-0">
           <div class="truncate text-sm text-gray-200">{{if .Session}}{{.Session.Username}}{{else}}guest{{end}}</div>
-          <div class="text-[11px] text-panel-muted">node panel</div>
+          <div class="text-[11px] text-panel-muted">{{if .UserRole}}{{.UserRole}}{{else}}user{{end}} · node panel</div>
         </div>
       </div>
       <form action="/logout" method="post">

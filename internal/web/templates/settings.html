@@ -9,6 +9,88 @@
   {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm mb-4">{{.Flash}}</p>{{end}}
 
   <div class="space-y-4">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Account</h2>
+        <p class="text-xs text-panel-muted mt-1">Change your panel password.</p>
+      </div>
+      <form method="post" action="/settings/password" class="grid md:grid-cols-2 gap-3">
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-500 mb-1">Current password</label>
+          <input name="current_password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">New password</label>
+          <input name="new_password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Confirm new password</label>
+          <input name="confirm_password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Update password</button>
+        </div>
+      </form>
+    </div>
+
+    {{if .IsAdmin}}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Users</h2>
+        <p class="text-xs text-panel-muted mt-1">Create panel accounts · admins see everything · users see only their resources.</p>
+      </div>
+      <form method="post" action="/settings/users" class="grid md:grid-cols-4 gap-3 items-end">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Username</label>
+          <input name="username" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Password</label>
+          <input name="password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Role</label>
+          <select name="role" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg h-[38px]">Create user</button>
+      </form>
+      {{if .PanelUsers}}
+      <div class="overflow-x-auto border border-gray-800 rounded-lg">
+        <table class="w-full text-sm">
+          <thead class="text-[11px] uppercase text-gray-500 border-b border-gray-800">
+            <tr>
+              <th class="text-left px-3 py-2">User</th>
+              <th class="text-left px-3 py-2">Role</th>
+              <th class="text-left px-3 py-2">Status</th>
+              <th class="text-right px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/80">
+            {{range .PanelUsers}}
+            <tr class="align-top">
+              <td class="px-3 py-2 font-mono text-gray-200">{{.Username}}</td>
+              <td class="px-3 py-2 text-xs text-gray-400">{{.Role}}</td>
+              <td class="px-3 py-2 text-xs {{if .Enabled}}text-emerald-400{{else}}text-red-400{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+              <td class="px-3 py-2 text-right space-y-2">
+                <form method="post" action="/settings/users/{{.ID}}/password" class="flex flex-wrap gap-2 justify-end">
+                  <input name="password" type="password" placeholder="new password" required class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs w-36">
+                  <button class="text-xs bg-zinc-700 hover:bg-zinc-600 px-2 py-1 rounded">Reset</button>
+                </form>
+                <form method="post" action="/settings/users/{{.ID}}/toggle" class="inline">
+                  <button class="text-xs {{if .Enabled}}text-amber-300{{else}}text-emerald-300{{end}} underline">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+                </form>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+    </div>
+
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
       <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Web Panel</h2>
       <dl class="space-y-2 text-sm">
@@ -194,6 +276,7 @@
     <p class="text-xs text-gray-600 text-center pt-2">
       Edit base config at <code class="font-mono">~/.config/xmanager/config.yaml</code>
     </p>
+    {{end}}
   </div>
 </div>
 {{template "foot" .}}

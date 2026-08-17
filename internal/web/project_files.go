@@ -127,7 +127,7 @@ func formatFileSize(n int64) string {
 
 func (h *handler) loadProjectForFiles(r *http.Request) (*storage.Project, error) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	return h.loadNodeProject(uint(id))
+	return h.loadOwnedNodeProject(r, uint(id))
 }
 
 func (h *handler) ensureProjectRoot(p *storage.Project) (string, error) {

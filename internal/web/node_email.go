@@ -32,10 +32,10 @@ func (h *handler) getNodeEmail(w http.ResponseWriter, r *http.Request) {
 	client := mailinbox.NewClient(cfg)
 
 	var connected []storage.ConnectedDomain
-	h.opts.DB.Where("server_id = ?", sid).Order("domain asc").Find(&connected)
+	h.scopeServerQuery(r, &storage.ConnectedDomain{}).Order("domain asc").Find(&connected)
 
 	var mailboxes []storage.Mailbox
-	h.opts.DB.Where("server_id = ?", sid).Order("address asc").Find(&mailboxes)
+	h.scopeServerQuery(r, &storage.Mailbox{}).Order("address asc").Find(&mailboxes)
 
 	data := h.basePage(sess, "Email")
 	data.ActiveNav = "email"
@@ -208,7 +208,7 @@ func (h *handler) postNodeEmailAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mb, err := h.createMailboxAPI(local, domain, password, 0)
+	mb, err := h.createMailboxAPI(r, local, domain, password, 0)
 	if err != nil {
 		http.Redirect(w, r, "/email?flash="+urlQueryEscape("create account failed: "+err.Error()), http.StatusSeeOther)
 		return

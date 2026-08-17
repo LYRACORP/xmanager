@@ -111,7 +111,7 @@ func (h *handler) getNodeProjectTerminalWS(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid project", http.StatusBadRequest)
 		return
 	}
-	p, err := h.loadNodeProject(uint(pid))
+	p, err := h.loadOwnedNodeProject(r, uint(pid))
 	if err != nil {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return

@@ -34,9 +34,8 @@ func (h *handler) loadFTPUser(id uint) (*storage.FTPUser, error) {
 
 func (h *handler) getNodeFTP(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
-	sid := h.localServerID()
 	var users []storage.FTPUser
-	h.opts.DB.Where("server_id = ?", sid).Order("username asc").Find(&users)
+	h.scopeServerQuery(r, &storage.FTPUser{}).Order("username asc").Find(&users)
 	data := h.basePage(sess, "FTP")
 	data.ActiveNav = "ftp"
 	data.FTPUsers = users
@@ -89,6 +88,7 @@ func (h *handler) postNodeFTPUser(w http.ResponseWriter, r *http.Request) {
 	}
 	row := storage.FTPUser{
 		ServerID: sid,
+		UserID:   h.actingUserID(r),
 		Username: username,
 		Home:     home,
 		Enabled:  true,
@@ -104,7 +104,7 @@ func (h *handler) postNodeFTPUser(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeFTPUserPassword(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp?flash="+urlQueryEscape("user not found"), http.StatusSeeOther)
 		return
@@ -126,7 +126,7 @@ func (h *handler) postNodeFTPUserDisable(w http.ResponseWriter, r *http.Request)
 
 func (h *handler) setFTPUserEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp?flash="+urlQueryEscape("user not found"), http.StatusSeeOther)
 		return
@@ -146,7 +146,7 @@ func (h *handler) setFTPUserEnabled(w http.ResponseWriter, r *http.Request, enab
 func (h *handler) postNodeFTPUserDelete(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp?flash="+urlQueryEscape("user not found"), http.StatusSeeOther)
 		return

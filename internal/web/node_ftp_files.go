@@ -108,7 +108,7 @@ func (h *handler) fillFTPFiles(data *pageData, u *storage.FTPUser, rel string) e
 func (h *handler) getNodeFTPFiles(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp?flash="+urlQueryEscape("user not found"), http.StatusSeeOther)
 		return
@@ -149,7 +149,7 @@ func (h *handler) getNodeFTPFiles(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) getNodeFTPFilesDownload(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -175,7 +175,7 @@ func (h *handler) getNodeFTPFilesDownload(w http.ResponseWriter, r *http.Request
 
 func (h *handler) postNodeFTPFilesUpload(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -231,7 +231,7 @@ func (h *handler) postNodeFTPFilesUpload(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeFTPFilesMkdir(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -266,7 +266,7 @@ func (h *handler) postNodeFTPFilesMkdir(w http.ResponseWriter, r *http.Request) 
 func (h *handler) postNodeFTPFilesCreate(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -303,7 +303,7 @@ func (h *handler) postNodeFTPFilesCreate(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeFTPFilesSave(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -343,7 +343,7 @@ func (h *handler) postNodeFTPFilesSave(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeFTPFilesRename(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -387,7 +387,7 @@ func (h *handler) postNodeFTPFilesRename(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeFTPFilesDelete(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return
@@ -421,7 +421,7 @@ func (h *handler) postNodeFTPFilesDelete(w http.ResponseWriter, r *http.Request)
 func (h *handler) postNodeFTPFilesChmod(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id, _ := strconv.ParseUint(r.PathValue("id"), 10, 64)
-	u, err := h.loadFTPUser(uint(id))
+	u, err := h.loadOwnedFTPUser(r, uint(id))
 	if err != nil {
 		http.Redirect(w, r, "/ftp", http.StatusSeeOther)
 		return

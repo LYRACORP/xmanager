@@ -12,6 +12,7 @@ import (
 
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/services/rustfs"
+	"github.com/lyracorp/xmanager/internal/storage"
 )
 
 func (h *handler) rustfsClient() *rustfs.Client {
@@ -43,7 +44,9 @@ func (h *handler) getNodeStorage(w http.ResponseWriter, r *http.Request) {
 	cfg := rustfs.LoadConfig(h.opts.DB, h.localServerID())
 	cfg = rustfs.EnrichFromContainer(cfg)
 	data.StorageEndpoint = cfg.EndpointURL()
-	data.StorageConsoleURL = cfg.ConsoleURL()
+	if data.IsAdmin {
+		data.StorageConsoleURL = cfg.ConsoleURL()
+	}
 
 	cli, _, err := h.rustfsReady(r.Context())
 	if err != nil {
@@ -62,6 +65,15 @@ func (h *handler) getNodeStorage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data.Flash = "List buckets failed: " + err.Error()
 	} else {
+		if owned := h.ownedBucketNames(r); owned != nil {
+			filtered := buckets[:0]
+			for _, b := range buckets {
+				if owned[b.Name] {
+					filtered = append(filtered, b)
+				}
+			}
+			buckets = filtered
+		}
 		data.StorageBuckets = buckets
 		for _, b := range buckets {
 			data.StorageTotalObjects += b.ObjectCount
@@ -75,6 +87,9 @@ func (h *handler) getNodeStorage(w http.ResponseWriter, r *http.Request) {
 func (h *handler) getNodeStorageBucket(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
 
 	data := h.basePage(sess, "Storage · "+bucket)
@@ -149,6 +164,11 @@ func (h *handler) postNodeStorageBucketCreate(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/storage?flash="+urlQueryEscape("Create failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
+	_ = h.opts.DB.Create(&storage.StorageBucket{
+		ServerID: h.localServerID(),
+		UserID:   h.actingUserID(r),
+		Name:     name,
+	}).Error
 	http.Redirect(w, r, "/storage?flash="+urlQueryEscape("Bucket "+name+" created"), http.StatusSeeOther)
 }
 
@@ -157,6 +177,9 @@ func (h *handler) postNodeStorageBucketDelete(w http.ResponseWriter, r *http.Req
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
 		name = strings.TrimSpace(r.PathValue("bucket"))
+	}
+	if !h.requireOwnedBucket(w, r, name) {
+		return
 	}
 	cli, _, err := h.rustfsReady(r.Context())
 	if err != nil {
@@ -170,6 +193,7 @@ func (h *handler) postNodeStorageBucketDelete(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/storage?flash="+urlQueryEscape("Delete failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
+	h.opts.DB.Where("server_id = ? AND name = ?", h.localServerID(), name).Delete(&storage.StorageBucket{})
 	http.Redirect(w, r, "/storage?flash="+urlQueryEscape("Bucket "+name+" deleted"), http.StatusSeeOther)
 }
 
@@ -193,6 +217,9 @@ func redirectStorage(w http.ResponseWriter, r *http.Request, bucket, prefix, fla
 
 func (h *handler) postNodeStorageUpload(w http.ResponseWriter, r *http.Request) {
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		redirectStorage(w, r, bucket, "", "upload parse failed")
 		return
@@ -227,6 +254,9 @@ func (h *handler) postNodeStorageUpload(w http.ResponseWriter, r *http.Request) 
 func (h *handler) postNodeStorageMkdir(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	prefix := strings.Trim(r.FormValue("prefix"), "/")
 	name := strings.Trim(strings.TrimSpace(r.FormValue("name")), "/")
 	if name == "" || strings.Contains(name, "/") {
@@ -254,6 +284,9 @@ func (h *handler) postNodeStorageMkdir(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postNodeStorageDelete(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	prefix := strings.Trim(r.FormValue("prefix"), "/")
 	key := strings.TrimSpace(r.FormValue("key"))
 	isDir := r.FormValue("isdir") == "1"
@@ -279,6 +312,9 @@ func (h *handler) postNodeStorageDelete(w http.ResponseWriter, r *http.Request) 
 func (h *handler) postNodeStorageRename(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	prefix := strings.Trim(r.FormValue("prefix"), "/")
 	key := strings.TrimSpace(r.FormValue("key"))
 	name := strings.Trim(strings.TrimSpace(r.FormValue("name")), "/")
@@ -314,6 +350,9 @@ func (h *handler) postNodeStorageRename(w http.ResponseWriter, r *http.Request) 
 
 func (h *handler) getNodeStorageDownload(w http.ResponseWriter, r *http.Request) {
 	bucket := strings.TrimSpace(r.PathValue("bucket"))
+	if !h.requireOwnedBucket(w, r, bucket) {
+		return
+	}
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	cli, _, err := h.rustfsReady(r.Context())
 	if err != nil {
