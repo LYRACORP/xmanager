@@ -1,13 +1,19 @@
 package web
 
 import (
+	"bytes"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"github.com/lyracorp/xmanager/internal/config"
+	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/gitforge"
+	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -39,6 +45,42 @@ func TestRegisterNodeRoutesNoConflict(t *testing.T) {
 		}
 	}()
 	h.registerNode(mux)
+}
+
+func TestNodeDockerSwarmTemplate(t *testing.T) {
+	funcMap := template.FuncMap{
+		"formatBytes":  nodemetrics.FormatBytes,
+		"formatUptime": nodemetrics.FormatUptime,
+		"pathEscape":   url.PathEscape,
+		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
+		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
+		"json": func(v interface{}) (template.JS, error) {
+			return "", nil
+		},
+	}
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pageData{
+		Title:           "Docker",
+		Swarm:           docker.SwarmInfo{State: "active", ControlAvailable: true, NodeAddr: "203.0.113.50"},
+		SwarmWorkerJoin: "docker swarm join --token SWMTKN-1-example 203.0.113.50:2377",
+		SwarmNodes: []docker.SwarmNode{
+			{ID: "abc123def456", Hostname: "manager-1", Status: "Ready", Availability: "Active", ManagerStatus: "Leader"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "node_docker", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "docker swarm join --token") {
+		t.Fatal("expected worker join command")
+	}
+	if !strings.Contains(out, "Init swarm") && !strings.Contains(out, "Leave swarm") {
+		t.Fatal("expected swarm action")
+	}
 }
 
 func TestAPIGitReposUnauthorized(t *testing.T) {

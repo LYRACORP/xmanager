@@ -25,6 +25,7 @@ const (
 	tabVolumes
 	tabNetworks
 	tabBuild
+	tabSwarm
 	tabCount
 )
 
@@ -60,6 +61,12 @@ type loadDoneMsg struct {
 	volumes    []xmdocker.Volume
 	networks   []xmdocker.Network
 	cache      []xmdocker.BuildCache
+
+	swarm       xmdocker.SwarmInfo
+	swarmNodes  []xmdocker.SwarmNode
+	swarmSvcs   []xmdocker.SwarmService
+	workerJoin  string
+	managerJoin string
 }
 
 type headerDoneMsg struct {
@@ -90,6 +97,16 @@ type Model struct {
 
 	login xmdocker.LoginInfo
 	df    []xmdocker.SystemDFRow
+
+	swarm         xmdocker.SwarmInfo
+	swarmNodes    []xmdocker.SwarmNode
+	swarmSvcs     []xmdocker.SwarmService
+	workerJoin    string
+	managerJoin   string
+	swarmUI       swarmMode
+	joinTargets   []fleetJoinTarget
+	joinCursor    int
+	pendingNodeID string
 
 	busy   bool
 	status string
@@ -135,6 +152,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 				m.networks = msg.networks
 			case tabBuild:
 				m.cache = msg.cache
+			case tabSwarm:
+				m.swarm = msg.swarm
+				m.swarmNodes = msg.swarmNodes
+				m.swarmSvcs = msg.swarmSvcs
+				m.workerJoin = msg.workerJoin
+				m.managerJoin = msg.managerJoin
 			}
 		}
 		m.rebuildTable()
@@ -152,6 +175,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.busy {
 			return m, nil
+		}
+		if scr, cmd, ok := m.handleSwarmKey(msg); ok {
+			return scr, cmd
 		}
 		switch msg.String() {
 		case "esc":
@@ -180,6 +206,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "6":
 			m.setTab(tabBuild)
 			return m, m.refresh()
+		case "7":
+			m.setTab(tabSwarm)
+			return m, m.refresh()
 		case "ctrl+r", "f5":
 			m.status = "Refreshing…"
 			return m, m.refresh()
@@ -206,7 +235,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 func (m *Model) KeyBindings() []components.KeyBinding {
 	base := []components.KeyBinding{
 		{Key: "tab", Desc: "next view"},
-		{Key: "1-6", Desc: "view"},
+		{Key: "1-7", Desc: "view"},
 		{Key: "ctrl+r", Desc: "refresh"},
 		{Key: "esc", Desc: "back"},
 	}
@@ -238,6 +267,27 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 		return append([]components.KeyBinding{
 			{Key: "c", Desc: "prune cache"},
 		}, base...)
+	case tabSwarm:
+		keys := []components.KeyBinding{
+			{Key: "i", Desc: "init"},
+			{Key: "c", Desc: "copy join"},
+			{Key: "j", Desc: "fleet join"},
+			{Key: "p", Desc: "promote"},
+			{Key: "m", Desc: "demote"},
+			{Key: "a", Desc: "availability"},
+			{Key: "x", Desc: "remove"},
+			{Key: "L", Desc: "leave"},
+		}
+		if m.swarmUI == swarmModeConfirmLeave || m.swarmUI == swarmModeConfirmRemove {
+			keys = []components.KeyBinding{{Key: "y/n", Desc: "confirm"}}
+		}
+		if m.swarmUI == swarmModeJoinPick {
+			keys = []components.KeyBinding{
+				{Key: "enter", Desc: "join"},
+				{Key: "esc", Desc: "cancel"},
+			}
+		}
+		return append(keys, base...)
 	}
 	return base
 }
@@ -253,9 +303,12 @@ func (m *Model) OnNavigate(params map[string]interface{}) {
 }
 
 func (m *Model) localChrome() int {
-	n := components.FrameChromeRows(true) + 2*components.TabBarRows()
+	n := components.FrameChromeRows(true) + 3*components.TabBarRows()
 	if m.err != "" || m.status != "" || m.busy {
 		n++
+	}
+	if m.tab == tabSwarm {
+		n += m.swarmChromeRows(layout.ContentWidth(m.width))
 	}
 	return n
 }
@@ -271,9 +324,13 @@ func (m *Model) tabBar() string {
 		{ID: int(tabNetworks), Label: "[5] Networks"},
 		{ID: int(tabBuild), Label: "[6] Build"},
 	}, int(m.tab))
+	row3 := components.NewTabBar([]components.TabItem{
+		{ID: int(tabSwarm), Label: "[7] Swarm"},
+	}, int(m.tab))
 	row1.Width = m.width
 	row2.Width = m.width
-	return row1.View() + "\n" + row2.View()
+	row3.Width = m.width
+	return row1.View() + "\n" + row2.View() + "\n" + row3.View()
 }
 
 func (m *Model) headerSubtitle() string {
@@ -296,7 +353,14 @@ func (m *Model) headerSubtitle() string {
 
 func (m *Model) View() string {
 	inner := layout.ContentWidth(m.width)
-	body := m.tabBar() + "\n" + m.table.View()
+	body := m.tabBar()
+	if p := m.swarmPanel(inner); p != "" {
+		body += "\n" + p
+	}
+	body += "\n" + m.table.View()
+	if o := m.swarmOverlay(); o != "" {
+		body += "\n" + o
+	}
 	if m.err != "" {
 		body += "\n" + theme.ErrorText().Render(components.Wrap(m.err, inner))
 	} else if m.status != "" {
@@ -326,6 +390,7 @@ func (m *Model) prevTab() {
 
 func (m *Model) setTab(t viewTab) {
 	m.tab = t
+	m.swarmUI = swarmModeList
 	m.rebuildTable()
 }
 
@@ -424,6 +489,28 @@ func (m *Model) rebuildTable() {
 			rows[i] = table.Row{shortID(c.ID, 12), c.Type, shared, fmt.Sprintf("%d", c.Usage), c.SizeHuman}
 		}
 		m.table = m.table.SetData(m.width, cols, rows, h)
+
+	case tabSwarm:
+		cols := []table.Column{
+			{Title: "ID", Width: 14},
+			{Title: "Hostname", Width: 22},
+			{Title: "Status", Width: 10},
+			{Title: "Avail", Width: 10},
+			{Title: "Manager", Width: 0},
+		}
+		rows := make([]table.Row, len(m.swarmNodes))
+		for i, n := range m.swarmNodes {
+			id := n.ID
+			if len(id) > 12 {
+				id = id[:12]
+			}
+			mgr := n.ManagerStatus
+			if mgr == "" {
+				mgr = "—"
+			}
+			rows[i] = table.Row{id, n.Hostname, n.Status, n.Availability, mgr}
+		}
+		m.table = m.table.SetData(m.width, cols, rows, h)
 	}
 }
 
@@ -466,6 +553,8 @@ func (m *Model) reloadCmd() tea.Cmd {
 			return m.loadNetworks(ex, tab)
 		case tabBuild:
 			return m.loadBuild(ex, tab)
+		case tabSwarm:
+			return m.loadSwarm(ex, tab)
 		}
 		return loadDoneMsg{tab: tab}
 	}

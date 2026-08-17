@@ -130,6 +130,11 @@ type pageData struct {
 	UptimeHuman      string
 	Containers       []docker.Container
 	DockerHost       docker.HostSnapshot
+	Swarm            docker.SwarmInfo
+	SwarmNodes       []docker.SwarmNode
+	SwarmServices    []docker.SwarmService
+	SwarmWorkerJoin  string
+	SwarmManagerJoin string
 	ContainerID      string
 	LogText          string
 	CronJobs         []storage.CronJob

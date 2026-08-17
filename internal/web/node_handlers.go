@@ -47,6 +47,12 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/node/ports/close", h.requireAuth(h.postNodePortsClose))
 
 	mux.HandleFunc("GET /docker", h.requireAuth(h.getNodeDocker))
+	mux.HandleFunc("POST /docker/swarm/init", h.requireAuth(h.postNodeDockerSwarmInit))
+	mux.HandleFunc("POST /docker/swarm/leave", h.requireAuth(h.postNodeDockerSwarmLeave))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/promote", h.requireAuth(h.postNodeDockerSwarmPromote))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/demote", h.requireAuth(h.postNodeDockerSwarmDemote))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/availability", h.requireAuth(h.postNodeDockerSwarmAvailability))
+	mux.HandleFunc("POST /docker/swarm/nodes/{id}/remove", h.requireAuth(h.postNodeDockerSwarmRemove))
 	mux.HandleFunc("POST /docker/{id}/start", h.requireAuth(h.postNodeDockerStart))
 	mux.HandleFunc("POST /docker/{id}/stop", h.requireAuth(h.postNodeDockerStop))
 	mux.HandleFunc("POST /docker/{id}/restart", h.requireAuth(h.postNodeDockerRestart))
@@ -249,10 +255,73 @@ func (h *handler) getNodeDocker(w http.ResponseWriter, r *http.Request) {
 	data.ActiveNav = "docker"
 	data.Containers = list
 	data.DockerHost = snap
-	if err != nil {
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		data.Flash = flash
+	}
+	if err != nil && data.Flash == "" {
 		data.Flash = err.Error()
 	}
+	h.fillDockerSwarm(&data, mgr)
 	h.render(w, "node_docker", data)
+}
+
+func (h *handler) fillDockerSwarm(data *pageData, mgr *docker.Manager) {
+	info := mgr.SwarmInfo()
+	data.Swarm = info
+	if !info.Manager() {
+		return
+	}
+	nodes, err := mgr.ListNodes()
+	if err == nil {
+		data.SwarmNodes = nodes
+	}
+	svcs, err := mgr.ListServices()
+	if err == nil {
+		data.SwarmServices = svcs
+	}
+	if cmd, err := mgr.JoinCommand(docker.RoleWorker); err == nil {
+		data.SwarmWorkerJoin = cmd
+	}
+	if cmd, err := mgr.JoinCommand(docker.RoleManager); err == nil {
+		data.SwarmManagerJoin = cmd
+	}
+}
+
+func (h *handler) redirectDockerSwarm(w http.ResponseWriter, r *http.Request, err error) {
+	loc := "/docker#docker-swarm"
+	if err != nil {
+		loc = "/docker?flash=" + urlQueryEscape(err.Error()) + "#docker-swarm"
+	}
+	http.Redirect(w, r, loc, http.StatusSeeOther)
+}
+
+func (h *handler) postNodeDockerSwarmInit(w http.ResponseWriter, r *http.Request) {
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).InitSwarm(""))
+}
+
+func (h *handler) postNodeDockerSwarmLeave(w http.ResponseWriter, r *http.Request) {
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).LeaveSwarm(true))
+}
+
+func (h *handler) postNodeDockerSwarmPromote(w http.ResponseWriter, r *http.Request) {
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).Promote(r.PathValue("id")))
+}
+
+func (h *handler) postNodeDockerSwarmDemote(w http.ResponseWriter, r *http.Request) {
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).Demote(r.PathValue("id")))
+}
+
+func (h *handler) postNodeDockerSwarmAvailability(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	avail := r.FormValue("availability")
+	if avail == "" {
+		avail = "drain"
+	}
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).SetAvailability(r.PathValue("id"), avail))
+}
+
+func (h *handler) postNodeDockerSwarmRemove(w http.ResponseWriter, r *http.Request) {
+	h.redirectDockerSwarm(w, r, docker.NewManager(h.localExec()).RemoveNode(r.PathValue("id"), true))
 }
 
 func (h *handler) postNodeDockerStart(w http.ResponseWriter, r *http.Request) {
