@@ -19,7 +19,26 @@ type RunResult struct {
 
 // Runner executes recipe commands over SSH.
 type Runner struct {
-	Exec *ssh.Executor
+	Exec     *ssh.Executor
+	User     string // remote SSH user; non-root commands are elevated with sudo
+	Password string // sudo password (same as SSH password when password sudo)
+}
+
+func (r Runner) needsSudo() bool {
+	u := strings.TrimSpace(r.User)
+	return u != "" && u != "root"
+}
+
+// remoteShell wraps cmd for remote bash, elevating with sudo when needed.
+func (r Runner) remoteShell(cmd string) string {
+	quoted := shellQuote(cmd)
+	if !r.needsSudo() {
+		return "bash -lc " + quoted
+	}
+	if pass := strings.TrimSpace(r.Password); pass != "" {
+		return fmt.Sprintf("printf '%%s\\n' %s | sudo -S -p '' -E bash -lc %s", shellQuote(pass), quoted)
+	}
+	return "sudo -n -E bash -lc " + quoted
 }
 
 const (
@@ -63,6 +82,18 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 	}
 
 	report(fmt.Sprintf("Starting %s…", mat.Name))
+	if r.needsSudo() {
+		probe := r.remoteShell("true")
+		if res, err := r.Exec.Run(probe); err != nil {
+			return RunResult{Err: fmt.Errorf("sudo check failed: %w", err)}
+		} else if res != nil && res.ExitCode != 0 {
+			msg := strings.TrimSpace(res.Stdout + " " + res.Stderr)
+			if strings.TrimSpace(r.Password) == "" {
+				return RunResult{Err: fmt.Errorf("user %q needs sudo — store the Ubuntu password on the server entry in the TUI, or configure NOPASSWD sudo", r.User)}
+			}
+			return RunResult{Err: fmt.Errorf("sudo failed for user %q (check Password on server entry): %s", r.User, msg)}
+		}
+	}
 	for _, step := range mat.Steps {
 		report(step.Name)
 		log.WriteString("==> " + step.Name + "\n")
@@ -113,15 +144,16 @@ func (r Runner) Run(recipe Recipe, onProgress ProgressFunc) RunResult {
 }
 
 func (r Runner) runCommand(cmd string, apt bool, note func(string)) (*ssh.ExecResult, error) {
+	wrapped := r.remoteShell(cmd)
 	if !apt {
-		return r.Exec.Run("bash -lc " + shellQuote(cmd))
+		return r.Exec.Run(wrapped)
 	}
 
 	for attempt := 0; attempt <= aptLockMaxRetries; attempt++ {
 		if err := r.waitAptLock(note); err != nil {
 			return &ssh.ExecResult{ExitCode: 1, Stderr: err.Error()}, nil
 		}
-		res, err := r.Exec.Run("bash -lc " + shellQuote(cmd))
+		res, err := r.Exec.Run(wrapped)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +168,7 @@ func (r Runner) runCommand(cmd string, apt bool, note func(string)) (*ssh.ExecRe
 			attempt+1, aptLockMaxRetries))
 		time.Sleep(time.Duration(aptLockWaitSecs) * time.Second)
 	}
-	return r.Exec.Run("bash -lc " + shellQuote(cmd))
+	return r.Exec.Run(wrapped)
 }
 
 func (r Runner) waitAptLock(note func(string)) error {
@@ -159,7 +191,7 @@ echo FREE
 exit 0
 `
 	for i := 0; i < aptLockMaxWaits; i++ {
-		res, err := r.Exec.Run("bash -lc " + shellQuote(script))
+		res, err := r.Exec.Run(r.remoteShell(script))
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lyracorp/xmanager/internal/recipes"
+	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/lyracorp/xmanager/internal/tui/components"
 	"github.com/lyracorp/xmanager/internal/tui/shared"
 	"github.com/lyracorp/xmanager/internal/tui/theme"
@@ -215,7 +216,12 @@ func (m *Model) startInstall() tea.Cmd {
 			ch <- recipeDoneMsg{ok: false, err: fmt.Errorf("not connected — open server from fleet")}
 			return
 		}
-		runner := recipes.Runner{Exec: exec}
+		var srv storage.Server
+		user, pass := "", ""
+		if m.ctx.DB != nil && m.ctx.DB.First(&srv, serverID).Error == nil {
+			user, pass = srv.User, srv.Password
+		}
+		runner := recipes.Runner{Exec: exec, User: user, Password: pass}
 		res := runner.Run(r, func(pct float64, detail string) {
 			ch <- shared.WebPanelProgressMsg{Pct: pct, Detail: detail}
 		})

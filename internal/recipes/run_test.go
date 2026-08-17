@@ -1,6 +1,9 @@
 package recipes
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestUsesApt(t *testing.T) {
 	cases := map[string]bool{
@@ -15,6 +18,21 @@ func TestUsesApt(t *testing.T) {
 		if got := usesApt(cmd); got != want {
 			t.Fatalf("%q: got %v want %v", cmd, got, want)
 		}
+	}
+}
+
+func TestRemoteShellSudo(t *testing.T) {
+	r := Runner{User: "ubuntu", Password: "secret"}
+	got := r.remoteShell("apt-get update -y")
+	if !strings.Contains(got, "sudo -S") || !strings.Contains(got, "secret") {
+		t.Fatalf("expected password sudo, got %q", got)
+	}
+	if !strings.Contains(got, "bash -lc") {
+		t.Fatalf("expected bash -lc, got %q", got)
+	}
+	rRoot := Runner{User: "root"}
+	if got := rRoot.remoteShell("true"); strings.Contains(got, "sudo") {
+		t.Fatalf("root should not use sudo: %q", got)
 	}
 }
 
