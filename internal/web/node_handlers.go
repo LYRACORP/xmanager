@@ -121,6 +121,15 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /logs", h.requireAuth(h.getNodeLogs))
 	mux.HandleFunc("GET /api/node/logs", h.requireAuth(h.getNodeLogsFragment))
 
+	mux.HandleFunc("GET /security", h.requireAuth(h.getNodeSecurity))
+	mux.HandleFunc("GET /security/dumps/{id}", h.requireAuth(h.getNodeSecurityDumpDetail))
+	mux.HandleFunc("POST /security/firewall", h.requireAuth(h.postNodeSecurityFirewall))
+	mux.HandleFunc("POST /security/ssh/harden", h.requireAuth(h.postNodeSecuritySSHHarden))
+	mux.HandleFunc("POST /security/ssl/renew", h.requireAuth(h.postNodeSecuritySSLRenew))
+	mux.HandleFunc("POST /security/fail2ban/unban", h.requireAuth(h.postNodeSecurityFail2banUnban))
+	mux.HandleFunc("POST /security/dump", h.requireAuth(h.postNodeSecurityDump))
+	mux.HandleFunc("POST /internal/reqdump", h.postInternalReqdump)
+
 	mux.HandleFunc("GET /apps", h.requireAuth(h.getNodeApps))
 	mux.HandleFunc("POST /apps/{name}/enable", h.requireAuth(h.postNodeAppEnable))
 	mux.HandleFunc("POST /apps/{name}/disable", h.requireAuth(h.postNodeAppDisable))
@@ -1079,6 +1088,8 @@ func (h *handler) lookupNodeService(name string) svcs.Service {
 		return uptimekuma.New(db, sid)
 	case "databasus":
 		return databasus.New(db, sid)
+	case "reqdump":
+		return h.lookupReqdumpService()
 	default:
 		return nil
 	}
@@ -1089,7 +1100,7 @@ func (h *handler) getNodeApps(w http.ResponseWriter, r *http.Request) {
 	names := []string{
 		"registry", "gitea", "rustfs", "rabbitmq", "kafka",
 		"mattermost", "bugsink", "umami", "powerdns", "mailinbox", "netdata",
-		"uptimekuma", "databasus",
+		"uptimekuma", "databasus", "reqdump",
 	}
 	exec := h.localExec()
 	var list []nodeServiceView
@@ -1142,6 +1153,13 @@ func (h *handler) postNodeAppEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "powerdns" {
 		for _, k := range []string{"api_key", "api_port", "dns_port"} {
+			if v := strings.TrimSpace(r.FormValue(k)); v != "" {
+				cfg[k] = v
+			}
+		}
+	}
+	if name == "reqdump" {
+		for _, k := range []string{"dump_panel", "dump_nginx", "dump_honeypot", "honeypot_ports"} {
 			if v := strings.TrimSpace(r.FormValue(k)); v != "" {
 				cfg[k] = v
 			}

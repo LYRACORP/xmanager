@@ -1,0 +1,36 @@
+{{define "node_security_dump"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page">
+  <h1 class="text-2xl font-bold mb-2">Request dump #{{.RequestDump.ID}}</h1>
+  <p class="text-gray-500 text-sm mb-4">
+    {{.RequestDump.Source}} · {{.RequestDump.RemoteIP}} · {{.RequestDump.CreatedAt.Format "2006-01-02 15:04:05"}}
+    {{if .RequestDump.Truncated}}<span class="text-amber-400"> (truncated)</span>{{end}}
+  </p>
+  <div class="flex gap-2 mb-4">
+    <a href="/security" class="text-xs text-indigo-400">← Security</a>
+    <a href="/security/dumps/{{.RequestDump.ID}}?raw=1" class="text-xs text-gray-400">Download raw body</a>
+  </div>
+
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-gray-400 mb-2">Request line</h2>
+    <pre class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono">{{.RequestDump.Method}} {{.RequestDump.Path}}{{if .RequestDump.Query}}?{{.RequestDump.Query}}{{end}} {{.RequestDump.Proto}}</pre>
+  </section>
+
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-gray-400 mb-2">Headers</h2>
+    <pre class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap">{{.RequestDump.Headers}}</pre>
+  </section>
+
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-gray-400 mb-2">Body (text)</h2>
+    <pre class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">{{printf "%s" .RequestDump.Body}}</pre>
+  </section>
+
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-gray-400 mb-2">Body (hex)</h2>
+    <pre class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto">{{.RequestDumpHex}}</pre>
+  </section>
+</div>
+{{template "foot" .}}
+{{end}}

@@ -46,6 +46,9 @@
           {{if eq .Name "databasus"}}
           <p class="text-xs text-gray-600 mt-2">Database backups (PostgreSQL, MySQL, MariaDB, MongoDB) on <span class="font-mono text-gray-400">:4005</span> — <a class="text-indigo-400" href="https://databasus.com/" target="_blank" rel="noopener">databasus.com</a></p>
           {{end}}
+          {{if eq .Name "reqdump"}}
+          <p class="text-xs text-gray-600 mt-2">Forensic HTTP capture (panel, nginx mirror, honeypot). Off by default — configure on <a class="text-indigo-400" href="/security">Security</a>.</p>
+          {{end}}
         </div>
         <div class="shrink-0">
           {{if .Enabled}}
@@ -74,6 +77,11 @@
             <input name="api_key" placeholder="API key (auto if empty)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             <input name="api_port" placeholder="API host port (default 8082)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
             <input name="dns_port" placeholder="DNS host port (default 53)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+            {{end}}
+            {{if eq .Name "reqdump"}}
+            <label class="flex items-center gap-2 text-xs text-gray-400"><input type="checkbox" name="dump_panel" value="on" checked> panel</label>
+            <label class="flex items-center gap-2 text-xs text-gray-400"><input type="checkbox" name="dump_honeypot" value="on"> honeypot</label>
+            <input name="honeypot_ports" placeholder="2323,8081,8888" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs font-mono">
             {{end}}
             <button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded">Enable</button>
           </form>

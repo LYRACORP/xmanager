@@ -17,6 +17,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/screens/proxy"
 	"github.com/lyracorp/xmanager/internal/tui/screens/recon"
 	"github.com/lyracorp/xmanager/internal/tui/screens/scripts"
+	"github.com/lyracorp/xmanager/internal/tui/screens/security"
 	"github.com/lyracorp/xmanager/internal/tui/screens/servermap"
 	"github.com/lyracorp/xmanager/internal/tui/screens/services"
 	"github.com/lyracorp/xmanager/internal/tui/screens/settings"
@@ -46,3 +47,4 @@ func NewServicesScreen(ctx *shared.AppContext) shared.Screen      { return servi
 func NewReconScreen(ctx *shared.AppContext) shared.Screen         { return recon.New(ctx) }
 func NewPackagesScreen(ctx *shared.AppContext) shared.Screen      { return packages.New(ctx) }
 func NewFTPScreen(ctx *shared.AppContext) shared.Screen           { return ftpscreen.New(ctx) }
+func NewSecurityScreen(ctx *shared.AppContext) shared.Screen      { return security.New(ctx) }

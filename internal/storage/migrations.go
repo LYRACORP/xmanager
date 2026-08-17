@@ -15,6 +15,8 @@ func runMigrations(db *gorm.DB) error {
 		&Backup{},
 		&BackupDestination{},
 		&ActivityLog{},
+		&SecurityEvent{},
+		&RequestDump{},
 		&AIConfigRecord{},
 		&User{},
 		&Project{},

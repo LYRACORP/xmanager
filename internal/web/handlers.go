@@ -22,6 +22,8 @@ import (
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
 	"github.com/lyracorp/xmanager/internal/proxy"
+	"github.com/lyracorp/xmanager/internal/reqdump"
+	"github.com/lyracorp/xmanager/internal/securityevents"
 	"github.com/lyracorp/xmanager/internal/services/cloudflare"
 	"github.com/lyracorp/xmanager/internal/services/mailinbox"
 	"github.com/lyracorp/xmanager/internal/services/powerdns"
@@ -44,6 +46,7 @@ type handler struct {
 	relayStates  *relayStateStore
 	diskCache    *diskUsageCache
 	chartStop    chan struct{}
+	dumpMgr      *reqdump.Manager
 }
 
 // serverCardData holds display-ready data for a single server card.
@@ -257,6 +260,10 @@ type pageData struct {
 	LogsLabel      string
 	LogsTabSources []struct{ ID, Label string }
 	LogsFragmentQS string
+	// Security
+	Security       securityPageView
+	RequestDump    *storage.RequestDump
+	RequestDumpHex string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -318,10 +325,25 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	u, err := auth.Authenticate(h.opts.DB, username, password)
+	ip := clientIPFromRequest(r)
 	if err != nil {
+		securityevents.Log(h.opts.DB, securityevents.Entry{
+			ServerID: h.localServerID(),
+			Kind:     securityevents.KindLoginFail,
+			IP:       ip,
+			Actor:    username,
+			Detail:   "invalid credentials",
+		})
 		h.render(w, "login", pageData{Title: "Login", NodeMode: h.nodeMode, Flash: "Invalid username or password."})
 		return
 	}
+
+	securityevents.Log(h.opts.DB, securityevents.Entry{
+		ServerID: h.localServerID(),
+		Kind:     securityevents.KindLoginOK,
+		IP:       ip,
+		Actor:    u.Username,
+	})
 
 	token := h.sess.create(u.ID, u.Username, u.Role)
 	setSessionCookie(w, token)

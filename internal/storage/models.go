@@ -153,6 +153,35 @@ type ActivityLog struct {
 	IP        string    `gorm:"size:64" json:"ip"`
 }
 
+// SecurityEvent records login attempts, SSH failures, fail2ban, and scan tags.
+type SecurityEvent struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	ServerID  uint      `gorm:"index" json:"server_id"`
+	Kind      string    `gorm:"index;size:32" json:"kind"` // login_ok | login_fail | ssh_fail | fail2ban | scan
+	IP        string    `gorm:"index;size:64" json:"ip"`
+	Actor     string    `gorm:"size:128" json:"actor"`
+	Detail    string    `gorm:"type:text" json:"detail"`
+}
+
+// RequestDump stores captured inbound HTTP/TCP payloads for forensic review.
+type RequestDump struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+	ServerID   uint      `gorm:"index" json:"server_id"`
+	Source     string    `gorm:"index;size:16" json:"source"` // panel | nginx | honeypot
+	ListenPort int       `json:"listen_port"`
+	RemoteIP   string    `gorm:"index;size:64" json:"remote_ip"`
+	Method     string    `gorm:"size:16" json:"method"`
+	Path       string    `gorm:"size:512" json:"path"`
+	Query      string    `gorm:"size:512" json:"query"`
+	Proto      string    `gorm:"size:16" json:"proto"`
+	Headers    string    `gorm:"type:text" json:"headers"`
+	Body       []byte    `gorm:"type:blob" json:"body"`
+	Truncated  bool      `json:"truncated"`
+	Status     int       `json:"status"`
+}
+
 type AIConfigRecord struct {
 	gorm.Model
 	Provider        string `json:"provider"`

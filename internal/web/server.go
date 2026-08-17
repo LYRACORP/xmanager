@@ -16,6 +16,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
+	"github.com/lyracorp/xmanager/internal/reqdump"
 	"github.com/lyracorp/xmanager/internal/ssh"
 	"gorm.io/gorm"
 )
@@ -88,23 +89,32 @@ func Run(opts Options) error {
 		if srv, err := EnsureLocalServer(opts.DB); err == nil {
 			h.localSrvID = srv.ID
 		}
+		panelPort := port
+		h.dumpMgr = reqdump.NewManager(opts.DB, h.localSrvID, panelPort)
 		h.node = nodemetrics.NewCollector(5 * time.Second)
 		h.node.Start()
 		defer h.node.Stop()
 		h.startChartSampler()
 		defer h.stopChartSampler()
 		h.ensureDefaultNodeServices()
+		h.reloadReqDump()
+		defer h.dumpMgr.Stop()
 	}
 
 	mux := http.NewServeMux()
 	h.register(mux)
+
+	handler := http.Handler(mux)
+	if h.dumpMgr != nil {
+		handler = h.dumpMgr.Middleware(mux)
+	}
 
 	fmt.Printf("XManager web listening on http://%s (role=%s)\n", addr, opts.Config.Web.Role)
 	// No WriteTimeout/ReadTimeout: WebSocket terminals are long-lived hijacked
 	// connections; header timeout still bounds slowloris on new requests.
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

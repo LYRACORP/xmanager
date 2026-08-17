@@ -460,6 +460,10 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 			m.statusMsg = "Install node web panel (this host metrics only, :8080)? (y/n)"
 		}
 		return nil, true
+	case "s":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenSecurity, ServerID: m.ctx.ServerID}
+		}, true
 	case "z":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenRecon, ServerID: m.ctx.ServerID}
@@ -703,7 +707,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "d/p/l", Desc: "docker/pm2/logs"},
 			{Key: "j/o/t", Desc: "projects/cron/scripts"},
 			{Key: "i", Desc: "install packages"},
-			{Key: "y/v/z", Desc: "uptime/services/recon"},
+			{Key: "y/v/s/z", Desc: "uptime/services/security/recon"},
 			{Key: "n", Desc: "database"},
 			{Key: "f", Desc: "ftp"},
 			{Key: "1/2/3", Desc: "tabs"},
