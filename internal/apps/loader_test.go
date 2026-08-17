@@ -7,11 +7,9 @@ import (
 )
 
 func TestLoadAndRenderPrivatebin(t *testing.T) {
+	dir := "apps/caprover"
 	if _, err := os.Stat(filepath.Join(dir, "privatebin.yml")); err != nil {
-		dir = "apps/caprover"
-		if _, err := os.Stat(filepath.Join(dir, "privatebin.yml")); err != nil {
-			t.Skip("one-click apps catalog not present")
-		}
+		t.Skip("one-click apps catalog not present")
 	}
 	l := NewLoader(dir)
 	app, err := l.Load("privatebin")
@@ -33,9 +31,7 @@ func TestLoadAndRenderPrivatebin(t *testing.T) {
 func TestListSummaries(t *testing.T) {
 	dir := "apps/caprover"
 	if _, err := os.Stat(dir); err != nil {
-		if _, err := os.Stat(dir); err != nil {
-			t.Skip("catalog missing")
-		}
+		t.Skip("catalog missing")
 	}
 	l := NewLoader(dir)
 	sums, err := l.ListSummaries()

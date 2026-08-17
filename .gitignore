@@ -22,6 +22,9 @@ go.work.sum
 *.swo
 *~
 
+# Local research clones (not part of the product)
+/idea/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -33,6 +36,3 @@ Thumbs.db
 # Coverage
 coverage.txt
 coverage.html
-
-# Local research clones (not part of the product)
-/idea/
