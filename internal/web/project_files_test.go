@@ -29,6 +29,24 @@ func TestResolveUnderRoot(t *testing.T) {
 	}
 }
 
+func TestResolveUnderRootFTPHome(t *testing.T) {
+	root := t.TempDir()
+	if _, err := resolveUnderRoot(root, "../etc/passwd"); err == nil {
+		t.Fatal("expected escape from FTP home")
+	}
+	if _, err := resolveUnderRoot(root, "/etc/passwd"); err == nil {
+		t.Fatal("expected absolute escape from FTP home")
+	}
+	nested := filepath.Join(root, "pub")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveUnderRoot(root, "pub")
+	if err != nil || got != nested && !strings.HasSuffix(got, "pub") {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+}
+
 func TestResolveContainerPath(t *testing.T) {
 	got, err := resolveContainerPath("/app", "")
 	if err != nil || got != "/app" {

@@ -203,11 +203,11 @@ type GitCredential struct {
 // GitOAuthApp holds per-provider OAuth application credentials (client id/secret).
 type GitOAuthApp struct {
 	gorm.Model
-	Provider             string `gorm:"uniqueIndex;not null" json:"provider"` // github, gitlab, bitbucket, gitea
-	ClientID             string `json:"client_id"`
+	Provider              string `gorm:"uniqueIndex;not null" json:"provider"` // github, gitlab, bitbucket, gitea
+	ClientID              string `json:"client_id"`
 	ClientSecretEncrypted string `gorm:"type:text" json:"-"`
-	Endpoint             string `json:"endpoint"` // self-hosted GitLab/Gitea base URL
-	Enabled              bool   `gorm:"default:true" json:"enabled"`
+	Endpoint              string `json:"endpoint"` // self-hosted GitLab/Gitea base URL
+	Enabled               bool   `gorm:"default:true" json:"enabled"`
 }
 
 type CronJob struct {
@@ -217,7 +217,7 @@ type CronJob struct {
 	Name       string     `gorm:"not null" json:"name"`
 	Expression string     `gorm:"not null" json:"expression"`
 	Command    string     `gorm:"type:text;not null" json:"command"`
-	TaskType   string     `json:"task_type"`                     // backup_database, shell, …; empty = legacy raw command
+	TaskType   string     `json:"task_type"`                    // backup_database, shell, …; empty = legacy raw command
 	TaskConfig string     `gorm:"type:text" json:"task_config"` // JSON extras per task type
 	Enabled    bool       `gorm:"default:true" json:"enabled"`
 	LastRun    *time.Time `json:"last_run"`
@@ -319,9 +319,9 @@ type NodeSettings struct {
 	gorm.Model
 	ServerID   uint   `gorm:"uniqueIndex;not null" json:"server_id"`
 	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
-	MainDomain string `json:"main_domain"`  // e.g. panel.example.com
-	NS1        string `json:"ns1"`          // e.g. ns1.example.com
-	NS2        string `json:"ns2"`          // e.g. ns2.example.com
+	MainDomain string `json:"main_domain"` // e.g. panel.example.com
+	NS1        string `json:"ns1"`         // e.g. ns1.example.com
+	NS2        string `json:"ns2"`         // e.g. ns2.example.com
 	PublicIP   string `json:"public_ip"`
 	CFAPIToken string `json:"cf_api_token"` // global Cloudflare API token
 }
@@ -345,4 +345,15 @@ type ProjectDatabase struct {
 	DBType    string  `gorm:"not null" json:"db_type"`
 	DBName    string  `gorm:"not null" json:"db_name"`
 	Username  string  `json:"username"`
+}
+
+// FTPUser is a jailed vsftpd account on a managed server (no password stored).
+type FTPUser struct {
+	gorm.Model
+	ServerID uint   `gorm:"uniqueIndex:uidx_ftp_user;not null" json:"server_id"`
+	Server   Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Username string `gorm:"uniqueIndex:uidx_ftp_user;not null" json:"username"`
+	Home     string `gorm:"not null" json:"home"`
+	Enabled  bool   `gorm:"default:true" json:"enabled"`
+	Notes    string `json:"notes"`
 }

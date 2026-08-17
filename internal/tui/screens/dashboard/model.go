@@ -3,6 +3,7 @@ package dashboard
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -129,12 +130,16 @@ func (m *Model) Init() tea.Cmd {
 	m.servicesState = stateLoading
 	m.alertsState = stateLoading
 	m.refreshWebInstalled()
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.loadAlerts(),
 		m.loadMetrics(),
 		m.loadServices(),
 		m.scheduleTick(),
-	)
+	}
+	if m.tab == tabFiles {
+		cmds = append(cmds, m.loadDir())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) refreshWebInstalled() {
@@ -381,6 +386,10 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return textinput.Blink, true
 		}
 		return nil, false
+	case "f":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenFTP, ServerID: m.ctx.ServerID}
+		}, true
 	case "n":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenDatabase, ServerID: m.ctx.ServerID}
@@ -696,16 +705,33 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "i", Desc: "install packages"},
 			{Key: "y/v/z", Desc: "uptime/services/recon"},
 			{Key: "n", Desc: "database"},
+			{Key: "f", Desc: "ftp"},
 			{Key: "1/2/3", Desc: "tabs"},
 			{Key: "b", Desc: "back"},
 		}
 	}
 }
 
-func (m *Model) OnNavigate(_ map[string]interface{}) {
+func (m *Model) OnNavigate(params map[string]interface{}) {
 	m.refreshWebInstalled()
 	m.webConfirm = 0
 	m.statusMsg = ""
+	if params == nil {
+		return
+	}
+	tab, _ := params["tab"].(string)
+	if tab != "files" {
+		return
+	}
+	m.tab = tabFiles
+	if p, ok := params["path"].(string); ok {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			m.curPath = p
+		}
+	}
+	m.dirLoaded = false
+	m.previewOpen = false
 }
 
 func (m *Model) View() string {

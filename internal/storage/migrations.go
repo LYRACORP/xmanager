@@ -33,5 +33,6 @@ func runMigrations(db *gorm.DB) error {
 		&NodeSettings{},
 		&Mailbox{},
 		&ProjectDatabase{},
+		&FTPUser{},
 	)
 }

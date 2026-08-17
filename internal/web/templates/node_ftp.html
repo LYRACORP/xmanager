@@ -1,0 +1,92 @@
+{{define "node_ftp"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">FTP</h1>
+      <p class="text-panel-muted text-sm mt-1">Jailed vsftpd users · homes under /srv/ftp</p>
+    </div>
+    <form method="post" action="/ftp">
+      {{if .FTPEnabled}}
+      <input type="hidden" name="action" value="disable">
+      <button class="text-sm border border-amber-800 text-amber-300 hover:bg-amber-950/40 px-3 py-1.5 rounded-lg">Disable FTP</button>
+      {{else}}
+      <input type="hidden" name="action" value="enable">
+      <button class="text-sm bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg">Enable FTP</button>
+      {{end}}
+    </form>
+  </div>
+
+  <div class="flex flex-wrap gap-3 text-xs items-center">
+    <span class="px-2 py-1 rounded border {{if .FTPEnabled}}border-emerald-700 text-emerald-300{{else}}border-gray-700 text-gray-500{{end}}">
+      vsftpd {{if .FTPEnabled}}active{{else}}stopped{{end}}
+    </span>
+    <span class="text-gray-500">port 21 · passive 40000–40100 · chroot jail</span>
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <form method="post" action="/ftp/users" class="bg-gray-900 border border-gray-800 rounded-xl p-4 grid md:grid-cols-2 gap-3">
+    <div class="md:col-span-2 text-sm font-semibold text-gray-300">Add FTP user</div>
+    <input name="username" required placeholder="username" pattern="[a-z][a-z0-9_]{2,31}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+    <input name="password" type="password" required placeholder="password" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <input name="home" placeholder="/srv/ftp/username (default)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+    <input name="notes" placeholder="notes (optional)" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <div class="md:col-span-2">
+      <button class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Create jailed user</button>
+      <span class="text-xs text-gray-500 ml-2">nologin shell · allow-list only · no SSH</span>
+    </div>
+  </form>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-[11px] uppercase text-gray-500 border-b border-gray-800">
+        <tr>
+          <th class="text-left px-3 py-2 font-medium">User</th>
+          <th class="text-left px-3 py-2 font-medium hidden md:table-cell">Home</th>
+          <th class="text-left px-3 py-2 font-medium">Login</th>
+          <th class="text-right px-3 py-2 font-medium">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/80">
+        {{range .FTPUsers}}
+        <tr class="hover:bg-gray-800/40 align-top">
+          <td class="px-3 py-2">
+            <span class="font-mono text-gray-200">{{.Username}}</span>
+            {{if .Notes}}<span class="block text-[11px] text-gray-500">{{.Notes}}</span>{{end}}
+          </td>
+          <td class="px-3 py-2 font-mono text-xs text-gray-500 hidden md:table-cell">{{.Home}}</td>
+          <td class="px-3 py-2 text-xs">
+            {{if .Enabled}}<span class="text-emerald-400">enabled</span>{{else}}<span class="text-gray-500">disabled</span>{{end}}
+          </td>
+          <td class="px-3 py-2 text-right">
+            <div class="flex flex-wrap gap-2 justify-end items-center">
+              <a href="/ftp/users/{{.ID}}/files" class="text-xs text-indigo-300 hover:underline">Browse</a>
+              {{if .Enabled}}
+              <form method="post" action="/ftp/users/{{.ID}}/disable" class="inline"><button class="text-xs text-amber-400 hover:underline">Disable</button></form>
+              {{else}}
+              <form method="post" action="/ftp/users/{{.ID}}/enable" class="inline"><button class="text-xs text-emerald-400 hover:underline">Enable</button></form>
+              {{end}}
+              <details class="relative text-left">
+                <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 list-none">Password</summary>
+                <form method="post" action="/ftp/users/{{.ID}}/password" class="mt-1 flex gap-1">
+                  <input name="password" type="password" required placeholder="new password" class="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-[11px] w-32">
+                  <button class="text-indigo-300 text-[11px]">Set</button>
+                </form>
+              </details>
+              <form method="post" action="/ftp/users/{{.ID}}/delete" onsubmit="return confirm('Delete FTP user {{.Username}}? Home directory is kept.')">
+                <button class="text-xs text-red-400 hover:underline">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="4" class="px-3 py-6 text-gray-600 text-sm">No FTP users yet</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

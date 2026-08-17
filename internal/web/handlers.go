@@ -165,6 +165,9 @@ type pageData struct {
 	WebmailHosts     []webmailHostView
 	SystemServices   []systemServiceView
 	SystemSvcFilter  string
+	FTPEnabled       bool
+	FTPUsers         []storage.FTPUser
+	FTPUser          *storage.FTPUser
 	// Home summary (node panel)
 	StatProjects   int
 	StatContainers int

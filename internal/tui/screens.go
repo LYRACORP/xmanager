@@ -9,6 +9,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/screens/docker"
 	"github.com/lyracorp/xmanager/internal/tui/screens/errtrack"
 	"github.com/lyracorp/xmanager/internal/tui/screens/fleet"
+	ftpscreen "github.com/lyracorp/xmanager/internal/tui/screens/ftp"
 	"github.com/lyracorp/xmanager/internal/tui/screens/logs"
 	"github.com/lyracorp/xmanager/internal/tui/screens/packages"
 	"github.com/lyracorp/xmanager/internal/tui/screens/pm2"
@@ -44,3 +45,4 @@ func NewUptimeScreen(ctx *shared.AppContext) shared.Screen        { return uptim
 func NewServicesScreen(ctx *shared.AppContext) shared.Screen      { return services.New(ctx) }
 func NewReconScreen(ctx *shared.AppContext) shared.Screen         { return recon.New(ctx) }
 func NewPackagesScreen(ctx *shared.AppContext) shared.Screen      { return packages.New(ctx) }
+func NewFTPScreen(ctx *shared.AppContext) shared.Screen           { return ftpscreen.New(ctx) }

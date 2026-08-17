@@ -88,6 +88,7 @@ func (a *App) initScreens() {
 	a.screens[shared.ScreenServices] = NewServicesScreen(a.ctx)
 	a.screens[shared.ScreenRecon] = NewReconScreen(a.ctx)
 	a.screens[shared.ScreenPackages] = NewPackagesScreen(a.ctx)
+	a.screens[shared.ScreenFTP] = NewFTPScreen(a.ctx)
 }
 
 func (a *App) Init() tea.Cmd {

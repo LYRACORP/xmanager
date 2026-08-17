@@ -32,6 +32,7 @@ const (
 	ScreenServices
 	ScreenRecon
 	ScreenPackages
+	ScreenFTP
 )
 
 // Backward-compatible aliases.
@@ -46,7 +47,7 @@ func (s ScreenID) String() string {
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
 		"Settings", "Projects", "Cron Jobs", "Scripts",
-		"Uptime", "Services", "Recon", "Install Packages",
+		"Uptime", "Services", "Recon", "Install Packages", "FTP",
 	}
 	if int(s) < len(names) {
 		return names[s]
