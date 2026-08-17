@@ -78,7 +78,7 @@ type Model struct {
 
 	// web panel
 	webInstalled bool
-	webConfirm   int // 0 none, 1 install, 2 manage menu, 3 uninstall, 4 upgrade
+	webConfirm   int // 0 none, 1 install, 2 manage menu, 3 uninstall, 4 upgrade, 5 disable
 	webBusy      bool
 	webProgress  shared.WebPanelProgressState
 	webProgCh    <-chan tea.Msg
@@ -149,7 +149,7 @@ func (m *Model) refreshWebInstalled() {
 	}
 	var n int64
 	m.ctx.DB.Model(&storage.ServiceInstance{}).
-		Where("server_id = ? AND service_type = ? AND enabled = ?", m.ctx.ServerID, webpanel.ServiceType, true).
+		Where("server_id = ? AND service_type = ?", m.ctx.ServerID, webpanel.ServiceType).
 		Count(&n)
 	m.webInstalled = n > 0
 }
@@ -286,9 +286,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m, nil
 		}
 		m.webInstalled = msg.Installed
-		if msg.Installed {
+		switch {
+		case msg.Action == "disable":
+			m.webInstalled = true
+			m.statusMsg = "Web panel disabled"
+		case msg.Installed:
 			m.statusMsg = fmt.Sprintf("Node web panel ready — %s", msg.URL)
-		} else {
+		default:
 			m.statusMsg = "Web panel uninstalled"
 		}
 		m.refreshWebInstalled()
@@ -454,7 +458,7 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		m.refreshWebInstalled()
 		if m.webInstalled {
 			m.webConfirm = 2
-			m.statusMsg = "Node panel: [r] reinstall/upgrade  [u] uninstall  [esc] cancel"
+			m.statusMsg = "Node panel: [r] reinstall/upgrade  [s] disable  [u] uninstall  [esc] cancel"
 		} else {
 			m.webConfirm = 1
 			m.statusMsg = "Install node web panel (this host metrics only, :8080)? (y/n)"
@@ -490,7 +494,11 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			return m, nil
 		case "u", "U":
 			m.webConfirm = 3
-			m.statusMsg = "Uninstall node web panel from this server? (y/n)"
+			m.statusMsg = "Uninstall node web panel from this server (removes binary and data)? (y/n)"
+			return m, nil
+		case "s", "S":
+			m.webConfirm = 5
+			m.statusMsg = "Disable node web panel (stop service, keep files)? (y/n)"
 			return m, nil
 		case "esc", "n", "N":
 			m.webConfirm = 0
@@ -498,7 +506,7 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
-	case 1, 3, 4:
+	case 1, 3, 4, 5:
 		switch msg.String() {
 		case "y", "Y":
 			action := m.webConfirm
@@ -513,6 +521,10 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 				m.webProgress.Start("upgrade")
 				m.statusMsg = "Upgrading node web panel…"
 				return m, tea.Batch(m.runWebPanel("upgrade"), shared.TickProgressNet())
+			case 5:
+				m.webProgress.Start("disable")
+				m.statusMsg = "Disabling web panel…"
+				return m, tea.Batch(m.runWebPanel("disable"), shared.TickProgressNet())
 			default:
 				m.webProgress.Start("uninstall")
 				m.statusMsg = "Uninstalling web panel…"
@@ -577,8 +589,14 @@ func (m *Model) runWebPanel(action string) tea.Cmd {
 				return
 			}
 			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true, URL: fmt.Sprintf("http://%s:8080", srv.Host)}
-		default:
+		case "disable":
 			if err := svc.Disable(exec); err != nil {
+				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
+				return
+			}
+			ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Installed: true}
+		default:
+			if err := svc.Uninstall(exec); err != nil {
 				ch <- shared.WebPanelDoneMsg{ServerID: serverID, Action: action, Err: err}
 				return
 			}
@@ -675,6 +693,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	if m.webConfirm == 2 {
 		return []components.KeyBinding{
 			{Key: "r", Desc: "reinstall/upgrade"},
+			{Key: "s", Desc: "disable"},
 			{Key: "u", Desc: "uninstall"},
 			{Key: "esc", Desc: "cancel"},
 		}

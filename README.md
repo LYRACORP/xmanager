@@ -41,9 +41,9 @@ xmanager mcp          # MCP stdio server for AI agents
 
 Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `?` help · `Esc` back
 
-Fleet Overview: `Enter` connect · `w` install **node** web panel (or reinstall/upgrade / uninstall if already present) · `a` add · `d` delete
+Fleet Overview: `Enter` connect · `w` install **node** web panel (or reinstall/upgrade / disable / uninstall if already present) · `a` add · `d` delete
 
-From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o` cron · `t` scripts · `y` uptime · `v` services · `z` recon · `n` database · `w` node web panel (same install / upgrade / uninstall flow)
+From a server dashboard: `d` Docker · `p` PM2 · `l` logs · `j` projects · `o` cron · `t` scripts · `y` uptime · `v` services · `z` recon · `n` database · `w` node web panel (same install / upgrade / disable / uninstall flow)
 
 ### Control web vs node web panel
 

@@ -126,6 +126,8 @@ func (p WebPanelProgressState) View(width int) string {
 		title = "Installing web panel"
 	case "uninstall":
 		title = "Uninstalling web panel"
+	case "disable":
+		title = "Disabling web panel"
 	}
 	gW := width - 8
 	if gW < 20 {

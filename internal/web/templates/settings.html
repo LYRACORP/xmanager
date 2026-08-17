@@ -151,6 +151,22 @@
     </div>
 
     {{if .NodeMode}}
+    <div class="bg-gray-900 rounded-xl border border-red-900/40 p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">This panel</h2>
+        <p class="text-xs text-panel-muted mt-1">Stop the node web panel or remove it from this server. Disable keeps the binary so the TUI can start it again. Remove deletes the unit, binary, and panel data.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <form method="post" action="/settings/panel/disable" onsubmit="return confirm('Stop the node web panel on this server?')">
+          <input type="hidden" name="confirm" value="yes">
+          <button class="xm-btn xm-btn-ghost text-sm text-amber-300">Disable panel</button>
+        </form>
+        <form method="post" action="/settings/panel/uninstall" onsubmit="return confirm('Permanently remove the node web panel (binary and data) from this server?')">
+          <input type="hidden" name="confirm" value="yes">
+          <button class="xm-btn xm-btn-ghost text-sm text-red-400">Remove panel</button>
+        </form>
+      </div>
+    </div>
     <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
       <div>
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Node identity</h2>

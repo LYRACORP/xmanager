@@ -1,0 +1,8 @@
+{{define "panel_goodbye"}}
+{{template "head" .}}
+<div class="max-w-lg mx-auto p-8 space-y-3">
+  <h1 class="text-2xl font-bold tracking-tight">{{.Title}}</h1>
+  {{if .Flash}}<p class="text-panel-muted text-sm">{{.Flash}}</p>{{end}}
+</div>
+{{template "foot" .}}
+{{end}}

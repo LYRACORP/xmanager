@@ -248,6 +248,8 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("GET /oauth/git/{provider}/relay-finish", adminz(h.getOAuthGitRelayFinish))
 	mux.HandleFunc("GET /settings/git/{provider}/device/poll", adminz(h.getDevicePoll))
 	mux.HandleFunc("POST /settings/git/{provider}/disconnect", adminz(h.postOAuthGitDisconnect))
+	mux.HandleFunc("POST /settings/panel/disable", adminz(h.postNodePanelDisable))
+	mux.HandleFunc("POST /settings/panel/uninstall", adminz(h.postNodePanelUninstall))
 	mux.HandleFunc("GET /api/git/repos", authz(h.getAPIGitRepos))
 	mux.HandleFunc("GET /api/git/device/start", authz(h.getAPIGitDeviceStart))
 	mux.HandleFunc("GET /api/projects/{id}/stats", authz(h.getAPIProjectStats))

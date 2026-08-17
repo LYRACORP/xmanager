@@ -218,3 +218,81 @@ func TestPostTimeTimezoneRejectsInjection(t *testing.T) {
 		t.Fatalf("location %q", loc)
 	}
 }
+
+func testWebFuncMap() template.FuncMap {
+	return template.FuncMap{
+		"formatBytes":  nodemetrics.FormatBytes,
+		"formatUptime": nodemetrics.FormatUptime,
+		"pathEscape":   url.PathEscape,
+		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
+		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
+		"json": func(v interface{}) (template.JS, error) {
+			return "", nil
+		},
+	}
+}
+
+func TestSettingsThisPanelCard(t *testing.T) {
+	tmpl, err := template.New("").Funcs(testWebFuncMap()).ParseFS(assets, "templates/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pageData{Title: "Settings", NodeMode: true, IsAdmin: true}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "settings", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `action="/settings/panel/disable"`) || !strings.Contains(out, `action="/settings/panel/uninstall"`) {
+		t.Fatal("expected panel disable/remove forms")
+	}
+}
+
+func TestPanelGoodbyeTemplate(t *testing.T) {
+	tmpl, err := template.New("").Funcs(testWebFuncMap()).ParseFS(assets, "templates/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "panel_goodbye", pageData{Title: "Panel stopping", Flash: "shutting down"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Panel stopping") {
+		t.Fatal(buf.String())
+	}
+}
+
+func TestPostPanelDisableRequiresConfirm(t *testing.T) {
+	h, db := aclTestHandler(t)
+	admin := storage.User{Username: "admin", PasswordHash: "x", Role: "admin", Enabled: true}
+	db.Create(&admin)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /settings/panel/disable", h.requireAdminAuth(h.postNodePanelDisable))
+	token := h.sess.create(admin.ID, "admin", "admin")
+	req := httptest.NewRequest(http.MethodPost, "/settings/panel/disable", strings.NewReader("confirm=no"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func TestPostPanelUninstallRejectsNonAdmin(t *testing.T) {
+	h, db := aclTestHandler(t)
+	user := storage.User{Username: "u", PasswordHash: "x", Role: "user", Enabled: true}
+	db.Create(&user)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /settings/panel/uninstall", h.requireAdminAuth(h.postNodePanelUninstall))
+	token := h.sess.create(user.ID, "u", "user")
+	form := url.Values{"confirm": {"yes"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/panel/uninstall", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d want 303", rec.Code)
+	}
+}

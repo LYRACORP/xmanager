@@ -12,6 +12,7 @@ import (
 
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
 
@@ -21,7 +22,33 @@ const (
 	binPath     = "/usr/local/bin/xmanager"
 	unitPath    = "/etc/systemd/system/xmanager-web.service"
 	configPath  = "/root/.config/xmanager/config.yaml"
+	dataDir     = "/root/.config/xmanager"
 )
+
+// CmdStop stops and disables the systemd unit without deleting files.
+func CmdStop() string {
+	return "systemctl disable --now xmanager-web 2>/dev/null || true"
+}
+
+// CmdCleanupDocker removes a leftover xmanager-web container.
+func CmdCleanupDocker() string {
+	return "docker rm -f xmanager-web 2>/dev/null || true"
+}
+
+// CmdUninstallFiles deletes the unit, binary, install dir, and node data dir.
+func CmdUninstallFiles() string {
+	return "rm -f " + unitPath + " " + binPath + " && rm -rf " + installDir + " " + dataDir + " && (systemctl daemon-reload 2>/dev/null || true)"
+}
+
+// CmdPresentCheck prints "yes" when the unit or binary is still on disk.
+func CmdPresentCheck() string {
+	return "[ -e " + unitPath + " ] || [ -e " + binPath + " ] && echo yes"
+}
+
+// CmdDeferred runs cmd after a short delay so an HTTP response can finish.
+func CmdDeferred(cmd string) string {
+	return "nohup bash -c " + shellQuote("sleep 2; "+cmd) + " >/dev/null 2>&1 & echo scheduled"
+}
 
 // ProgressFunc reports install/upgrade progress. pct is 0..1; detail is a short status line.
 type ProgressFunc func(pct float64, detail string)
@@ -111,12 +138,25 @@ func (w *WebPanel) report(pct float64, detail string) {
 func (w *WebPanel) Name() string { return ServiceType }
 
 func (w *WebPanel) IsEnabled(exec *ssh.Executor) bool {
+	if exec == nil {
+		return false
+	}
 	out := exec.RunQuiet("systemctl is-active xmanager-web 2>/dev/null || true")
 	if strings.TrimSpace(out) == "active" {
 		return true
 	}
 	return exec.RunQuiet("docker inspect xmanager-web 2>/dev/null | grep -q running && echo yes") == "yes"
 }
+
+// Present reports whether panel files remain (stopped or running).
+func Present(exec *ssh.Executor) bool {
+	if exec == nil {
+		return false
+	}
+	return strings.TrimSpace(exec.RunQuiet(CmdPresentCheck())) == "yes"
+}
+
+func (w *WebPanel) Present(exec *ssh.Executor) bool { return Present(exec) }
 
 func (w *WebPanel) Status(exec *ssh.Executor) string {
 	if w.IsEnabled(exec) {
@@ -825,19 +865,43 @@ func expandHome(path string) string {
 	return path
 }
 
-func (w *WebPanel) Disable(exec *ssh.Executor) error {
+func (w *WebPanel) stopService(exec *ssh.Executor) {
 	w.exec = exec
 	w.report(0.20, "Stopping xmanager-web…")
-	_ = w.run(w.priv("systemctl disable --now xmanager-web 2>/dev/null || true"))
-	w.report(0.50, "Removing systemd unit…")
-	_ = w.run(w.priv("rm -f " + unitPath + " && systemctl daemon-reload 2>/dev/null || true"))
+	_ = w.run(w.priv(CmdStop()))
 	if exec != nil {
-		w.report(0.75, "Cleaning leftover containers…")
+		w.report(0.50, "Cleaning leftover containers…")
 		_ = w.ComposeDown(exec, installDir)
-		_, _ = exec.Run("docker rm -f xmanager-web 2>/dev/null || true")
+		_, _ = exec.Run(CmdCleanupDocker())
 	}
-	w.report(0.95, "Updating service record…")
+}
+
+func (w *WebPanel) DeleteInstance() error {
+	if w.DB == nil {
+		return nil
+	}
+	return w.DB.Where("server_id = ? AND service_type = ?", w.serverID, ServiceType).
+		Delete(&storage.ServiceInstance{}).Error
+}
+
+// Disable stops the panel but keeps the binary, unit, and data so it can be re-enabled.
+func (w *WebPanel) Disable(exec *ssh.Executor) error {
+	w.stopService(exec)
+	w.report(0.90, "Updating service record…")
 	if err := w.SaveInstance(w.serverID, ServiceType, "stopped", ""); err != nil {
+		return err
+	}
+	w.report(1.0, "Web panel disabled")
+	return nil
+}
+
+// Uninstall stops the panel and removes unit, binary, install dir, and node data.
+func (w *WebPanel) Uninstall(exec *ssh.Executor) error {
+	w.stopService(exec)
+	w.report(0.75, "Removing panel files…")
+	_ = w.run(w.priv(CmdUninstallFiles()))
+	w.report(0.95, "Clearing service record…")
+	if err := w.DeleteInstance(); err != nil {
 		return err
 	}
 	w.report(1.0, "Web panel uninstalled")

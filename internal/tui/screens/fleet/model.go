@@ -28,6 +28,7 @@ const (
 	modeManageWebPanel
 	modeConfirmWebUpgrade
 	modeConfirmWebUninstall
+	modeConfirmWebDisable
 )
 
 type formField int
@@ -101,10 +102,11 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	case modeManageWebPanel:
 		return []components.KeyBinding{
 			{Key: "r", Desc: "reinstall/upgrade"},
+			{Key: "s", Desc: "disable"},
 			{Key: "u", Desc: "uninstall"},
 			{Key: "esc", Desc: "cancel"},
 		}
-	case modeConfirmDelete, modeConfirmHostKey, modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall:
+	case modeConfirmDelete, modeConfirmHostKey, modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall, modeConfirmWebDisable:
 		return []components.KeyBinding{
 			{Key: "y", Desc: "confirm"},
 			{Key: "n/esc", Desc: "cancel"},
@@ -130,7 +132,7 @@ func (m *Model) load() tea.Cmd {
 		snaps, _ := poller.LatestSnapshots(m.ctx.DB)
 		web := make(map[uint]bool)
 		var instances []storage.ServiceInstance
-		m.ctx.DB.Where("service_type = ? AND enabled = ?", webpanel.ServiceType, true).Find(&instances)
+		m.ctx.DB.Where("service_type = ?", webpanel.ServiceType).Find(&instances)
 		for _, si := range instances {
 			web[si.ServerID] = true
 		}
@@ -199,9 +201,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m, nil
 		}
 		m.webPanels[msg.ServerID] = msg.Installed
-		if msg.Installed {
+		switch {
+		case msg.Action == "disable":
+			m.webPanels[msg.ServerID] = true
+			m.message = "Web panel disabled"
+		case msg.Installed:
 			m.message = fmt.Sprintf("Node web panel ready — %s", msg.URL)
-		} else {
+		default:
 			m.message = "Web panel uninstalled"
 		}
 		return m, tea.Batch(shared.PlayFinishSound(), m.load())
@@ -221,7 +227,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateHostKeyConfirm(msg)
 		case modeManageWebPanel:
 			return m.updateWebManage(msg)
-		case modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall:
+		case modeConfirmWebInstall, modeConfirmWebUpgrade, modeConfirmWebUninstall, modeConfirmWebDisable:
 			return m.updateWebConfirm(msg)
 		}
 	}
@@ -263,7 +269,7 @@ func (m *Model) updateGrid(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		s := m.servers[m.cursor]
 		if m.webPanels[s.ID] {
 			m.mode = modeManageWebPanel
-			m.message = fmt.Sprintf("Node panel on %s: [r] reinstall/upgrade  [u] uninstall  [esc] cancel", s.Name)
+			m.message = fmt.Sprintf("Node panel on %s: [r] reinstall/upgrade  [s] disable  [u] uninstall  [esc] cancel", s.Name)
 		} else {
 			m.mode = modeConfirmWebInstall
 			m.message = ""
@@ -299,6 +305,10 @@ func (m *Model) updateWebManage(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		m.mode = modeConfirmWebUninstall
 		m.message = ""
 		return m, nil
+	case "s", "S":
+		m.mode = modeConfirmWebDisable
+		m.message = ""
+		return m, nil
 	case "esc", "n", "N":
 		m.mode = modeGrid
 		m.message = ""
@@ -321,6 +331,8 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			action = "upgrade"
 		case modeConfirmWebUninstall:
 			action = "uninstall"
+		case modeConfirmWebDisable:
+			action = "disable"
 		}
 		m.mode = modeGrid
 		m.busy = true
@@ -330,6 +342,8 @@ func (m *Model) updateWebConfirm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 			m.message = fmt.Sprintf("Installing node web panel on %s…", s.Name)
 		case "upgrade":
 			m.message = fmt.Sprintf("Upgrading node web panel on %s…", s.Name)
+		case "disable":
+			m.message = fmt.Sprintf("Disabling web panel on %s…", s.Name)
 		default:
 			m.message = fmt.Sprintf("Uninstalling web panel from %s…", s.Name)
 		}
@@ -396,8 +410,14 @@ func (m *Model) runWebPanel(s storage.Server, action string) tea.Cmd {
 				Installed: true,
 				URL:       fmt.Sprintf("http://%s:8080", s.Host),
 			}
-		default:
+		case "disable":
 			if err := svc.Disable(exec); err != nil {
+				ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: err}
+				return
+			}
+			ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Installed: true}
+		default:
+			if err := svc.Uninstall(exec); err != nil {
 				ch <- shared.WebPanelDoneMsg{ServerID: s.ID, Action: action, Err: err}
 				return
 			}
@@ -569,7 +589,7 @@ func (m *Model) saveServer() tea.Cmd {
 		snaps, _ := poller.LatestSnapshots(m.ctx.DB)
 		web := make(map[uint]bool)
 		var instances []storage.ServiceInstance
-		m.ctx.DB.Where("service_type = ? AND enabled = ?", webpanel.ServiceType, true).Find(&instances)
+		m.ctx.DB.Where("service_type = ?", webpanel.ServiceType).Find(&instances)
 		for _, si := range instances {
 			web[si.ServerID] = true
 		}
@@ -623,7 +643,7 @@ func (m *Model) View() string {
 			m.viewGrid(),
 			"",
 			" "+theme.WarningText().Render(fmt.Sprintf("Node panel on %s already installed", name)),
-			" "+theme.MutedText().Render("[r] reinstall/upgrade  [u] uninstall  [esc] cancel"),
+			" "+theme.MutedText().Render("[r] reinstall/upgrade  [s] disable  [u] uninstall  [esc] cancel"),
 		)
 	case modeConfirmWebUpgrade:
 		name := m.selectedName()
@@ -638,7 +658,14 @@ func (m *Model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left,
 			m.viewGrid(),
 			"",
-			" "+theme.WarningText().Render(fmt.Sprintf("Uninstall web panel from %s? (y/n)", name)),
+			" "+theme.WarningText().Render(fmt.Sprintf("Uninstall web panel from %s? Removes binary, unit, and data. (y/n)", name)),
+		)
+	case modeConfirmWebDisable:
+		name := m.selectedName()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.viewGrid(),
+			"",
+			" "+theme.WarningText().Render(fmt.Sprintf("Disable web panel on %s? Stops the service, keeps files. (y/n)", name)),
 		)
 	default:
 		return m.viewGrid()
