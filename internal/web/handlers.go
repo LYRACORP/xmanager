@@ -18,6 +18,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/hostfirewall"
+	"github.com/lyracorp/xmanager/internal/hosttime"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/poller"
 	"github.com/lyracorp/xmanager/internal/project"
@@ -277,6 +278,9 @@ type pageData struct {
 	TrafficRange   string
 	RequestDump    *storage.RequestDump
 	RequestDumpHex string
+	// Host date / time
+	HostTime  hosttime.Status
+	Timezones []string
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -464,6 +468,7 @@ func (h *handler) getNodeHome(w http.ResponseWriter, r *http.Request) {
 	data.DiskUsage = h.getDiskUsageCached()
 	data.NetRxRate = nodemetrics.FormatRateKbps(data.Node.NetRxBps)
 	data.NetTxRate = nodemetrics.FormatRateKbps(data.Node.NetTxBps)
+	h.fillHostTime(&data, false)
 	h.render(w, "node_dashboard", data)
 }
 

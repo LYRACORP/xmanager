@@ -34,6 +34,7 @@ const (
 	ScreenPackages
 	ScreenFTP
 	ScreenSecurity
+	ScreenDateTime
 )
 
 // Backward-compatible aliases.
@@ -48,7 +49,7 @@ func (s ScreenID) String() string {
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
 		"Settings", "Projects", "Cron Jobs", "Scripts",
-		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security",
+		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security", "Date & time",
 	}
 	if int(s) < len(names) {
 		return names[s]

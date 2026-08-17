@@ -468,6 +468,10 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenRecon, ServerID: m.ctx.ServerID}
 		}, true
+	case "k":
+		return func() tea.Msg {
+			return shared.NavigateMsg{Screen: shared.ScreenDateTime, ServerID: m.ctx.ServerID}
+		}, true
 	case ",":
 		return func() tea.Msg {
 			return shared.NavigateMsg{Screen: shared.ScreenSettings, ServerID: m.ctx.ServerID}
@@ -708,6 +712,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 			{Key: "j/o/t", Desc: "projects/cron/scripts"},
 			{Key: "i", Desc: "install packages"},
 			{Key: "y/v/s/z", Desc: "uptime/services/security/recon"},
+			{Key: "k", Desc: "date & time"},
 			{Key: "n", Desc: "database"},
 			{Key: "f", Desc: "ftp"},
 			{Key: "1/2/3", Desc: "tabs"},

@@ -137,6 +137,11 @@ func (h *handler) registerNode(mux *http.ServeMux) {
 	mux.HandleFunc("POST /security/waf/modsec/install", adminz(h.postNodeSecurityModsecInstall))
 	mux.HandleFunc("POST /security/waf/modsec/remove", adminz(h.postNodeSecurityModsecRemove))
 	mux.HandleFunc("GET /api/security/traffic", adminz(h.getAPISecurityTraffic))
+
+	mux.HandleFunc("GET /time", adminz(h.getNodeTime))
+	mux.HandleFunc("POST /time/timezone", adminz(h.postNodeTimeTimezone))
+	mux.HandleFunc("POST /time/clock", adminz(h.postNodeTimeClock))
+	mux.HandleFunc("POST /time/ntp", adminz(h.postNodeTimeNTP))
 	mux.HandleFunc("POST /internal/reqdump", h.postInternalReqdump)
 
 	mux.HandleFunc("GET /apps", adminz(h.getNodeApps))

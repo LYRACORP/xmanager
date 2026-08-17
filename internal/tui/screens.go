@@ -6,6 +6,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/screens/cronjobs"
 	"github.com/lyracorp/xmanager/internal/tui/screens/dashboard"
 	"github.com/lyracorp/xmanager/internal/tui/screens/database"
+	"github.com/lyracorp/xmanager/internal/tui/screens/datetime"
 	"github.com/lyracorp/xmanager/internal/tui/screens/docker"
 	"github.com/lyracorp/xmanager/internal/tui/screens/errtrack"
 	"github.com/lyracorp/xmanager/internal/tui/screens/fleet"
@@ -48,3 +49,4 @@ func NewReconScreen(ctx *shared.AppContext) shared.Screen         { return recon
 func NewPackagesScreen(ctx *shared.AppContext) shared.Screen      { return packages.New(ctx) }
 func NewFTPScreen(ctx *shared.AppContext) shared.Screen           { return ftpscreen.New(ctx) }
 func NewSecurityScreen(ctx *shared.AppContext) shared.Screen      { return security.New(ctx) }
+func NewDateTimeScreen(ctx *shared.AppContext) shared.Screen      { return datetime.New(ctx) }

@@ -90,6 +90,7 @@ func (a *App) initScreens() {
 	a.screens[shared.ScreenPackages] = NewPackagesScreen(a.ctx)
 	a.screens[shared.ScreenFTP] = NewFTPScreen(a.ctx)
 	a.screens[shared.ScreenSecurity] = NewSecurityScreen(a.ctx)
+	a.screens[shared.ScreenDateTime] = NewDateTimeScreen(a.ctx)
 }
 
 func (a *App) Init() tea.Cmd {

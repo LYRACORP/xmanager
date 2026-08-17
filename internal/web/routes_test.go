@@ -13,6 +13,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/config"
 	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/gitforge"
+	"github.com/lyracorp/xmanager/internal/hosttime"
 	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
@@ -150,5 +151,70 @@ func TestDevicePollGone(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusGone {
 		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func TestNodeDateTimeTemplate(t *testing.T) {
+	funcMap := template.FuncMap{
+		"formatBytes":  nodemetrics.FormatBytes,
+		"formatUptime": nodemetrics.FormatUptime,
+		"pathEscape":   url.PathEscape,
+		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
+		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
+		"json": func(v interface{}) (template.JS, error) {
+			return "", nil
+		},
+	}
+	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pageData{
+		Title:     "Date & time",
+		NodeMode:  true,
+		IsAdmin:   true,
+		ActiveNav: "time",
+		HostTime: hosttime.Status{
+			Timezone:        "UTC",
+			LocalTime:       "2026-08-17 15:04:05 +0000",
+			NTP:             true,
+			NTPSynchronized: true,
+		},
+		Timezones: []string{"UTC", "America/New_York"},
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "node_datetime", data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "America/New_York") || !strings.Contains(out, `action="/time/timezone"`) {
+		t.Fatal("expected timezone form")
+	}
+	if !strings.Contains(out, "2026-08-17T15:04") {
+		t.Fatal("expected datetime-local value")
+	}
+}
+
+func TestPostTimeTimezoneRejectsInjection(t *testing.T) {
+	h, db := aclTestHandler(t)
+	admin := storage.User{Username: "admin", PasswordHash: "x", Role: "admin", Enabled: true}
+	db.Create(&admin)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /time/timezone", h.requireAdminAuth(h.postNodeTimeTimezone))
+
+	token := h.sess.create(admin.ID, "admin", "admin")
+	form := url.Values{"timezone": {"foo; rm -rf /"}}
+	req := httptest.NewRequest(http.MethodPost, "/time/timezone", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+	if !strings.Contains(loc, "invalid") && !strings.Contains(loc, "timezone") {
+		t.Fatalf("location %q", loc)
 	}
 }

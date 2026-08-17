@@ -1,0 +1,90 @@
+{{define "node_datetime"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page space-y-6">
+  <div>
+    <h1 class="text-3xl font-bold tracking-tight">Date &amp; time</h1>
+    <p class="text-panel-muted text-sm mt-1">Host clock, timezone, and NTP on this Linux server</p>
+  </div>
+
+  {{if .Flash}}<p class="text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-3 py-2 text-sm">{{.Flash}}</p>{{end}}
+
+  <div class="grid gap-3 sm:grid-cols-3">
+    <div class="xm-stat">
+      <div class="xm-stat-label">Local time</div>
+      <div class="xm-stat-value text-lg mt-2 font-mono">{{if .HostTime.LocalTime}}{{.HostTime.LocalTime}}{{else}}—{{end}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">Timezone</div>
+      <div class="xm-stat-value text-lg mt-2 font-mono">{{if .HostTime.Timezone}}{{.HostTime.Timezone}}{{else}}—{{end}}</div>
+    </div>
+    <div class="xm-stat">
+      <div class="xm-stat-label">NTP</div>
+      <div class="xm-stat-value text-lg mt-2">
+        {{if .HostTime.NTP}}on{{else}}off{{end}}{{if .HostTime.NTPSynchronized}} · synced{{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <form method="post" action="/time/timezone" class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+      <h2 class="text-sm font-semibold text-gray-200">Timezone</h2>
+      <p class="text-xs text-gray-500">IANA zone (e.g. America/New_York). Filter the list, then apply.</p>
+      <input type="search" id="tz-filter" placeholder="Filter zones" autocomplete="off"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+        oninput="xmFilterTimezones(this.value)">
+      <select name="timezone" id="tz-select" size="12" required
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+        {{range .Timezones}}
+        <option value="{{.}}" {{if eq . $.HostTime.Timezone}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+      <button class="xm-btn xm-btn-primary text-sm">Set timezone</button>
+    </form>
+
+    <div class="space-y-6">
+      <form method="post" action="/time/clock" class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+        <h2 class="text-sm font-semibold text-gray-200">Set clock</h2>
+        <p class="text-xs text-gray-500">Disable NTP first if timedatectl refuses a manual set.</p>
+        <label class="block text-[10px] text-gray-500 uppercase mb-1">Date and time</label>
+        <input type="datetime-local" name="clock" step="1" value="{{.HostTime.ClockLocalValue}}"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono">
+        <button class="xm-btn xm-btn-primary text-sm">Set time</button>
+      </form>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+        <h2 class="text-sm font-semibold text-gray-200">NTP</h2>
+        <p class="text-xs text-gray-500">Enable systemd-timesyncd / chrony via timedatectl, or step the clock now.</p>
+        <div class="flex flex-wrap gap-2">
+          <form method="post" action="/time/ntp">
+            <input type="hidden" name="action" value="on">
+            <button class="xm-btn xm-btn-primary text-sm">Enable NTP</button>
+          </form>
+          <form method="post" action="/time/ntp">
+            <input type="hidden" name="action" value="off">
+            <button class="xm-btn xm-btn-ghost text-sm">Disable NTP</button>
+          </form>
+          <form method="post" action="/time/ntp">
+            <input type="hidden" name="action" value="sync">
+            <button class="xm-btn xm-btn-ghost text-sm">Sync now</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function xmFilterTimezones(q) {
+  q = (q || '').toLowerCase();
+  var sel = document.getElementById('tz-select');
+  if (!sel) return;
+  var opts = sel.options;
+  for (var i = 0; i < opts.length; i++) {
+    var show = !q || opts[i].value.toLowerCase().indexOf(q) !== -1;
+    opts[i].hidden = !show;
+    opts[i].disabled = !show;
+  }
+}
+</script>
+{{template "foot" .}}
+{{end}}
