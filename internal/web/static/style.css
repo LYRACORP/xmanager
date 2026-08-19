@@ -30,6 +30,7 @@
   --color-ink-2-srgb: #5c6578;
   --color-rule-srgb: #d4d8e0;
   --color-paper-2-srgb: #f0f2f6;
+  --color-ink-srgb: #2a3140;
 
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -279,6 +280,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 }
 .xm-content { padding: var(--space-md); flex: 1; }
 .xm-page { max-width: 72rem; }
+.xm-page-wide { max-width: none; }
 
 .xm-menu-btn,
 .xm-cmdk-btn {

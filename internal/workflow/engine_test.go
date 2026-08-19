@@ -57,6 +57,19 @@ func TestCronMatches(t *testing.T) {
 	}
 }
 
+func TestParseGraphDrawflowIDs(t *testing.T) {
+	g, err := ParseGraph(`{"nodes":[{"id":"1","type":"delay","x":80,"y":80,"config":{"seconds":1}},{"id":"2","type":"if","x":280,"y":80,"config":{"expr":"ok"}}],"edges":[{"from":"1","to":"2","port":"true"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Nodes) != 2 || len(g.Edges) != 1 {
+		t.Fatalf("nodes %d edges %d", len(g.Nodes), len(g.Edges))
+	}
+	if g.Edges[0].From != "1" || g.Edges[0].To != "2" {
+		t.Fatalf("edge %+v", g.Edges[0])
+	}
+}
+
 func TestHasDestructive(t *testing.T) {
 	db, err := storage.Open(t.TempDir())
 	if err != nil {

@@ -21,7 +21,7 @@
 - **Uptime monitoring** — HTTP/TCP checks with Telegram / email / webhook / SMS alerts
 - **MCP server** — `xmanager mcp` exposes the same ops tools the in-app agent uses
 - **AI chat** — OpenAI-compatible providers (OpenAI, Grok, Gemini, DeepSeek, OpenRouter, LM Studio), Anthropic, Ollama; web voice via Whisper
-- **Workflows** — native drag-and-drop ops canvas in the web panel (`/workflows`)
+- **Workflows** — Drawflow node editor (port-to-port wires, zoom, bends) in the web panel (`/workflows`)
 
 ## Install
 

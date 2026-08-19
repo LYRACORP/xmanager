@@ -1,0 +1,126 @@
+/* Hallmark · loaded after Drawflow so Cobalt tokens win over library defaults */
+
+.wf-tool {
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--space-3xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: grab;
+}
+.wf-tool:active { cursor: grabbing; }
+
+.wf-drawflow {
+  height: min(40rem, 70vh);
+  min-height: 22rem;
+  background: var(--color-paper-2);
+}
+.wf-drawflow.parent-drawflow,
+.wf-drawflow .parent-drawflow {
+  height: 100%;
+  background:
+    radial-gradient(var(--color-rule) 1px, transparent 1px);
+  background-size: 18px 18px;
+  background-color: var(--color-paper-2);
+}
+.wf-drawflow .drawflow-node {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  width: 14rem;
+  min-height: 0;
+  padding: var(--space-xs);
+  box-shadow: none;
+}
+.wf-drawflow .drawflow-node.selected {
+  background: var(--color-paper);
+  border-color: var(--color-accent);
+}
+.wf-drawflow .drawflow-node.wf-if {
+  border-color: var(--color-warn);
+}
+.wf-drawflow .drawflow-node .input,
+.wf-drawflow .drawflow-node .output {
+  background: var(--color-paper);
+  border: 2px solid var(--color-accent);
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.wf-drawflow .drawflow-node .input {
+  background: var(--color-ok-soft);
+  border-color: var(--color-ok);
+  left: -1.15rem;
+}
+.wf-drawflow .drawflow-node .output {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  right: -0.15rem;
+}
+.wf-drawflow .connection .main-path,
+.wf-drawflow .main-path {
+  stroke: var(--color-accent-srgb);
+  stroke-width: 2px;
+}
+.wf-drawflow .connection .main-path:hover {
+  stroke: var(--color-ink-2-srgb);
+}
+.wf-drawflow .connection .main-path.selected {
+  stroke: var(--color-ok-srgb);
+}
+.wf-drawflow .connection .point {
+  stroke: var(--color-ink-srgb);
+  fill: var(--color-paper-2-srgb);
+}
+.wf-drawflow .drawflow-delete {
+  background: var(--color-graphite);
+  color: var(--color-graphite-ink);
+  border-color: var(--color-paper);
+  font-family: var(--font-mono);
+}
+.wf-node-card header {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3xs);
+}
+.wf-node-ports {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--color-ink-2);
+  margin-bottom: var(--space-2xs);
+}
+.wf-node-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+}
+.wf-node-card label {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--color-ink-2);
+  margin-bottom: 0.15rem;
+}
+.wf-node-card input,
+.wf-node-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  padding: var(--space-3xs);
+}
+
+@media (max-width: 900px) {
+  .wf-drawflow { height: 28rem; }
+}

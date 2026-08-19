@@ -1,17 +1,19 @@
 {{define "workflow_edit"}}
 {{template "head" .}}
 {{template "nav" .}}
-<div class="xm-page">
+<link rel="stylesheet" href="/static/vendor/drawflow.min.css">
+<link rel="stylesheet" href="/static/workflow.css">
+<div class="xm-page xm-page-wide">
   {{if .Workflow}}
   <form method="post" action="/workflows/{{.Workflow.ID}}" id="wf-form">
     <div class="flex flex-wrap gap-3 items-end mb-4">
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Name</label>
-        <input name="name" value="{{.Workflow.Name}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <label class="block text-xs text-muted mb-1">Name</label>
+        <input name="name" value="{{.Workflow.Name}}" class="bg-paper border border-rule rounded px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Trigger</label>
-        <select name="trigger" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <label class="block text-xs text-muted mb-1">Trigger</label>
+        <select name="trigger" class="bg-paper border border-rule rounded px-3 py-2 text-sm">
           <option value="manual" {{if eq .Workflow.Trigger "manual"}}selected{{end}}>manual</option>
           <option value="cron" {{if eq .Workflow.Trigger "cron"}}selected{{end}}>cron</option>
           <option value="webhook" {{if eq .Workflow.Trigger "webhook"}}selected{{end}}>webhook</option>
@@ -20,36 +22,42 @@
         </select>
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Cron (5 fields)</label>
-        <input name="cron_expr" value="{{.Workflow.CronExpr}}" placeholder="*/15 * * * *" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm font-mono">
+        <label class="block text-xs text-muted mb-1">Cron (5 fields)</label>
+        <input name="cron_expr" value="{{.Workflow.CronExpr}}" placeholder="*/15 * * * *" class="bg-paper border border-rule rounded px-3 py-2 text-sm font-mono">
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Chat phrase</label>
-        <input name="chat_phrase" value="{{.Workflow.ChatPhrase}}" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+        <label class="block text-xs text-muted mb-1">Chat phrase</label>
+        <input name="chat_phrase" value="{{.Workflow.ChatPhrase}}" class="bg-paper border border-rule rounded px-3 py-2 text-sm">
       </div>
       <input type="hidden" name="graph" id="wf-graph" value="">
       <button class="xm-btn xm-btn-primary">Save</button>
     </div>
   </form>
-  <div class="flex gap-2 mb-3">
+  <div class="flex flex-wrap gap-2 mb-3">
     <form method="post" action="/workflows/{{.Workflow.ID}}/run"><button class="xm-btn">Run</button></form>
     <form method="post" action="/workflows/{{.Workflow.ID}}/toggle"><button class="xm-btn">{{if .Workflow.Enabled}}Disable{{else}}Enable{{end}}</button></form>
     <form method="post" action="/workflows/{{.Workflow.ID}}/delete" onsubmit="return confirm('Delete workflow?')"><button class="xm-btn">Delete</button></form>
+    <div class="ml-auto flex gap-1">
+      <button type="button" id="wf-zoom-out" class="xm-btn" title="Zoom out">−</button>
+      <button type="button" id="wf-zoom-reset" class="xm-btn" title="Reset zoom">100%</button>
+      <button type="button" id="wf-zoom-in" class="xm-btn" title="Zoom in">+</button>
+    </div>
   </div>
-  <div class="flex gap-4">
-    <aside class="w-52 shrink-0 xm-card p-3 max-h-[32rem] overflow-y-auto text-sm">
-      <div class="text-xs text-muted mb-2">Palette · Shift+click two nodes to link</div>
-      <button type="button" class="wf-tool w-full text-left mb-1" data-type="if">if</button>
-      <button type="button" class="wf-tool w-full text-left mb-1" data-type="delay">delay</button>
-      <button type="button" class="wf-tool w-full text-left mb-1" data-type="foreach_server">foreach_server</button>
+  <p class="text-xs text-muted mb-3">Drag a step onto the canvas. Pull from a <strong>right</strong> port to a <strong>left</strong> port to connect. Delete removes a selected node or wire. Ctrl+wheel zooms. Double-click a wire to add a bend.</p>
+  <div class="flex flex-wrap gap-4 items-stretch">
+    <aside class="w-56 shrink-0 xm-card p-3 max-h-[40rem] overflow-y-auto text-sm min-w-0">
+      <div class="text-xs text-muted mb-2">Palette · click or drag</div>
+      <button type="button" class="wf-tool" data-type="if">if</button>
+      <button type="button" class="wf-tool" data-type="delay">delay</button>
+      <button type="button" class="wf-tool" data-type="foreach_server">foreach_server</button>
       {{$g := ""}}
       {{range .ToolPalette}}
       {{if ne .Group $g}}<div class="text-[10px] uppercase tracking-wide text-muted mt-3 mb-1">{{.Group}}</div>{{$g = .Group}}{{end}}
-      <button type="button" class="wf-tool w-full text-left mb-1" data-type="{{.Name}}" title="{{.Description}}">{{.Name}}</button>
+      <button type="button" class="wf-tool" data-type="{{.Name}}" title="{{.Description}}">{{.Name}}</button>
       {{end}}
     </aside>
-    <div class="flex-1 xm-card p-0 overflow-hidden">
-      <svg id="wf-canvas" viewBox="0 0 900 520" class="w-full h-[32rem] bg-paper-2"></svg>
+    <div class="flex-1 xm-card p-0 overflow-hidden min-w-0">
+      <div id="wf-canvas" class="wf-drawflow"></div>
     </div>
   </div>
   {{if .WorkflowRuns}}
@@ -58,8 +66,8 @@
     {{range .WorkflowRuns}}<li>{{.Status}} · {{.Trigger}} · {{.StartedAt}}</li>{{end}}
   </ul>
   {{end}}
-  <script type="application/json" id="wf-data"></script>
   <textarea id="wf-init" hidden>{{.WorkflowGraph}}</textarea>
+  <script src="/static/vendor/drawflow.min.js"></script>
   <script src="/static/workflow.js"></script>
   {{end}}
 </div>
