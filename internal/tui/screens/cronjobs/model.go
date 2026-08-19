@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,18 +28,20 @@ type jobsLoadedMsg struct{ jobs []storage.CronJob }
 
 // Model lists and manages cron jobs for the current server.
 type Model struct {
-	ctx    *shared.AppContext
-	jobs   []storage.CronJob
-	tbl    components.ListTable
-	mode   mode
-	nameIn textinput.Model
-	exprIn textinput.Model
-	cmdIn  textinput.Model
-	formIdx int
+	ctx      *shared.AppContext
+	jobs     []storage.CronJob
+	tbl      components.ListTable
+	mode     mode
+	nameIn   textinput.Model
+	exprIn   textinput.Model
+	cmdIn    textinput.Model
+	formIdx  int
 	deleteID uint
-	message string
-	width   int
-	height  int
+	message  string
+	width    int
+	height   int
+	spinner  components.LoadingSpinner
+	loading  bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -60,8 +63,8 @@ func New(ctx *shared.AppContext) *Model {
 	return &Model{ctx: ctx, nameIn: nameIn, exprIn: exprIn, cmdIn: cmdIn}
 }
 
-func (m *Model) Name() string     { return "Cron Jobs" }
-func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
+func (m *Model) Name() string                        { return "Cron Jobs" }
+func (m *Model) SetSize(w, h int)                    { m.width = w; m.height = h; m.rebuildTable() }
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
@@ -88,7 +91,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) Init() tea.Cmd { return m.load() }
+func (m *Model) Init() tea.Cmd { return m.startLoad() }
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load())
+}
 
 func (m *Model) load() tea.Cmd {
 	return func() tea.Msg {
@@ -126,7 +135,13 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case jobsLoadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.jobs = msg.jobs
 		m.rebuildTable()
 		return m, nil
@@ -138,9 +153,16 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m.updateAdd(msg)
 		case modeConfirmDelete:
 			if msg.String() == "y" || msg.String() == "Y" {
-				m.ctx.DB.Delete(&storage.CronJob{}, m.deleteID)
+				id := m.deleteID
 				m.mode = modeList
-				return m, m.load()
+				m.loading = true
+				m.spinner = components.NewLoadingSpinner("Deleting…")
+				return m, tea.Batch(m.spinner.Tick(), func() tea.Msg {
+					m.ctx.DB.Delete(&storage.CronJob{}, id)
+					var jobs []storage.CronJob
+					m.ctx.DB.Where("server_id = ?", m.ctx.ServerID).Order("name asc").Find(&jobs)
+					return jobsLoadedMsg{jobs: jobs}
+				})
 			}
 			m.mode = modeList
 			return m, nil
@@ -174,11 +196,19 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	case "t":
 		if idx := m.tbl.Cursor(); idx < len(m.jobs) {
 			j := m.jobs[idx]
-			m.ctx.DB.Model(&j).Update("enabled", !j.Enabled)
-			return m, m.load()
+			id := j.ID
+			enabled := !j.Enabled
+			m.loading = true
+			m.spinner = components.NewLoadingSpinner("Updating…")
+			return m, tea.Batch(m.spinner.Tick(), func() tea.Msg {
+				m.ctx.DB.Model(&storage.CronJob{}).Where("id = ?", id).Update("enabled", enabled)
+				var jobs []storage.CronJob
+				m.ctx.DB.Where("server_id = ?", m.ctx.ServerID).Order("name asc").Find(&jobs)
+				return jobsLoadedMsg{jobs: jobs}
+			})
 		}
 	case "r":
-		return m, m.load()
+		return m, m.startLoad()
 	case "b", "esc":
 		return m, func() tea.Msg { return shared.GoBackMsg{} }
 	}
@@ -240,11 +270,15 @@ func (m *Model) View() string {
 	if m.mode == modeAdd {
 		return m.viewForm()
 	}
+	body := m.tbl.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "Cron Jobs",
 		Subtitle:    fmt.Sprintf("scheduled tasks for server #%d", m.ctx.ServerID),
 		Width:       m.width,
-		Body:        m.tbl.View(),
+		Body:        body,
 		LocalChrome: components.FrameChromeRows(true) + 1,
 	}
 	parts := []string{frame.View()}

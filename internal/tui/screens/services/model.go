@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -52,6 +53,8 @@ type Model struct {
 	width     int
 	height    int
 	busy      bool
+	spinner   components.LoadingSpinner
+	loading   bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -70,7 +73,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) Init() tea.Cmd { return m.load() }
+func (m *Model) Init() tea.Cmd { return m.startLoad() }
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load())
+}
 
 func (m *Model) load() tea.Cmd {
 	return func() tea.Msg {
@@ -124,9 +133,15 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case instancesLoadedMsg:
 		m.instances = msg.instances
 		m.busy = false
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.rebuildTable()
 		return m, nil
 	case toggleResultMsg:
@@ -138,7 +153,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 				Action: "service.toggle", Resource: msg.serviceType,
 				Detail: msg.err.Error(), Status: "error",
 			})
-			return m, m.load()
+			return m, m.startLoad()
 		}
 		action := "disabled"
 		if msg.enabled {
@@ -150,9 +165,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			Action: "service." + action, Resource: msg.serviceType,
 			Detail: msg.status, Status: "ok",
 		})
-		return m, m.load()
+		return m, m.startLoad()
 	case tea.KeyMsg:
-		if m.busy {
+		if m.busy || m.loading {
 			return m, nil
 		}
 		switch msg.String() {
@@ -161,7 +176,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			m.message = "Working…"
 			return m, m.toggle()
 		case "r":
-			return m, m.load()
+			return m, m.startLoad()
 		case "b", "esc":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		}
@@ -281,11 +296,15 @@ func lookupService(svcType string, ctx *shared.AppContext, serverID uint) svcs.S
 }
 
 func (m *Model) View() string {
+	body := m.tbl.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "Optional Services",
 		Subtitle:    fmt.Sprintf("toggle services for server #%d", m.ctx.ServerID),
 		Width:       m.width,
-		Body:        m.tbl.View(),
+		Body:        body,
 		LocalChrome: components.FrameChromeRows(true) + 1,
 	}
 	parts := []string{frame.View()}

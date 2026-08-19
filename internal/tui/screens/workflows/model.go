@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -27,11 +28,13 @@ type Model struct {
 	message string
 	width   int
 	height  int
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model { return &Model{ctx: ctx} }
 
-func (m *Model) Name() string { return "Workflows" }
+func (m *Model) Name() string                        { return "Workflows" }
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 func (m *Model) SetSize(w, h int)                    { m.width, m.height = w, h; m.rebuild() }
 
@@ -67,7 +70,13 @@ func (m *Model) rebuild() {
 	m.tbl = m.tbl.SetFocused(true)
 }
 
-func (m *Model) Init() tea.Cmd { return m.load() }
+func (m *Model) Init() tea.Cmd { return m.startLoad() }
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load())
+}
 
 func (m *Model) load() tea.Cmd {
 	return func() tea.Msg {
@@ -89,7 +98,13 @@ func (m *Model) selected() (storage.Workflow, bool) {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case loadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.items = msg.items
 		m.rebuild()
 		return m, nil
@@ -99,13 +114,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		} else {
 			m.message = msg.text
 		}
-		return m, m.load()
+		return m, m.startLoad()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "q":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "r":
-			return m, m.load()
+			return m, m.startLoad()
 		case "enter":
 			wf, ok := m.selected()
 			if !ok || m.ctx.Workflows == nil {
@@ -123,9 +138,18 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			wf.Enabled = !wf.Enabled
-			_ = m.ctx.DB.Save(&wf).Error
-			return m, m.load()
+			id := wf.ID
+			enabled := !wf.Enabled
+			m.loading = true
+			m.spinner = components.NewLoadingSpinner("Updating…")
+			return m, tea.Batch(m.spinner.Tick(), func() tea.Msg {
+				_ = m.ctx.DB.Model(&storage.Workflow{}).Where("id = ?", id).Update("enabled", enabled).Error
+				var list []storage.Workflow
+				if m.ctx != nil && m.ctx.DB != nil {
+					_ = m.ctx.DB.Order("id desc").Find(&list).Error
+				}
+				return loadedMsg{items: list}
+			})
 		}
 	}
 	var cmd tea.Cmd
@@ -136,6 +160,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 func (m *Model) View() string {
 	title := theme.ScreenChrome("Workflows", "enter run · e enable · edit graphs in the web panel", m.width)
 	body := m.tbl.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	if m.message != "" {
 		body = lipgloss.JoinVertical(lipgloss.Left, body, theme.MutedText().Render(m.message))
 	}

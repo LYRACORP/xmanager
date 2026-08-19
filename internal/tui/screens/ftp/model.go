@@ -3,6 +3,7 @@ package ftp
 import (
 	"strings"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -49,6 +50,8 @@ type Model struct {
 	passID   uint
 	message  string
 	busy     bool
+	spinner  components.LoadingSpinner
+	loading  bool
 	width    int
 	height   int
 }
@@ -112,7 +115,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) Init() tea.Cmd { return m.load() }
+func (m *Model) Init() tea.Cmd { return m.startLoad() }
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load())
+}
 
 func (m *Model) mgr() (*xmftp.Manager, bool) {
 	if m.ctx.Pool == nil {
@@ -175,10 +184,16 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case loadedMsg:
 		m.users = msg.users
 		m.enabled = msg.enabled
 		m.busy = false
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		if msg.err != "" && m.message == "" {
 			m.message = msg.err
 		}
@@ -192,9 +207,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		} else {
 			m.message = msg.ok
 		}
-		return m, m.load()
+		return m, m.startLoad()
 	case tea.KeyMsg:
-		if m.busy {
+		if m.busy || m.loading {
 			return m, nil
 		}
 		switch m.mode {
@@ -267,7 +282,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
-		return m, m.load()
+		return m, m.startLoad()
 	case "b", "esc":
 		return m, func() tea.Msg { return shared.GoBackMsg{} }
 	}
@@ -445,11 +460,15 @@ func (m *Model) View() string {
 	if m.busy {
 		status += " · working…"
 	}
+	body := m.tbl.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "FTP",
 		Subtitle:    status,
 		Width:       m.width,
-		Body:        m.tbl.View(),
+		Body:        body,
 		LocalChrome: components.FrameChromeRows(true) + 2,
 	}
 	parts := []string{frame.View()}

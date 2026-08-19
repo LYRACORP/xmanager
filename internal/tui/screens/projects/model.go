@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,7 +25,10 @@ const (
 )
 
 type projectsLoadedMsg struct{ projects []storage.Project }
-type deployResultMsg struct{ name string; err error }
+type deployResultMsg struct {
+	name string
+	err  error
+}
 
 // Model lists projects for the current server and lets users create/deploy them.
 type Model struct {
@@ -39,6 +43,8 @@ type Model struct {
 	message  string
 	width    int
 	height   int
+	spinner  components.LoadingSpinner
+	loading  bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -60,8 +66,8 @@ func New(ctx *shared.AppContext) *Model {
 	return &Model{ctx: ctx, nameIn: nameIn, typeIn: typeIn, srcIn: srcIn}
 }
 
-func (m *Model) Name() string     { return "Projects" }
-func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
+func (m *Model) Name() string                        { return "Projects" }
+func (m *Model) SetSize(w, h int)                    { m.width = w; m.height = h; m.rebuildTable() }
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) KeyBindings() []components.KeyBinding {
@@ -87,7 +93,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 	}
 }
 
-func (m *Model) Init() tea.Cmd { return m.load() }
+func (m *Model) Init() tea.Cmd { return m.startLoad() }
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load())
+}
 
 func (m *Model) load() tea.Cmd {
 	return func() tea.Msg {
@@ -116,7 +128,13 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case projectsLoadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.projects = msg.projects
 		m.rebuildTable()
 		return m, nil
@@ -126,7 +144,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		} else {
 			m.message = fmt.Sprintf("Deployed %s", msg.name)
 		}
-		return m, m.load()
+		return m, m.startLoad()
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeList:
@@ -170,7 +188,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
-		return m, m.load()
+		return m, m.startLoad()
 	case "b", "esc":
 		return m, func() tea.Msg { return shared.GoBackMsg{} }
 	}
@@ -248,11 +266,15 @@ func (m *Model) View() string {
 		return m.viewForm()
 	}
 
+	body := m.tbl.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "Projects",
 		Subtitle:    "deploy and manage applications",
 		Width:       m.width,
-		Body:        m.tbl.View(),
+		Body:        body,
 		LocalChrome: components.FrameChromeRows(true) + 1,
 	}
 	parts := []string{frame.View()}

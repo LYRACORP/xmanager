@@ -515,6 +515,7 @@ func (m *Model) rebuildTable() {
 }
 
 func (m *Model) refresh() tea.Cmd {
+	m.busy = true
 	return tea.Batch(m.loadHeaderCmd(), m.reloadCmd())
 }
 

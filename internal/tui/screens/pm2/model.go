@@ -74,6 +74,7 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
+	m.busy = true
 	return m.reloadCmd()
 }
 
@@ -104,6 +105,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "ctrl+r", "f5":
+			m.busy = true
 			m.status = "Refreshing…"
 			return m, m.reloadCmd()
 		case "r":

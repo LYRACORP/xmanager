@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -103,6 +104,9 @@ type Model struct {
 
 	confirm   string
 	confirmFn func() tea.Cmd
+
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -192,7 +196,13 @@ func (m *Model) engine() *k8s.Engine {
 	return k8s.NewEngine(m.ctx.DB, m.ctx.Pool)
 }
 
-func (m *Model) Init() tea.Cmd { return m.loadList() }
+func (m *Model) Init() tea.Cmd { return m.startLoadList() }
+
+func (m *Model) startLoadList() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.loadList())
+}
 
 func (m *Model) loadList() tea.Cmd {
 	return func() tea.Msg {
@@ -311,7 +321,13 @@ func (m *Model) rebuildDetailTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case loadedListMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.items = msg.items
 		m.rebuild()
 		return m, nil
@@ -339,13 +355,15 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	case doneMsg:
 		if msg.err != nil {
 			m.message = msg.err.Error()
+			m.loading = false
+			m.spinner = m.spinner.SetActive(false)
 		} else {
 			m.message = msg.text
 		}
 		if m.mode == modeDetail {
 			return m, m.loadDetail()
 		}
-		return m, m.loadList()
+		return m, m.startLoadList()
 	case tickMsg:
 		if m.mode == modeDetail {
 			return m, m.loadDetail()
@@ -395,7 +413,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		case "esc", "q":
 			return func() tea.Msg { return shared.GoBackMsg{} }
 		case "r":
-			return m.loadList()
+			return m.startLoadList()
 		case "n":
 			m.startCreate()
 			return nil
@@ -434,7 +452,7 @@ func (m *Model) handleCreateKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
-		return m.loadList()
+		return m.startLoadList()
 	case "tab":
 		if m.createStep == stepVersions {
 			m.formIdx = (m.formIdx + 1) % 2
@@ -542,7 +560,7 @@ func (m *Model) handleDetailKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc", "q":
 		m.mode = modeList
-		return m.loadList()
+		return m.startLoadList()
 	case "tab":
 		m.tab = (m.tab + 1) % tabCount
 		return m.loadDetail()
@@ -726,6 +744,9 @@ func (m *Model) View() string {
 	default:
 		title := theme.ScreenChrome("Kubernetes", "n new · enter open · Ctrl+K from anywhere", m.width)
 		body := m.tbl.View()
+		if m.loading {
+			body = m.spinner.View()
+		}
 		if m.message != "" {
 			body = lipgloss.JoinVertical(lipgloss.Left, body, theme.MutedText().Render(m.message))
 		}

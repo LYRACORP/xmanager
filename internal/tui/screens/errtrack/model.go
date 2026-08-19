@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -42,13 +43,15 @@ type loadedMsg struct {
 }
 
 type Model struct {
-	ctx    *shared.AppContext
-	table  components.ListTable
-	rows   []groupedErr
-	mode   mode
-	width  int
-	height int
-	detail storage.ErrorEvent
+	ctx     *shared.AppContext
+	table   components.ListTable
+	rows    []groupedErr
+	mode    mode
+	width   int
+	height  int
+	detail  storage.ErrorEvent
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -71,7 +74,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
-	return m.load
+	return m.startLoad()
+}
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.load)
 }
 
 func (m *Model) load() tea.Msg {
@@ -225,7 +234,13 @@ func (m *Model) selected() (groupedErr, bool) {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case loadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.rows = msg.rows
 		m.rebuildTable()
 		return m, nil
@@ -268,7 +283,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 		case "esc", "q":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "r":
-			return m, m.load
+			return m, m.startLoad()
 		case "v":
 			g, ok := m.selected()
 			if !ok {
@@ -375,9 +390,12 @@ func (m *Model) View() string {
 func (m *Model) viewTable() string {
 	localChrome := components.FrameChromeRows(true)
 	var body string
-	if len(m.rows) == 0 {
+	switch {
+	case m.loading:
+		body = m.spinner.View()
+	case len(m.rows) == 0:
 		body = theme.EmptyStateText()
-	} else {
+	default:
 		body = m.table.View()
 	}
 	return components.ScreenFrame{

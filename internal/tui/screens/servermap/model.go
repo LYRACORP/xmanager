@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -39,6 +40,8 @@ type Model struct {
 	svcTable      components.ListTable
 	profile       *storage.ServerProfile
 	parseErr      string
+	spinner       components.LoadingSpinner
+	loading       bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -74,7 +77,13 @@ func (m *Model) runAnalyze() tea.Msg {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return m.loadProfile
+	return m.startLoad()
+}
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.loadProfile)
 }
 
 func (m *Model) loadProfile() tea.Msg {
@@ -127,7 +136,13 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case profileLoadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.profile = msg.profile
 		m.services = msg.services
 		if msg.parseErr != nil {
@@ -152,7 +167,7 @@ func (m *Model) handleKeys(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "esc", "b":
 		return func() tea.Msg { return shared.GoBackMsg{} }, true
 	case "r":
-		return m.loadProfile, true
+		return m.startLoad(), true
 	case "a":
 		return m.runAnalyze, true
 	case "enter":
@@ -202,6 +217,19 @@ func (m *Model) View() string {
 	errLine := ""
 	if m.parseErr != "" {
 		errLine = "\n " + theme.WarningText().Render(m.parseErr)
+	}
+
+	if m.loading {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			components.ScreenFrame{
+				Title:       "Server Map",
+				Subtitle:    subtitle,
+				Width:       m.width,
+				Body:        m.spinner.View(),
+				LocalChrome: localChrome,
+			}.View(),
+			errLine,
+		)
 	}
 
 	if m.profile == nil && m.parseErr == "" && len(m.services) == 0 {

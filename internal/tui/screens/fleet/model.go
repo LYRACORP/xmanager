@@ -154,6 +154,9 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			m.cursor = len(m.servers) - 1
 		}
 		m.busy = false
+		if m.message == "Deleting…" {
+			m.message = ""
+		}
 		return m, nil
 
 	case poller.MetricsUpdatedMsg:
@@ -481,13 +484,27 @@ func (m *Model) updateForm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 func (m *Model) updateDelete(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.ctx.DB.Delete(&storage.Server{}, m.deleteID)
-		m.ctx.Pool.Disconnect(m.deleteID)
+		id := m.deleteID
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		m.mode = modeGrid
-		return m, m.load()
+		m.busy = true
+		m.message = "Deleting…"
+		return m, func() tea.Msg {
+			m.ctx.DB.Delete(&storage.Server{}, id)
+			m.ctx.Pool.Disconnect(id)
+			var servers []storage.Server
+			m.ctx.DB.Order("name asc").Find(&servers)
+			snaps, _ := poller.LatestSnapshots(m.ctx.DB)
+			web := make(map[uint]bool)
+			var instances []storage.ServiceInstance
+			m.ctx.DB.Where("service_type = ?", webpanel.ServiceType).Find(&instances)
+			for _, si := range instances {
+				web[si.ServerID] = true
+			}
+			return serversLoadedMsg{servers: servers, snapshots: snaps, webPanels: web}
+		}
 	default:
 		m.mode = modeGrid
 	}

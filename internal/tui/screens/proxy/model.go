@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,12 +36,12 @@ const (
 )
 
 type nginxVhost struct {
-	File        string
-	Domain      string
-	SSL         string
-	ProxyPass   string
-	FullPath    string
-	RawSnippet  string
+	File       string
+	Domain     string
+	SSL        string
+	ProxyPass  string
+	FullPath   string
+	RawSnippet string
 }
 
 type traefikRouter struct {
@@ -51,11 +52,11 @@ type traefikRouter struct {
 }
 
 type proxyDataMsg struct {
-	tab      proxyTab
-	nginx    []nginxVhost
-	traefik  []traefikRouter
-	err      error
-	warning  string
+	tab     proxyTab
+	nginx   []nginxVhost
+	traefik []traefikRouter
+	err     error
+	warning string
 }
 
 type sshCmdMsg struct {
@@ -71,12 +72,12 @@ type configViewMsg struct {
 }
 
 type Model struct {
-	ctx       *shared.AppContext
-	tab       proxyTab
-	mode      screenMode
-	width     int
-	height    int
-	message   string
+	ctx     *shared.AppContext
+	tab     proxyTab
+	mode    screenMode
+	width   int
+	height  int
+	message string
 
 	nginxRows   []nginxVhost
 	traefikRows []traefikRouter
@@ -91,6 +92,9 @@ type Model struct {
 	addIdx      int
 
 	removeTarget string
+
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -112,7 +116,13 @@ func (m *Model) Name() string     { return "Proxy" }
 func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
 
 func (m *Model) Init() tea.Cmd {
-	return m.refreshCurrentTab
+	return m.startLoad()
+}
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.refreshCurrentTab)
 }
 
 func (m *Model) refreshCurrentTab() tea.Msg {
@@ -405,7 +415,13 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case proxyDataMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		m.message = ""
 		if msg.err != nil {
 			m.message = msg.err.Error()
@@ -477,12 +493,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "1":
 			m.tab = tabNginx
-			return m, m.refreshCurrentTab
+			return m, m.startLoad()
 		case "2":
 			m.tab = tabTraefik
-			return m, m.refreshCurrentTab
+			return m, m.startLoad()
 		case "r":
-			return m, m.refreshCurrentTab
+			return m, m.startLoad()
 		case "v":
 			return m, m.openViewConfig()
 		case "a":
@@ -763,11 +779,15 @@ func (m *Model) OnNavigate(params map[string]interface{}) {
 }
 
 func (m *Model) viewList() string {
+	body := m.table.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "Reverse proxy",
 		Subtitle:    "nginx · traefik",
 		Width:       m.width,
-		Body:        m.table.View(),
+		Body:        body,
 		LocalChrome: m.localChrome(),
 	}
 	parts := []string{m.tabBar().View(), frame.View()}

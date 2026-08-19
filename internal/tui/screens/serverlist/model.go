@@ -190,9 +190,13 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 			}
 			m.hostKeyPending = 0
 			m.hostKeyHint = ""
-			now := time.Now()
-			m.ctx.DB.Model(&storage.Server{}).Where("id = ?", msg.serverID).Updates(map[string]interface{}{
-				"is_active": true, "last_seen": &now,
+			sid := msg.serverID
+			cmds = append(cmds, func() tea.Msg {
+				now := time.Now()
+				m.ctx.DB.Model(&storage.Server{}).Where("id = ?", sid).Updates(map[string]interface{}{
+					"is_active": true, "last_seen": &now,
+				})
+				return nil
 			})
 		} else {
 			if ssh.IsHostKeyMismatch(msg.err) {
@@ -313,10 +317,16 @@ func (m *Model) updateForm(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 func (m *Model) updateDelete(msg tea.KeyMsg) (shared.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.ctx.DB.Delete(&storage.Server{}, m.editID)
-		m.ctx.Pool.Disconnect(m.editID)
+		id := m.editID
 		m.setMode(modeList)
-		return m, m.loadServers
+		m.message = "Deleting…"
+		return m, func() tea.Msg {
+			m.ctx.DB.Delete(&storage.Server{}, id)
+			m.ctx.Pool.Disconnect(id)
+			var servers []storage.Server
+			m.ctx.DB.Order("name asc").Find(&servers)
+			return serversLoadedMsg{servers: servers}
+		}
 	default:
 		m.setMode(modeList)
 	}

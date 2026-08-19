@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,6 +27,8 @@ type Model struct {
 	message string
 	servers []storage.Server
 	table   components.ListTable
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -45,7 +48,13 @@ func (m *Model) KeyBindings() []components.KeyBinding {
 func (m *Model) OnNavigate(_ map[string]interface{}) {}
 
 func (m *Model) Init() tea.Cmd {
-	return m.loadServers
+	return m.startLoad()
+}
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.loadServers)
 }
 
 func (m *Model) loadServers() tea.Msg {
@@ -110,7 +119,13 @@ func (m *Model) rebuildTable() {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case serversLoadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		if msg.err != nil {
 			m.message = msg.err.Error()
 		} else {
@@ -125,7 +140,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "r":
-			return m, m.loadServers
+			return m, m.startLoad()
 		case "enter":
 			idx := m.table.Cursor()
 			if idx >= 0 && idx < len(m.servers) {
@@ -148,9 +163,12 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 func (m *Model) View() string {
 	localChrome := components.FrameChromeRows(true) + 1
 	var body string
-	if len(m.servers) == 0 {
+	switch {
+	case m.loading:
+		body = m.spinner.View()
+	case len(m.servers) == 0:
 		body = theme.EmptyStateText()
-	} else {
+	default:
 		body = m.table.View()
 	}
 

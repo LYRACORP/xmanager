@@ -11,6 +11,7 @@ type StatusBar struct {
 	ServerName string
 	ServerHost string
 	Connected  bool
+	Loading    bool
 	Width      int
 }
 
@@ -32,13 +33,28 @@ func (s StatusBar) View() string {
 		Padding(0, theme.PadMD)
 
 	left := theme.MutedText().Render("  no server connected")
-	if s.ServerName != "" {
-		status := theme.StatusDot(s.Connected)
-		name := Truncate(s.ServerName, max(8, inner/3))
-		host := Truncate(s.ServerHost, max(8, inner-lipgloss.Width(name)-6))
-		left = fmt.Sprintf("  %s %s · %s", status, name, host)
+	if s.Loading && s.ServerName == "" {
+		dot := lipgloss.NewStyle().Foreground(theme.Current.Accent).Render("●")
+		left = fmt.Sprintf("  %s %s", dot, theme.MutedText().Render("loading…"))
+	} else if s.ServerName != "" {
+		var status string
+		if s.Loading {
+			status = lipgloss.NewStyle().Foreground(theme.Current.Accent).Render("●")
+			name := Truncate(s.ServerName, max(8, inner/3))
+			host := Truncate(s.ServerHost, max(8, inner-lipgloss.Width(name)-16))
+			left = fmt.Sprintf("  %s %s · %s · %s", status, name, host, theme.MutedText().Render("loading…"))
+		} else {
+			status = theme.StatusDot(s.Connected)
+			name := Truncate(s.ServerName, max(8, inner/3))
+			host := Truncate(s.ServerHost, max(8, inner-lipgloss.Width(name)-6))
+			left = fmt.Sprintf("  %s %s · %s", status, name, host)
+		}
 		if lipgloss.Width(left) > inner {
-			left = status + " " + Truncate(name+" · "+host, inner-2)
+			if s.Loading {
+				left = status + " " + Truncate(s.ServerName+" · loading…", inner-2)
+			} else {
+				left = status + " " + Truncate(s.ServerName+" · "+s.ServerHost, inner-2)
+			}
 		}
 	}
 

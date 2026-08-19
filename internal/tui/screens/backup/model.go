@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,6 +57,9 @@ type Model struct {
 
 	scheduleEdit textinput.Model
 	editBackupID uint
+
+	spinner components.LoadingSpinner
+	loading bool
 }
 
 func New(ctx *shared.AppContext) *Model {
@@ -87,7 +91,13 @@ func (m *Model) Name() string     { return "Backup" }
 func (m *Model) SetSize(w, h int) { m.width = w; m.height = h; m.rebuildTable() }
 
 func (m *Model) Init() tea.Cmd {
-	return m.loadBackups
+	return m.startLoad()
+}
+
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.spinner = components.NewLoadingSpinner("Loading…")
+	return tea.Batch(m.spinner.Tick(), m.loadBackups)
 }
 
 func (m *Model) loadBackups() tea.Msg {
@@ -186,7 +196,13 @@ func trimW(s string, w int) string {
 
 func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case backupsLoadedMsg:
+		m.loading = false
+		m.spinner = m.spinner.SetActive(false)
 		if msg.err != nil {
 			m.message = msg.err.Error()
 		} else {
@@ -239,7 +255,7 @@ func (m *Model) Update(msg tea.Msg) (shared.Screen, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return shared.GoBackMsg{} }
 		case "r":
-			return m, m.loadBackups
+			return m, m.startLoad()
 		case "c":
 			m.mode = modeFormCreate
 			m.typeIdx = 0
@@ -504,11 +520,15 @@ func (m *Model) viewList() string {
 	if m.ctx.ServerID > 0 {
 		subtitle = fmt.Sprintf("server %d", m.ctx.ServerID)
 	}
+	body := m.table.View()
+	if m.loading {
+		body = m.spinner.View()
+	}
 	frame := components.ScreenFrame{
 		Title:       "Backups",
 		Subtitle:    subtitle,
 		Width:       m.width,
-		Body:        m.table.View(),
+		Body:        body,
 		LocalChrome: m.localChrome(),
 	}
 	parts := []string{frame.View()}

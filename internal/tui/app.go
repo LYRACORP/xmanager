@@ -128,22 +128,38 @@ func (a *App) mergedFooterBindings() []components.KeyBinding {
 	return bindings
 }
 
-func (a *App) refreshStatusBar() {
+func (a *App) refreshStatusBar() tea.Cmd {
 	a.statusBar.Width = a.width
-	if a.ctx.ServerID == 0 {
+	sid := a.ctx.ServerID
+	width := a.width
+	if sid == 0 {
 		a.statusBar.ServerName = ""
 		a.statusBar.ServerHost = ""
 		a.statusBar.Connected = false
-		return
+		a.statusBar.Loading = false
+		return nil
 	}
-	var srv storage.Server
-	if err := a.ctx.DB.First(&srv, a.ctx.ServerID).Error; err != nil {
-		return
+	a.statusBar.Loading = true
+	return func() tea.Msg {
+		var srv storage.Server
+		if err := a.ctx.DB.First(&srv, sid).Error; err != nil {
+			return statusBarRefreshedMsg{width: width}
+		}
+		_, ok := a.ctx.Pool.GetExecutor(sid)
+		return statusBarRefreshedMsg{
+			name:      srv.Name,
+			host:      fmt.Sprintf("%s:%d", srv.Host, srv.Port),
+			connected: ok,
+			width:     width,
+		}
 	}
-	_, ok := a.ctx.Pool.GetExecutor(a.ctx.ServerID)
-	a.statusBar.ServerName = srv.Name
-	a.statusBar.ServerHost = fmt.Sprintf("%s:%d", srv.Host, srv.Port)
-	a.statusBar.Connected = ok
+}
+
+type statusBarRefreshedMsg struct {
+	name      string
+	host      string
+	connected bool
+	width     int
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -152,13 +168,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.ready = true
-		a.refreshStatusBar()
 		ch := a.contentHeight()
 		for _, s := range a.screens {
 			s.SetSize(a.width, ch)
 		}
 		a.helpOverlay.Width = a.width
 		a.helpOverlay.Height = a.height
+		return a, a.refreshStatusBar()
+
+	case statusBarRefreshedMsg:
+		a.statusBar.Width = msg.width
+		if a.width > 0 {
+			a.statusBar.Width = a.width
+		}
+		a.statusBar.ServerName = msg.name
+		a.statusBar.ServerHost = msg.host
+		a.statusBar.Connected = msg.connected
+		a.statusBar.Loading = false
 		return a, nil
 
 	case tea.KeyMsg:
@@ -199,25 +225,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case shared.NavigateMsg:
+		var cmds []tea.Cmd
 		if msg.ServerID > 0 {
 			a.ctx.ServerID = msg.ServerID
-			a.refreshStatusBar()
+			if cmd := a.refreshStatusBar(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
-		return a, a.navigate(msg.Screen, msg.Params)
+		cmds = append(cmds, a.navigate(msg.Screen, msg.Params))
+		return a, tea.Batch(cmds...)
 
 	case shared.GoBackMsg:
 		prev := a.router.Pop()
 		screen := a.screens[prev]
-		a.refreshStatusBar()
-		return a, screen.Init()
+		return a, tea.Batch(a.refreshStatusBar(), screen.Init())
 
 	case shared.ConnectServerMsg:
 		a.ctx.ServerID = msg.ServerID
-		a.refreshStatusBar()
-		return a, a.navigate(shared.ScreenDashboard, nil)
+		return a, tea.Batch(a.refreshStatusBar(), a.navigate(shared.ScreenDashboard, nil))
 
 	case shared.ServerConnectedMsg:
-		a.refreshStatusBar()
+		return a, a.refreshStatusBar()
 
 	case poller.MetricsUpdatedMsg:
 		// Forward to fleet overview so cards update in real time.
