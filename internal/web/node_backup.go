@@ -186,7 +186,8 @@ func (h *handler) postNodeBackupDestination(w http.ResponseWriter, r *http.Reque
 	sid := h.localServerID()
 	name := strings.TrimSpace(r.FormValue("name"))
 	typ := strings.ToLower(strings.TrimSpace(r.FormValue("type")))
-	if name == "" || (typ != "ftp" && typ != "scp" && typ != "telegram") {
+	allowed := map[string]bool{"ftp": true, "scp": true, "telegram": true, "s3": true, "gdrive": true}
+	if name == "" || !allowed[typ] {
 		http.Redirect(w, r, "/backup?flash="+urlQueryEscape("name and type required"), http.StatusSeeOther)
 		return
 	}
@@ -199,6 +200,18 @@ func (h *handler) postNodeBackupDestination(w http.ResponseWriter, r *http.Reque
 		KeyPath:  strings.TrimSpace(r.FormValue("key_path")),
 		BotToken: strings.TrimSpace(r.FormValue("bot_token")),
 		ChatID:   strings.TrimSpace(r.FormValue("chat_id")),
+	}
+	switch typ {
+	case "s3":
+		cfg.Bucket = strings.TrimSpace(r.FormValue("s3_bucket"))
+		cfg.Region = strings.TrimSpace(r.FormValue("s3_region"))
+		cfg.Endpoint = strings.TrimSpace(r.FormValue("s3_endpoint"))
+		cfg.AccessKey = strings.TrimSpace(r.FormValue("s3_access_key"))
+		cfg.SecretKey = r.FormValue("s3_secret_key")
+		cfg.Prefix = strings.TrimSpace(r.FormValue("s3_prefix"))
+	case "gdrive":
+		cfg.GDriveCredJSON = strings.TrimSpace(r.FormValue("gdrive_cred_json"))
+		cfg.GDriveFolderID = strings.TrimSpace(r.FormValue("gdrive_folder_id"))
 	}
 	if ch := r.FormValue("channel_id"); ch != "" {
 		id, _ := strconv.ParseUint(ch, 10, 64)

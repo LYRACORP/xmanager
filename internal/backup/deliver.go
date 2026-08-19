@@ -35,6 +35,18 @@ type DestConfig struct {
 	ChannelID uint   `json:"channel_id"` // telegram AlertChannel id
 	BotToken  string `json:"bot_token"`
 	ChatID    string `json:"chat_id"`
+
+	// S3 / S3-compatible (AWS, MinIO, RustFS, …)
+	Bucket    string `json:"bucket"`
+	Region    string `json:"region"`
+	Endpoint  string `json:"endpoint"` // empty = AWS; set for MinIO, RustFS, etc.
+	AccessKey string `json:"access_key"`
+	SecretKey string `json:"secret_key"`
+	Prefix    string `json:"prefix"` // optional key prefix / folder
+
+	// Google Drive
+	GDriveCredJSON string `json:"gdrive_cred_json"` // service-account JSON
+	GDriveFolderID string `json:"gdrive_folder_id"` // parent folder ID ("root" if empty)
 }
 
 func ParseDestConfig(raw string) DestConfig {
@@ -152,6 +164,10 @@ func Deliver(exec *ssh.Executor, db *gorm.DB, dest storage.BackupDestination, lo
 		return deliverSCP(exec, cfg, localPath, filename)
 	case "telegram":
 		return deliverTelegram(exec, db, cfg, localPath, filename)
+	case "s3":
+		return deliverS3(cfg, localPath, filename)
+	case "gdrive":
+		return deliverGDrive(cfg, localPath, filename)
 	default:
 		return fmt.Errorf("unknown destination type %q", dest.Type)
 	}

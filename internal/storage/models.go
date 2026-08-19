@@ -126,13 +126,13 @@ type Backup struct {
 	BackedAt     time.Time `json:"backed_at"`
 }
 
-// BackupDestination is a saved FTP/SCP/Telegram delivery target.
+// BackupDestination is a saved FTP/SCP/Telegram/S3/Google Drive delivery target.
 type BackupDestination struct {
 	gorm.Model
 	ServerID   uint   `gorm:"index;not null" json:"server_id"`
 	Server     Server `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
 	Name       string `gorm:"not null" json:"name"`
-	Type       string `gorm:"not null" json:"type"` // ftp, scp, telegram
+	Type       string `gorm:"not null" json:"type"` // ftp, scp, telegram, s3, gdrive
 	ConfigJSON string `gorm:"type:text" json:"config_json"`
 	Enabled    bool   `gorm:"default:true" json:"enabled"`
 }

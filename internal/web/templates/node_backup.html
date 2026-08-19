@@ -5,7 +5,7 @@
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
       <h1>Backup</h1>
-      <p class="text-panel-muted text-xs mt-0.5">Dump databases · schedule tasks · deliver via FTP, SCP, Telegram</p>
+      <p class="text-panel-muted text-xs mt-0.5">Dump databases · schedule tasks · deliver via FTP, SCP, Telegram, S3, Google Drive</p>
     </div>
     <a href="/apps" class="text-xs text-indigo-300 hover:underline">Need PITR? Enable Databasus →</a>
   </div>
@@ -227,6 +227,8 @@
         <option value="ftp">FTP</option>
         <option value="scp">SCP</option>
         <option value="telegram">Telegram</option>
+        <option value="s3">S3 (AWS / MinIO / RustFS)</option>
+        <option value="gdrive">Google Drive</option>
       </select>
       <button class="xm-btn xm-btn-primary text-xs">Save</button>
       <input name="host" placeholder="Host" class="dest-ftp dest-scp bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
@@ -243,6 +245,15 @@
       </select>
       <input name="bot_token" placeholder="Or bot token" class="dest-tg hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
       <input name="chat_id" placeholder="Or chat id" class="dest-tg hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs">
+      <input name="s3_endpoint" placeholder="S3 endpoint (optional, for MinIO/RustFS)" class="dest-s3 hidden md:col-span-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <input name="s3_bucket" placeholder="S3 bucket" class="dest-s3 hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <input name="s3_region" placeholder="Region (default us-east-1)" class="dest-s3 hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <input name="s3_access_key" placeholder="Access key" class="dest-s3 hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <input name="s3_secret_key" type="password" placeholder="Secret key" class="dest-s3 hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <input name="s3_prefix" placeholder="Key prefix / folder (optional)" class="dest-s3 hidden md:col-span-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <textarea name="gdrive_cred_json" rows="4" placeholder='Google service account JSON {"type":"service_account",…}' class="dest-gdrive hidden md:col-span-3 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono"></textarea>
+      <input name="gdrive_folder_id" placeholder="Drive folder ID (optional, default root)" class="dest-gdrive hidden md:col-span-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono">
+      <p class="dest-gdrive hidden md:col-span-3 text-[11px] text-zinc-500">Share the target folder with the service account email from the JSON (<span class="font-mono text-zinc-400">client_email</span>).</p>
     </form>
     {{if .BackupDestinations}}
     <ul class="divide-y divide-zinc-800 border border-zinc-800 rounded-lg mt-3">
@@ -313,10 +324,12 @@
 </div>
 <script>
 function xmDestType(v) {
-  document.querySelectorAll('.dest-ftp,.dest-scp,.dest-tg').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.dest-ftp,.dest-scp,.dest-tg,.dest-s3,.dest-gdrive').forEach(el => el.classList.add('hidden'));
   if (v === 'ftp') document.querySelectorAll('.dest-ftp').forEach(el => el.classList.remove('hidden'));
   if (v === 'scp') document.querySelectorAll('.dest-ftp,.dest-scp').forEach(el => el.classList.remove('hidden'));
   if (v === 'telegram') document.querySelectorAll('.dest-tg').forEach(el => el.classList.remove('hidden'));
+  if (v === 's3') document.querySelectorAll('.dest-s3').forEach(el => el.classList.remove('hidden'));
+  if (v === 'gdrive') document.querySelectorAll('.dest-gdrive').forEach(el => el.classList.remove('hidden'));
 }
 xmDestType(document.getElementById('dest-type').value);
 

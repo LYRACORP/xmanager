@@ -28,6 +28,22 @@ func TestParseDestConfig(t *testing.T) {
 	if c.Host != "ftp.example" || c.User != "u" || c.Path != "/backups" {
 		t.Fatalf("%+v", c)
 	}
+	c = ParseDestConfig(`{"bucket":"my-bucket","region":"eu-west-1","access_key":"ak","prefix":"backups"}`)
+	if c.Bucket != "my-bucket" || c.Region != "eu-west-1" || c.AccessKey != "ak" || c.Prefix != "backups" {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestS3ObjectKey(t *testing.T) {
+	if got := s3ObjectKey("", "dump.sql.gz"); got != "dump.sql.gz" {
+		t.Fatalf("got %q", got)
+	}
+	if got := s3ObjectKey("backups", "dump.sql.gz"); got != "backups/dump.sql.gz" {
+		t.Fatalf("got %q", got)
+	}
+	if got := s3ObjectKey("/backups/", "/dump.sql.gz"); got != "backups/dump.sql.gz" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestSkipSystemDB(t *testing.T) {
