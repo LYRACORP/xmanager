@@ -479,3 +479,27 @@ type WorkflowRun struct {
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 }
+
+// K8sCluster is a Kubespray-managed Kubernetes cluster across fleet servers.
+type K8sCluster struct {
+	gorm.Model
+	Name              string `gorm:"not null" json:"name"`
+	Status            string `gorm:"default:pending" json:"status"` // pending, installing, ready, error, resetting, scaling, upgrading
+	KubesprayVersion  string `json:"kubespray_version"`
+	KubeVersion       string `json:"kube_version"`
+	NetworkPlugin     string `json:"network_plugin"`
+	InventoryJSON     string `gorm:"type:text" json:"inventory_json"`
+	KubeconfigEnc     string `gorm:"type:text" json:"-"`
+	LastLog           string `gorm:"type:text" json:"last_log"`
+	BootstrapServerID uint   `json:"bootstrap_server_id"`
+}
+
+// K8sClusterMember is one fleet server in a cluster.
+type K8sClusterMember struct {
+	gorm.Model
+	ClusterID uint       `gorm:"uniqueIndex:uidx_k8s_member;not null" json:"cluster_id"`
+	Cluster   K8sCluster `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	ServerID  uint       `gorm:"uniqueIndex:uidx_k8s_member;not null" json:"server_id"`
+	Server    Server     `gorm:"constraint:OnDelete:CASCADE;" json:"-"`
+	Role      string     `json:"role"` // comma-separated: control-plane, etcd, worker
+}

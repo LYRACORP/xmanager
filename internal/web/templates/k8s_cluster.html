@@ -1,0 +1,137 @@
+{{define "k8s_cluster"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-6xl">
+  <div class="mb-4 flex items-end justify-between gap-4">
+    <div>
+      <p class="text-xs text-muted mb-1"><a href="/k8s">Kubernetes</a></p>
+      <h1>{{if .K8sCluster}}{{.K8sCluster.Name}}{{else}}Cluster{{end}}</h1>
+      <p class="text-gray-500 text-sm mt-0.5">{{if .K8sCluster}}{{.K8sCluster.Status}} · kube {{.K8sCluster.KubeVersion}} · {{.K8sCluster.NetworkPlugin}}{{end}}</p>
+    </div>
+    {{if .IsAdmin}}
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="/k8s/{{if .K8sCluster}}{{.K8sCluster.ID}}{{end}}/playbook">
+        <input type="hidden" name="playbook" value="cluster.yml">
+        <button class="xm-btn">Install</button>
+      </form>
+      <form method="post" action="/k8s/{{if .K8sCluster}}{{.K8sCluster.ID}}{{end}}/playbook">
+        <input type="hidden" name="playbook" value="upgrade-cluster.yml">
+        <button class="xm-btn">Upgrade</button>
+      </form>
+      <form method="post" action="/k8s/{{if .K8sCluster}}{{.K8sCluster.ID}}{{end}}/reset" onsubmit="return confirm('This tears the cluster down. Type RESET in the next prompt.') && (this.confirm.value = prompt('Type RESET'))">
+        <input type="hidden" name="confirm" value="">
+        <button class="xm-btn">Reset</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+  {{if .Flash}}<p class="xm-flash xm-flash-warn mb-4">{{.Flash}}</p>{{end}}
+
+  <div class="flex flex-wrap gap-2 mb-4 text-sm">
+    {{$id := .K8sCluster.ID}}
+    <a class="xm-btn {{if eq .K8sTab "overview"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=overview">Overview</a>
+    <a class="xm-btn {{if eq .K8sTab "nodes"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=nodes">Nodes</a>
+    <a class="xm-btn {{if eq .K8sTab "namespaces"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=namespaces">Namespaces</a>
+    <a class="xm-btn {{if eq .K8sTab "workloads"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=workloads">Workloads</a>
+    <a class="xm-btn {{if eq .K8sTab "network"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=network">Network</a>
+    <a class="xm-btn {{if eq .K8sTab "config"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=config">Config</a>
+    <a class="xm-btn {{if eq .K8sTab "storage"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=storage">Storage</a>
+    <a class="xm-btn {{if eq .K8sTab "events"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=events">Events</a>
+    <a class="xm-btn {{if eq .K8sTab "logs"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=logs">Logs</a>
+    <a class="xm-btn {{if eq .K8sTab "helm"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=helm">Helm</a>
+    <a class="xm-btn {{if eq .K8sTab "install"}}xm-btn-primary{{end}}" href="/k8s/{{$id}}?tab=install">Install log</a>
+  </div>
+
+  {{if eq .K8sTab "overview"}}
+  <div class="xm-card p-4 mb-4">
+    <div class="text-sm whitespace-pre-wrap font-mono">{{if .K8sOverview}}{{index .K8sOverview "cluster_info"}}{{end}}</div>
+    <div class="text-xs text-muted mt-2">Members</div>
+    {{range .K8sMembers}}
+    <div class="text-sm">{{.Name}} {{.Host}} — {{.Role}}</div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if eq .K8sTab "install"}}
+  <pre id="k8s-log" class="xm-card p-4 text-xs font-mono max-h-[32rem] overflow-y-auto whitespace-pre-wrap">{{.K8sText}}</pre>
+  <script src="/static/k8s.js"></script>
+  {{end}}
+
+  {{if or (eq .K8sTab "nodes") (eq .K8sTab "namespaces") (eq .K8sTab "workloads") (eq .K8sTab "network") (eq .K8sTab "config") (eq .K8sTab "storage") (eq .K8sTab "events")}}
+  <div class="xm-card overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-xs text-muted"><th class="p-2">NS</th><th>Kind</th><th>Name</th><th>Status</th><th>Extra</th><th></th></tr></thead>
+      <tbody>
+      {{range .K8sRows}}
+      <tr class="border-t border-gray-800">
+        <td class="p-2">{{.Namespace}}</td>
+        <td>{{.Kind}}</td>
+        <td>{{.Name}}</td>
+        <td>{{.Status}} {{.Ready}}</td>
+        <td class="text-muted">{{.Extra}}</td>
+        <td class="p-2">
+          {{if $.IsAdmin}}
+          {{if eq $.K8sTab "nodes"}}
+          <form method="post" action="/k8s/{{$id}}/action" class="inline">
+            <input type="hidden" name="tab" value="nodes"><input type="hidden" name="name" value="{{.Name}}">
+            <button name="action" value="cordon" class="xm-btn text-xs">cordon</button>
+            <button name="action" value="uncordon" class="xm-btn text-xs">uncordon</button>
+            <button name="action" value="drain" class="xm-btn text-xs" onclick="this.form.confirm.value='yes';return confirm('Drain {{.Name}}?')">drain</button>
+            <input type="hidden" name="confirm" value="">
+          </form>
+          {{end}}
+          {{if eq $.K8sTab "workloads"}}
+          <form method="post" action="/k8s/{{$id}}/action" class="inline">
+            <input type="hidden" name="tab" value="workloads">
+            <input type="hidden" name="kind" value="{{.Kind}}">
+            <input type="hidden" name="ns" value="{{.Namespace}}">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <button name="action" value="restart" class="xm-btn text-xs">restart</button>
+            <button name="action" value="delete" class="xm-btn text-xs" onclick="this.form.confirm.value='yes';return confirm('Delete {{.Name}}?')">delete</button>
+            <input type="hidden" name="confirm" value="">
+          </form>
+          {{end}}
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr><td class="p-3 text-muted" colspan="6">No resources (cluster must be ready).</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  {{if eq .K8sTab "logs"}}
+  <form method="post" action="/k8s/{{$id}}/action" class="xm-card p-4 flex gap-2 mb-4">
+    <input type="hidden" name="action" value="logs">
+    <input type="hidden" name="tab" value="logs">
+    <input name="ns" placeholder="namespace" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <input name="name" placeholder="pod" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" required>
+    <button class="xm-btn xm-btn-primary">Logs</button>
+  </form>
+  <pre class="xm-card p-4 text-xs font-mono max-h-[28rem] overflow-y-auto whitespace-pre-wrap">{{.K8sText}}</pre>
+  {{end}}
+
+  {{if eq .K8sTab "helm"}}
+  {{if .IsAdmin}}
+  <form method="post" action="/k8s/{{$id}}/helm" class="xm-card p-4 flex flex-wrap gap-2 mb-4">
+    <input type="hidden" name="op" value="install">
+    <input name="name" placeholder="release" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" required>
+    <input name="chart" placeholder="chart or URL" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" required>
+    <input name="ns" placeholder="namespace" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <button class="xm-btn xm-btn-primary">Install / upgrade</button>
+  </form>
+  <form method="post" action="/k8s/{{$id}}/helm" class="mb-4 flex gap-2" onsubmit="this.confirm.value='yes';return confirm('Uninstall release?')">
+    <input type="hidden" name="op" value="uninstall">
+    <input type="hidden" name="confirm" value="">
+    <input name="name" placeholder="release" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" required>
+    <input name="ns" placeholder="namespace" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <button class="xm-btn">Uninstall</button>
+  </form>
+  {{end}}
+  <pre class="xm-card p-4 text-xs font-mono whitespace-pre-wrap">{{.K8sText}}</pre>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

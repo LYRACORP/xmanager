@@ -11,6 +11,7 @@ import (
 	"github.com/lyracorp/xmanager/internal/tui/screens/errtrack"
 	"github.com/lyracorp/xmanager/internal/tui/screens/fleet"
 	ftpscreen "github.com/lyracorp/xmanager/internal/tui/screens/ftp"
+	"github.com/lyracorp/xmanager/internal/tui/screens/kubernetes"
 	"github.com/lyracorp/xmanager/internal/tui/screens/logs"
 	"github.com/lyracorp/xmanager/internal/tui/screens/packages"
 	"github.com/lyracorp/xmanager/internal/tui/screens/pm2"
@@ -51,4 +52,5 @@ func NewPackagesScreen(ctx *shared.AppContext) shared.Screen      { return packa
 func NewFTPScreen(ctx *shared.AppContext) shared.Screen           { return ftpscreen.New(ctx) }
 func NewSecurityScreen(ctx *shared.AppContext) shared.Screen      { return security.New(ctx) }
 func NewDateTimeScreen(ctx *shared.AppContext) shared.Screen      { return datetime.New(ctx) }
-func NewWorkflowsScreen(ctx *shared.AppContext) shared.Screen    { return workflows.New(ctx) }
+func NewWorkflowsScreen(ctx *shared.AppContext) shared.Screen     { return workflows.New(ctx) }
+func NewKubernetesScreen(ctx *shared.AppContext) shared.Screen    { return kubernetes.New(ctx) }

@@ -1,125 +1,94 @@
-// Package k8s bootstraps a Kubernetes cluster on managed servers using Kubespray
-// executed locally via docker run (no agent installed on targets).
 package k8s
 
 import (
+	"context"
 	"fmt"
-	"strings"
 
+	xmk8s "github.com/lyracorp/xmanager/internal/k8s"
 	"github.com/lyracorp/xmanager/internal/services"
 	"github.com/lyracorp/xmanager/internal/ssh"
+	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 )
 
 const serviceType = "k8s"
-const dir = "/opt/xmanager/services/k8s"
 
 type K8s struct {
 	services.BaseDeployer
 	serverID uint
+	pool     *ssh.Pool
 }
 
 func New(db *gorm.DB, serverID uint) *K8s {
 	return &K8s{BaseDeployer: services.BaseDeployer{DB: db}, serverID: serverID}
 }
 
+func (k *K8s) SetPool(p *ssh.Pool) { k.pool = p }
+
 func (k *K8s) Name() string { return serviceType }
 
 func (k *K8s) IsEnabled(exec *ssh.Executor) bool {
-	return exec.RunQuiet("kubectl cluster-info 2>/dev/null | grep -q running && echo yes") == "yes"
+	return exec.RunQuiet("kubectl cluster-info >/dev/null 2>&1 && echo yes") == "yes"
 }
 
-// Enable runs the Kubespray cluster.yml playbook via Docker to install k8s on
-// the current server. cfg keys: ansible_user, ssh_key_path, k8s_version.
 func (k *K8s) Enable(exec *ssh.Executor, cfg map[string]string) error {
-	ansibleUser := cfg["ansible_user"]
-	if ansibleUser == "" {
-		ansibleUser = "root"
+	eng := xmk8s.NewEngine(k.DB, k.pool)
+	ver := cfg["k8s_version"]
+	if ver == "" {
+		ver = cfg["kube_version"]
 	}
-	sshKeyPath := cfg["ssh_key_path"]
-	if sshKeyPath == "" {
-		sshKeyPath = "/root/.ssh/id_rsa"
+	var mem storage.K8sClusterMember
+	var inv xmk8s.InventorySpec
+	var clusterID uint
+	if k.DB.Where("server_id = ?", k.serverID).First(&mem).Error == nil {
+		c, err := eng.Get(mem.ClusterID)
+		if err != nil {
+			return err
+		}
+		inv, err = eng.SpecFromCluster(c)
+		if err != nil {
+			return err
+		}
+		clusterID = c.ID
+	} else {
+		c, got, err := eng.SaveNew(xmk8s.CreateSpec{
+			Name:              fmt.Sprintf("server-%d", k.serverID),
+			KubeVersion:       ver,
+			NetworkPlugin:     cfg["network_plugin"],
+			KubesprayImage:    cfg["kubespray_image"],
+			Members:           []xmk8s.MemberSpec{{ServerID: k.serverID, Role: "all"}},
+			BootstrapServerID: k.serverID,
+		})
+		if err != nil {
+			return err
+		}
+		inv, clusterID = got, c.ID
 	}
-	k8sVersion := cfg["k8s_version"]
-	if k8sVersion == "" {
-		k8sVersion = "v1.29.4"
+	extras := xmk8s.PlaybookExtras(xmk8s.PlaybookCluster, inv.KubeVersion)
+	if err := xmk8s.RunOnExecutor(context.Background(), exec, inv, xmk8s.PlaybookCluster, extras, nil); err != nil {
+		return err
 	}
-	// get the host IP reachable for ansible
-	hostIP := k.resolveHost(exec)
-
-	// write a minimal inventory
-	inventory := fmt.Sprintf(`[all]
-node1 ansible_host=%s
-
-[kube_control_plane]
-node1
-
-[etcd]
-node1
-
-[kube_node]
-node1
-
-[k8s_cluster:children]
-kube_control_plane
-kube_node
-`, hostIP)
-
-	if _, err := exec.Run(fmt.Sprintf("mkdir -p %s/inventory", dir)); err != nil {
-		return fmt.Errorf("k8s mkdir: %w", err)
-	}
-	writeCmd := fmt.Sprintf("cat > %s/inventory/hosts.ini << 'XEOF'\n%s\nXEOF", dir, inventory)
-	if res, err := exec.Run(writeCmd); err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("k8s write inventory: %w", err)
-	}
-
-	// run kubespray via docker on the managed host itself
-	kubesprayCmd := fmt.Sprintf(
-		"docker run --rm -it --net=host -v %s/inventory:/kubespray/inventory/hosts "+
-			"-v %s:/root/.ssh/id_rsa:ro "+
-			"quay.io/kubespray/kubespray:%s "+
-			"ansible-playbook -i inventory/hosts/hosts.ini "+
-			"--user=%s --private-key=/root/.ssh/id_rsa "+
-			"-e kube_version=%s cluster.yml 2>&1",
-		dir, sshKeyPath, k8sVersion, ansibleUser, k8sVersion,
-	)
-	res, err := exec.Run(kubesprayCmd)
-	if err != nil {
-		return fmt.Errorf("kubespray run: %w", err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("kubespray failed: %s", res.Stdout+res.Stderr)
-	}
-
 	return k.SaveInstance(k.serverID, serviceType, "running",
-		fmt.Sprintf(`{"k8s_version":"%s","host":"%s"}`, k8sVersion, hostIP))
+		fmt.Sprintf(`{"k8s_version":"%s","cluster_id":%d}`, inv.KubeVersion, clusterID))
 }
 
 func (k *K8s) Disable(exec *ssh.Executor) error {
-	// run reset.yml to tear down the cluster
-	kubesprayReset := fmt.Sprintf(
-		"docker run --rm -v %s/inventory:/kubespray/inventory/hosts "+
-			"quay.io/kubespray/kubespray:latest "+
-			"ansible-playbook -i inventory/hosts/hosts.ini reset.yml -e reset_confirmation=yes 2>&1",
-		dir,
-	)
-	_, _ = exec.Run(kubesprayReset)
+	eng := xmk8s.NewEngine(k.DB, k.pool)
+	var mem storage.K8sClusterMember
+	if k.DB.Where("server_id = ?", k.serverID).First(&mem).Error == nil {
+		_ = eng.Reset(context.Background(), mem.ClusterID, nil)
+	} else {
+		inv, _ := xmk8s.Normalize(xmk8s.InventorySpec{
+			Hosts: []xmk8s.Host{{Name: "node1", AnsibleHost: "127.0.0.1", AnsibleUser: "root", ControlPlane: true, Etcd: true, Worker: true}},
+		})
+		_ = xmk8s.RunOnExecutor(context.Background(), exec, inv, xmk8s.PlaybookReset, xmk8s.PlaybookExtras(xmk8s.PlaybookReset, ""), nil)
+	}
 	return k.SaveInstance(k.serverID, serviceType, "stopped", "")
 }
 
 func (k *K8s) Status(exec *ssh.Executor) string {
-	out := exec.RunQuiet("kubectl get nodes --no-headers 2>/dev/null | head -1")
-	if out == "" {
-		return "stopped"
+	if k.IsEnabled(exec) {
+		return "running"
 	}
-	return "running"
-}
-
-func (k *K8s) resolveHost(exec *ssh.Executor) string {
-	ip := exec.RunQuiet("hostname -I 2>/dev/null | awk '{print $1}'")
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
-		ip = "127.0.0.1"
-	}
-	return ip
+	return "stopped"
 }

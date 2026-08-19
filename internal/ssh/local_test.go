@@ -1,6 +1,10 @@
 package ssh
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestLocalExecutorRun(t *testing.T) {
 	ex := NewLocalExecutor()
@@ -23,5 +27,14 @@ func TestLocalExecutorRun(t *testing.T) {
 	}
 	if got := ex.RunQuiet("echo quiet"); got != "quiet" {
 		t.Fatalf("RunQuiet got %q", got)
+	}
+	var lines []string
+	if err := ex.StreamWait(context.Background(), "printf 'a\\nb\\n'", func(line string) {
+		lines = append(lines, line)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(lines, ",") != "a,b" {
+		t.Fatalf("StreamWait lines %v", lines)
 	}
 }

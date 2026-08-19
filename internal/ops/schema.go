@@ -30,3 +30,11 @@ func arrIntProp(desc string) map[string]any {
 		"description": desc,
 	}
 }
+
+func arrStrProp(desc string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string"},
+		"description": desc,
+	}
+}

@@ -85,6 +85,7 @@
     <a href="/projects" class="xm-nav-link {{if eq .ActiveNav "projects"}}xm-nav-active{{end}}" data-cmdk>Projects</a>
     <a href="/ai" class="xm-nav-link {{if eq .ActiveNav "ai"}}xm-nav-active{{end}}" data-cmdk>Assistant</a>
     <a href="/workflows" class="xm-nav-link {{if eq .ActiveNav "workflows"}}xm-nav-active{{end}}" data-cmdk>Workflows</a>
+    <a href="/k8s" class="xm-nav-link {{if eq .ActiveNav "k8s"}}xm-nav-active{{end}}" data-cmdk>Kubernetes</a>
     {{if .IsAdmin}}
     <a href="/docker" class="xm-nav-link {{if eq .ActiveNav "docker"}}xm-nav-active{{end}}" data-cmdk>Docker</a>
     <a href="/cron" class="xm-nav-link {{if eq .ActiveNav "cron"}}xm-nav-active{{end}}" data-cmdk>Schedules</a>
@@ -150,6 +151,7 @@
       <a href="/projects" {{if eq .ActiveNav "projects"}}aria-current="page"{{end}} data-cmdk>Projects</a>
       <a href="/ai" {{if eq .ActiveNav "ai"}}aria-current="page"{{end}} data-cmdk>Assistant</a>
       <a href="/workflows" {{if eq .ActiveNav "workflows"}}aria-current="page"{{end}} data-cmdk>Workflows</a>
+      <a href="/k8s" {{if eq .ActiveNav "k8s"}}aria-current="page"{{end}} data-cmdk>Kubernetes</a>
       <a href="/uptime" {{if eq .ActiveNav "uptime"}}aria-current="page"{{end}} data-cmdk>Uptime</a>
       <a href="/settings" {{if eq .ActiveNav "settings"}}aria-current="page"{{end}} data-cmdk>Settings</a>
     </nav>

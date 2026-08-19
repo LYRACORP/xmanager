@@ -35,6 +35,7 @@ func New(db *gorm.DB, pool *ssh.Pool) *Catalog {
 	c.registerSecurity()
 	c.registerDomains()
 	c.registerProcess()
+	c.registerK8s()
 	return c
 }
 

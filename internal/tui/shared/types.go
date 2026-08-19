@@ -38,6 +38,7 @@ const (
 	ScreenSecurity
 	ScreenDateTime
 	ScreenWorkflows
+	ScreenKubernetes
 )
 
 // Backward-compatible aliases.
@@ -52,7 +53,7 @@ func (s ScreenID) String() string {
 		"PM2", "Logs", "AI Chat", "Setup Wizard",
 		"Error Tracker", "Database", "Proxy", "Backup",
 		"Settings", "Projects", "Cron Jobs", "Scripts",
-		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security", "Date & time", "Workflows",
+		"Uptime", "Services", "Recon", "Install Packages", "FTP", "Security", "Date & time", "Workflows", "Kubernetes",
 	}
 	if int(s) < len(names) {
 		return names[s]
@@ -93,10 +94,10 @@ type ServerConnectedMsg struct {
 
 // AppContext holds shared dependencies injected into every screen.
 type AppContext struct {
-	Config   *config.Config
-	DB       *gorm.DB
-	Pool     *ssh.Pool
-	ServerID uint
+	Config    *config.Config
+	DB        *gorm.DB
+	Pool      *ssh.Pool
+	ServerID  uint
 	Poller    *poller.Poller
 	Catalog   *ops.Catalog
 	Workflows *workflow.Engine

@@ -43,5 +43,7 @@ func runMigrations(db *gorm.DB) error {
 		&StorageBucket{},
 		&Workflow{},
 		&WorkflowRun{},
+		&K8sCluster{},
+		&K8sClusterMember{},
 	)
 }

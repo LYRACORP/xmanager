@@ -1,11 +1,14 @@
 package ssh
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -68,6 +71,18 @@ func (e *Executor) RunCombined(cmd string) (string, error) {
 		output += result.Stderr
 	}
 	return output, nil
+}
+
+// StreamWait runs cmd, calling onLine for each stdout/stderr line, and returns
+// after the process exits. ctx cancel kills the command.
+func (e *Executor) StreamWait(ctx context.Context, cmd string, onLine func(string)) error {
+	if e == nil {
+		return fmt.Errorf("nil executor")
+	}
+	if e.local {
+		return e.streamWaitLocal(ctx, cmd, onLine)
+	}
+	return e.streamWaitRemote(ctx, cmd, onLine)
 }
 
 func (e *Executor) Stream(cmd string) (io.Reader, func(), error) {
@@ -136,4 +151,83 @@ func (e *Executor) RunAll(cmds []string) (map[string]*ExecResult, error) {
 		results[cmd] = result
 	}
 	return results, nil
+}
+
+func (e *Executor) streamWaitLocal(ctx context.Context, cmd string, onLine func(string)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c := exec.CommandContext(ctx, "bash", "-c", cmd)
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	c.Stderr = c.Stdout
+	if err := c.Start(); err != nil {
+		return err
+	}
+	scanLines(stdout, onLine)
+	return c.Wait()
+}
+
+func (e *Executor) streamWaitRemote(ctx context.Context, cmd string, onLine func(string)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if e.client == nil || e.client.conn == nil {
+		return fmt.Errorf("not connected")
+	}
+	session, err := e.client.conn.NewSession()
+	if err != nil {
+		return fmt.Errorf("creating session: %w", err)
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("getting stdout pipe: %w", err)
+	}
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("getting stderr pipe: %w", err)
+	}
+	if err := session.Start(cmd); err != nil {
+		return fmt.Errorf("starting command: %w", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); scanLines(stdout, onLine) }()
+		go func() { defer wg.Done(); scanLines(stderr, onLine) }()
+		wg.Wait()
+		close(done)
+	}()
+
+	waitErr := make(chan error, 1)
+	go func() { waitErr <- session.Wait() }()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGINT)
+		session.Close()
+		<-done
+		return ctx.Err()
+	case err := <-waitErr:
+		<-done
+		return err
+	}
+}
+
+func scanLines(r io.Reader, onLine func(string)) {
+	if onLine == nil {
+		_, _ = io.Copy(io.Discard, r)
+		return
+	}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		onLine(sc.Text())
+	}
 }

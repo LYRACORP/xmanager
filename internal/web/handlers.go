@@ -304,6 +304,13 @@ type pageData struct {
 	AIEndpoint       string
 	AIOllamaHost     string
 	AIProfiles       []storage.AIConfigRecord
+	K8sClusters      []storage.K8sCluster
+	K8sCluster       *storage.K8sCluster
+	K8sMembers       []k8sMemberView
+	K8sTab           string
+	K8sRows          []k8sResourceRow
+	K8sText          string
+	K8sOverview      map[string]any
 }
 
 func (h *handler) register(mux *http.ServeMux) {
@@ -345,6 +352,7 @@ func (h *handler) register(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /webhook/{project_id}", h.postWebhook)
 	h.registerAIWorkflows(mux, h.requireAuth, h.requireAdminAuth)
+	h.registerK8s(mux, h.requireAuth, h.requireAdminAuth)
 }
 
 func (h *handler) render(w http.ResponseWriter, name string, data any) {

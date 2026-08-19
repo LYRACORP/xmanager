@@ -16,7 +16,8 @@
 - **PaaS projects** — image, compose, Dockerfile, git, one-click apps, archive, functions, and more
 - **Scripts & cron** — run bash/python/node on one / many / all servers; manage remote cron jobs
 - **Databases** — MySQL, MariaDB, PostgreSQL, MongoDB, ClickHouse, Redis + backups
-- **Optional services** — Docker Registry, Gitea, RustFS, RabbitMQ, Kafka, Mattermost, Bugsink, Netdata (+auth), Umami, PowerDNS, mail, Uptime Kuma, Databasus, Kubernetes (kubespray)
+- **Optional services** — Docker Registry, Gitea, RustFS, RabbitMQ, Kafka, Mattermost, Bugsink, Netdata (+auth), Umami, PowerDNS, mail, Uptime Kuma, Databasus
+- **Kubernetes** — fleet clusters via official Kubespray playbooks (create / scale / upgrade / reset) plus a kubectl/Helm workbench over SSH (TUI `Ctrl+K`, web `/k8s`)
 - **Uptime monitoring** — HTTP/TCP checks with Telegram / email / webhook / SMS alerts
 - **MCP server** — `xmanager mcp` exposes the same ops tools the in-app agent uses
 - **AI chat** — OpenAI-compatible providers (OpenAI, Grok, Gemini, DeepSeek, OpenRouter, LM Studio), Anthropic, Ollama; web voice via Whisper
@@ -40,7 +41,7 @@ xmanager web          # HTMX web panel (auth on first visit)
 xmanager mcp          # MCP stdio server for AI agents
 ```
 
-Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `Ctrl+O` workflows · `?` help · `Esc` back
+Keyboard (global): `Ctrl+F` fleet · `Ctrl+A` AI chat · `Ctrl+O` workflows · `Ctrl+K` Kubernetes · `?` help · `Esc` back
 
 Fleet Overview: `Enter` connect · `w` install **node** web panel (or reinstall/upgrade / disable / uninstall if already present) · `a` add · `d` delete
 
@@ -101,7 +102,7 @@ ui:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  TUI Chat  │  Web Chat + Voice  │  MCP  │  Workflows     │
+│  TUI Chat  │  Web Chat + Voice  │  MCP  │  Workflows  │  K8s     │
 ├──────────────────────────────────────────────────────────┤
 │  Agent tool loop  →  internal/ops catalog  →  SSH pool   │
 └──────────────────────────────────────────────────────────┘
@@ -124,6 +125,10 @@ ui:
 
 Do not put real API keys in `mcp.json`. XManager reads `~/.config/xmanager/config.yaml` for SSH inventory and AI settings.
 
+### Kubernetes (Kubespray)
+
+Fleet-scoped clusters (TUI `Ctrl+K`, web `/k8s`), not a KubeSphere clone. Create / scale / upgrade / reset uses the official Kubespray Docker image (`quay.io/kubespray/kubespray:v2.31.0`) with Kubernetes ≥ v1.34. Day-2 is `kubectl` and Helm over SSH to the first control plane. Kubeconfig is encrypted in SQLite and never logged.
+
 ## Project layout
 
 ```
@@ -134,6 +139,7 @@ internal/
   ops/                 Shared tool catalog (chat, MCP, workflows)
   ai/                  Providers + agent tool loop
   workflow/            Native DAG engine + cron/webhook/alert/chat triggers
+  k8s/                 Kubespray runner + kubectl/Helm workbench
   mcp/                 MCP JSON-RPC stdio adapter
   poller/              SSH metric + uptime polling
   project/             Deploy engine (10 project types)

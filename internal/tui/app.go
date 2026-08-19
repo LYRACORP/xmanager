@@ -98,6 +98,7 @@ func (a *App) initScreens() {
 	a.screens[shared.ScreenSecurity] = NewSecurityScreen(a.ctx)
 	a.screens[shared.ScreenDateTime] = NewDateTimeScreen(a.ctx)
 	a.screens[shared.ScreenWorkflows] = NewWorkflowsScreen(a.ctx)
+	a.screens[shared.ScreenKubernetes] = NewKubernetesScreen(a.ctx)
 }
 
 func (a *App) Init() tea.Cmd {
@@ -115,6 +116,7 @@ func (a *App) globalBindings() []components.KeyBinding {
 		{Key: "ctrl+f", Desc: "fleet"},
 		{Key: "ctrl+a", Desc: "AI chat"},
 		{Key: "ctrl+o", Desc: "workflows"},
+		{Key: "ctrl+k", Desc: "kubernetes"},
 		{Key: "esc", Desc: "back"},
 	}
 }
@@ -192,6 +194,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.replaceNavigate(shared.ScreenChat, nil)
 		case "ctrl+o":
 			return a, a.replaceNavigate(shared.ScreenWorkflows, nil)
+		case "ctrl+k":
+			return a, a.replaceNavigate(shared.ScreenKubernetes, nil)
 		}
 
 	case shared.NavigateMsg:

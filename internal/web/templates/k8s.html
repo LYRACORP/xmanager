@@ -1,0 +1,60 @@
+{{define "k8s"}}
+{{template "head" .}}
+{{template "nav" .}}
+<div class="xm-page max-w-5xl">
+  <div class="mb-6 flex items-end justify-between gap-4">
+    <div>
+      <h1>Kubernetes</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Kubespray clusters on fleet SSH hosts. Day-2 via kubectl/Helm on the first control plane. Docker on this machine (or a bootstrap node) runs the playbooks — no kubelet agent.</p>
+    </div>
+  </div>
+  {{if .Flash}}<p class="xm-flash xm-flash-warn mb-4">{{.Flash}}</p>{{end}}
+
+  {{if .IsAdmin}}
+  <form method="post" action="/k8s" class="xm-card p-4 mb-6 space-y-3">
+    <div class="font-medium">Create cluster</div>
+    <div class="flex flex-wrap gap-3">
+      <input name="name" placeholder="Name" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm" required>
+      <input name="kube_version" value="v1.34.0" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-32">
+      <input name="network_plugin" value="calico" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm w-32">
+    </div>
+    {{if not .NodeMode}}
+    <div class="text-xs text-muted">Members — pick a role per server</div>
+    <div class="space-y-1 max-h-48 overflow-y-auto">
+      {{range .AllServers}}
+      <label class="flex items-center gap-2 text-sm">
+        <input type="hidden" name="server_id" value="{{.ID}}">
+        <span class="w-40 truncate">{{.Name}}</span>
+        <span class="text-muted text-xs">{{.Host}}</span>
+        <select name="role_{{.ID}}" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+          <option value="off">off</option>
+          <option value="all">all-in-one</option>
+          <option value="control-plane,etcd">control-plane + etcd</option>
+          <option value="worker">worker</option>
+        </select>
+      </label>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="text-xs text-muted">This node will be an all-in-one control-plane + etcd + worker.</p>
+    {{end}}
+    <button class="xm-btn xm-btn-primary">Create with Kubespray</button>
+  </form>
+  {{end}}
+
+  <div class="space-y-2">
+    {{range .K8sClusters}}
+    <a href="/k8s/{{.ID}}" class="xm-card p-4 flex justify-between items-center">
+      <div>
+        <div class="font-medium">{{.Name}}</div>
+        <div class="text-xs text-muted">{{.Status}} · kube {{.KubeVersion}} · {{.NetworkPlugin}}</div>
+      </div>
+      <span class="text-xs text-muted">open</span>
+    </a>
+    {{else}}
+    <p class="text-muted text-sm">No clusters yet.</p>
+    {{end}}
+  </div>
+</div>
+{{template "foot" .}}
+{{end}}

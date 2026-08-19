@@ -27,6 +27,9 @@ func TestCatalogListsCoreTools(t *testing.T) {
 	if _, ok := c.Get("docker_start"); !ok {
 		t.Fatal("docker_start missing")
 	}
+	if _, ok := c.Get("k8s_list_clusters"); !ok {
+		t.Fatal("k8s_list_clusters missing")
+	}
 	if len(c.List()) < 20 {
 		t.Fatalf("expected a broad catalog, got %d", len(c.List()))
 	}
