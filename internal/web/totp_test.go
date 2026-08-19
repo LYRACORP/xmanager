@@ -12,7 +12,6 @@ import (
 
 	"github.com/lyracorp/xmanager/internal/auth"
 	"github.com/lyracorp/xmanager/internal/config"
-	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -20,16 +19,7 @@ import (
 
 func parseWebTemplates(t *testing.T) *template.Template {
 	t.Helper()
-	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"formatBytes":  nodemetrics.FormatBytes,
-		"formatUptime": nodemetrics.FormatUptime,
-		"pathEscape":   url.PathEscape,
-		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
-		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
-		"json": func(v interface{}) (template.JS, error) {
-			return "", nil
-		},
-	}).ParseFS(assets, "templates/*.html")
+	tmpl, err := template.New("").Funcs(webTemplateFuncs()).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,14 @@
   --color-ok-soft: oklch(96% 0.02 155);
   --color-warn: oklch(68% 0.13 75);
   --color-warn-soft: oklch(96% 0.03 75);
+  /* sRGB companions for <canvas> (2D context does not paint oklch) */
+  --color-accent-srgb: #2f6bff;
+  --color-ok-srgb: #1f8a5b;
+  --color-warn-srgb: #c48a12;
+  --color-danger-srgb: #c43b32;
+  --color-ink-2-srgb: #5c6578;
+  --color-rule-srgb: #d4d8e0;
+  --color-paper-2-srgb: #f0f2f6;
 
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -567,10 +575,74 @@ label { font-size: var(--text-sm); color: var(--color-ink-2); }
 .xm-mono { font-family: var(--font-mono); }
 
 .xm-chart {
+  display: block;
   width: 100%;
+  height: 140px;
   border-radius: var(--radius-card);
-  background: var(--color-graphite);
+  background: var(--color-paper-2);
   border: 1px solid var(--color-rule);
+}
+.xm-chart-sm { height: 56px; }
+
+.xm-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+.xm-gauge-dial {
+  position: relative;
+  width: 8.25rem;
+  height: 6.4rem;
+}
+.xm-gauge-dial svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.xm-gauge-track { fill: none; stroke: var(--color-paper-3); stroke-width: 9; stroke-linecap: round; }
+.xm-gauge-arc {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-dasharray: var(--gauge-pct, 0) 100;
+  transition: stroke-dasharray var(--dur-short) var(--ease-out);
+}
+.xm-gauge.is-ok .xm-gauge-arc { stroke: var(--color-ok); }
+.xm-gauge.is-warn .xm-gauge-arc { stroke: var(--color-warn); }
+.xm-gauge.is-danger .xm-gauge-arc { stroke: var(--color-danger); }
+.xm-gauge-hub {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  min-width: 0;
+}
+.xm-gauge-hub strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--color-ink);
+}
+.xm-gauge-hub span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-2);
+  margin-top: 0.15rem;
+}
+.xm-gauge-sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+  text-align: center;
 }
 
 .xm-type-grid {

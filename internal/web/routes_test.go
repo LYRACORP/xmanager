@@ -14,7 +14,6 @@ import (
 	"github.com/lyracorp/xmanager/internal/docker"
 	"github.com/lyracorp/xmanager/internal/gitforge"
 	"github.com/lyracorp/xmanager/internal/hosttime"
-	"github.com/lyracorp/xmanager/internal/nodemetrics"
 	"github.com/lyracorp/xmanager/internal/storage"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -49,16 +48,7 @@ func TestRegisterNodeRoutesNoConflict(t *testing.T) {
 }
 
 func TestNodeDockerSwarmTemplate(t *testing.T) {
-	funcMap := template.FuncMap{
-		"formatBytes":  nodemetrics.FormatBytes,
-		"formatUptime": nodemetrics.FormatUptime,
-		"pathEscape":   url.PathEscape,
-		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
-		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
-		"json": func(v interface{}) (template.JS, error) {
-			return "", nil
-		},
-	}
+	funcMap := webTemplateFuncs()
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		t.Fatal(err)
@@ -155,16 +145,7 @@ func TestDevicePollGone(t *testing.T) {
 }
 
 func TestNodeDateTimeTemplate(t *testing.T) {
-	funcMap := template.FuncMap{
-		"formatBytes":  nodemetrics.FormatBytes,
-		"formatUptime": nodemetrics.FormatUptime,
-		"pathEscape":   url.PathEscape,
-		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
-		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
-		"json": func(v interface{}) (template.JS, error) {
-			return "", nil
-		},
-	}
+	funcMap := webTemplateFuncs()
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		t.Fatal(err)
@@ -220,16 +201,7 @@ func TestPostTimeTimezoneRejectsInjection(t *testing.T) {
 }
 
 func testWebFuncMap() template.FuncMap {
-	return template.FuncMap{
-		"formatBytes":  nodemetrics.FormatBytes,
-		"formatUptime": nodemetrics.FormatUptime,
-		"pathEscape":   url.PathEscape,
-		"trimSlash":    func(s string) string { return strings.Trim(s, "/") },
-		"trimDot":      func(s string) string { return strings.TrimRight(s, ".") },
-		"json": func(v interface{}) (template.JS, error) {
-			return "", nil
-		},
-	}
+	return webTemplateFuncs()
 }
 
 func TestSettingsThisPanelCard(t *testing.T) {

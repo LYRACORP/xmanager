@@ -2,15 +2,12 @@ package web
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/lyracorp/xmanager/internal/ai"
@@ -50,24 +47,7 @@ func Run(opts Options) error {
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
-	funcMap := template.FuncMap{
-		"formatBytes":  nodemetrics.FormatBytes,
-		"formatUptime": nodemetrics.FormatUptime,
-		"pathEscape":   url.PathEscape,
-		"trimSlash": func(s string) string {
-			return strings.Trim(s, "/")
-		},
-		"trimDot": func(s string) string {
-			for len(s) > 0 && s[len(s)-1] == '.' {
-				s = s[:len(s)-1]
-			}
-			return s
-		},
-		"json": func(v interface{}) (template.JS, error) {
-			b, err := json.Marshal(v)
-			return template.JS(b), err
-		},
-	}
+	funcMap := webTemplateFuncs()
 
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(assets, "templates/*.html")
 	if err != nil {

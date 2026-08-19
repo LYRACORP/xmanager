@@ -5,14 +5,24 @@
   "use strict";
 
   function token(name) {
+    var srgb = name.replace(/\)$/, "-srgb)");
+    if (srgb === name) srgb = name + "-srgb";
     var probe = document.createElement("span");
-    probe.style.color = "var(" + name + ")";
+    probe.style.color = "var(" + name + "-srgb, var(" + name + "))";
     probe.style.position = "absolute";
     probe.style.visibility = "hidden";
     document.body.appendChild(probe);
     var value = getComputedStyle(probe).color;
     probe.remove();
-    return value;
+    if (value && value.indexOf("oklch") === -1) return value;
+    var map = {
+      "--color-accent": "#2f6bff",
+      "--color-ok": "#1f8a5b",
+      "--color-ink-2": "#5c6578",
+      "--color-rule": "#d4d8e0",
+      "--color-paper-2": "#f0f2f6"
+    };
+    return map[name] || "#2f6bff";
   }
   window.xmToken = token;
 

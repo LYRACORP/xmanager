@@ -152,24 +152,37 @@
     var mm = String(d.getMinutes()).padStart(2, '0');
     return hh + ':' + mm;
   }
+  function tokenRGB(name) {
+    var raw = window.xmToken ? window.xmToken(name) : '#2f6bff';
+    var m = String(raw).match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], css: 'rgb(' + m[1] + ',' + m[2] + ',' + m[3] + ')' };
+    return { r: 47, g: 107, b: 255, css: String(raw) };
+  }
   function drawChart(canvasId, data, times, color, fill) {
     var c = document.getElementById(canvasId);
     if (!c) return;
     var dpr = window.devicePixelRatio || 1;
-    var cw = c.offsetWidth, ch = 140;
+    var cw = c.clientWidth || c.offsetWidth;
+    var ch = 140;
+    if (cw < 10) cw = c.parentElement ? c.parentElement.clientWidth : 0;
     if (cw < 10) return;
-    c.width = cw * dpr;
-    c.height = ch * dpr;
+    c.style.height = ch + 'px';
+    c.width = Math.round(cw * dpr);
+    c.height = Math.round(ch * dpr);
     var ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cw, ch);
+    var paper = tokenRGB('--color-paper-2');
+    ctx.fillStyle = paper.css;
+    ctx.fillRect(0, 0, cw, ch);
 
     var padL = 40, padR = 10, padT = 10, padB = 22;
     var plotW = cw - padL - padR, plotH = ch - padT - padB;
     var max = niceMax(Math.max.apply(null, data.concat([0.1])));
 
-    ctx.strokeStyle = window.xmToken ? window.xmToken('--color-rule') : '#d4d8e0';
-    ctx.fillStyle = window.xmToken ? window.xmToken('--color-ink-2') : '#5c6578';
+    var rule = tokenRGB('--color-rule');
+    var muted = tokenRGB('--color-ink-2');
+    ctx.strokeStyle = rule.css;
+    ctx.fillStyle = muted.css;
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
     for (var g = 0; g <= 4; g++) {
@@ -220,13 +233,11 @@
     ctx.stroke();
   }
   function tokenFill(varName, a) {
-    var c = window.xmToken ? window.xmToken(varName) : 'rgb(47,107,255)';
-    var m = String(c).match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-    if (!m) return c;
-    return 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',' + a + ')';
+    var rgb = tokenRGB(varName);
+    return 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a + ')';
   }
   function drawAll() {
-    var accent = window.xmToken ? window.xmToken('--color-accent') : '#2f6bff';
+    var accent = tokenRGB('--color-accent').css;
     var fill = tokenFill('--color-accent', 0.22);
     drawChart('net-tx-chart', txHist, timeHist, accent, fill);
     drawChart('net-rx-chart', rxHist, timeHist, accent, fill);
@@ -353,35 +364,66 @@
 
 {{define "node_metrics"}}
   <div class="space-y-6">
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
     <div class="xm-card p-4">
-      <div class="text-xs text-panel-muted uppercase mb-2">CPU</div>
-      <div class="text-2xl font-mono font-bold text-indigo-300">{{printf "%.1f" .Node.CPUPct}}%</div>
-      <div class="mt-3 bg-zinc-800 rounded-full h-2">
-        <div class="h-2 rounded-full bg-indigo-500" style="width: {{printf "%.0f" .Node.CPUPct}}%"></div>
+      <div class="xm-gauge {{gaugeTone .Node.CPUPct}}" style="--gauge-pct: {{printf "%.1f" .Node.CPUPct}}">
+        <div class="xm-gauge-dial">
+          <svg viewBox="0 0 120 100" aria-hidden="true">
+            <path class="xm-gauge-track" d="M 18 88 A 42 42 0 1 1 102 88"/>
+            <path class="xm-gauge-arc" pathLength="100" d="M 18 88 A 42 42 0 1 1 102 88"/>
+          </svg>
+          <div class="xm-gauge-hub">
+            <strong>{{printf "%.1f" .Node.CPUPct}}%</strong>
+            <span>CPU</span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="xm-card p-4">
-      <div class="text-xs text-panel-muted uppercase mb-2">RAM</div>
-      <div class="text-2xl font-mono font-bold text-sky-300">{{printf "%.1f" .Node.RAMPct}}%</div>
-      <div class="text-xs text-panel-muted mt-1 font-mono">{{printf "%.0f" .Node.RAMUsedMB}} / {{printf "%.0f" .Node.RAMTotalMB}} MB</div>
-      <div class="mt-2 bg-zinc-800 rounded-full h-2">
-        <div class="h-2 rounded-full bg-sky-500" style="width: {{printf "%.0f" .Node.RAMPct}}%"></div>
+      <div class="xm-gauge {{gaugeTone .Node.RAMPct}}" style="--gauge-pct: {{printf "%.1f" .Node.RAMPct}}">
+        <div class="xm-gauge-dial">
+          <svg viewBox="0 0 120 100" aria-hidden="true">
+            <path class="xm-gauge-track" d="M 18 88 A 42 42 0 1 1 102 88"/>
+            <path class="xm-gauge-arc" pathLength="100" d="M 18 88 A 42 42 0 1 1 102 88"/>
+          </svg>
+          <div class="xm-gauge-hub">
+            <strong>{{printf "%.1f" .Node.RAMPct}}%</strong>
+            <span>RAM</span>
+          </div>
+        </div>
+        <div class="xm-gauge-sub">{{printf "%.0f" .Node.RAMUsedMB}} / {{printf "%.0f" .Node.RAMTotalMB}} MB</div>
       </div>
     </div>
     <div class="xm-card p-4">
-      <div class="text-xs text-panel-muted uppercase mb-2">Disk /</div>
-      <div class="text-2xl font-mono font-bold text-emerald-300">{{printf "%.1f" .Node.DiskPct}}%</div>
-      <div class="text-xs text-panel-muted mt-1 font-mono">{{printf "%.1f" .Node.DiskUsedGB}} / {{printf "%.1f" .Node.DiskTotalGB}} GB</div>
-      <div class="mt-2 bg-zinc-800 rounded-full h-2">
-        <div class="h-2 rounded-full bg-emerald-500" style="width: {{printf "%.0f" .Node.DiskPct}}%"></div>
+      <div class="xm-gauge {{gaugeTone .Node.DiskPct}}" style="--gauge-pct: {{printf "%.1f" .Node.DiskPct}}">
+        <div class="xm-gauge-dial">
+          <svg viewBox="0 0 120 100" aria-hidden="true">
+            <path class="xm-gauge-track" d="M 18 88 A 42 42 0 1 1 102 88"/>
+            <path class="xm-gauge-arc" pathLength="100" d="M 18 88 A 42 42 0 1 1 102 88"/>
+          </svg>
+          <div class="xm-gauge-hub">
+            <strong>{{printf "%.1f" .Node.DiskPct}}%</strong>
+            <span>Disk</span>
+          </div>
+        </div>
+        <div class="xm-gauge-sub">{{printf "%.1f" .Node.DiskUsedGB}} / {{printf "%.1f" .Node.DiskTotalGB}} GB</div>
       </div>
     </div>
     <div class="xm-card p-4">
-      <div class="text-xs text-panel-muted uppercase mb-2">Load / Uptime</div>
-      <div class="text-lg font-mono text-gray-200">{{printf "%.2f" .Node.Load1}} / {{printf "%.2f" .Node.Load5}} / {{printf "%.2f" .Node.Load15}}</div>
-      <div class="text-xs text-panel-muted mt-2">uptime {{.UptimeHuman}} · {{.Node.Cores}} cores</div>
-      <div class="text-xs text-zinc-600 mt-1 font-mono truncate">{{.Node.Kernel}}</div>
+      <div class="xm-gauge {{gaugeTone (loadPct .Node.Load1 .Node.Cores)}}" style="--gauge-pct: {{printf "%.1f" (loadPct .Node.Load1 .Node.Cores)}}">
+        <div class="xm-gauge-dial">
+          <svg viewBox="0 0 120 100" aria-hidden="true">
+            <path class="xm-gauge-track" d="M 18 88 A 42 42 0 1 1 102 88"/>
+            <path class="xm-gauge-arc" pathLength="100" d="M 18 88 A 42 42 0 1 1 102 88"/>
+          </svg>
+          <div class="xm-gauge-hub">
+            <strong>{{printf "%.2f" .Node.Load1}}</strong>
+            <span>Load</span>
+          </div>
+        </div>
+        <div class="xm-gauge-sub">{{printf "%.2f" .Node.Load5}} / {{printf "%.2f" .Node.Load15}} · {{.Node.Cores}} cores</div>
+        <div class="xm-gauge-sub">uptime {{.UptimeHuman}}</div>
+      </div>
     </div>
   </div>
 
